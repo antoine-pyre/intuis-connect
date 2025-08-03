@@ -1,0 +1,51 @@
+name: Build & Release Intuis Connect
+
+# ------------------------------------------------------------------
+# Run *only* when a tag is pushed that starts with "v"
+# ------------------------------------------------------------------
+on:
+  push:
+    tags:
+      - 'v*'              # any tag beginning with v
+
+permissions:
+  contents: write          # needed for GitHub Releases
+  packages: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1 ─ Checkout the code at the tag ref
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    # 2 ─ Read the version from manifest.json and compare to tag
+    - name: Extract version
+      id: vars
+      run: |
+        FILE_VERSION=$(jq -r '.version' custom_components/intuis_connect/manifest.json)
+        TAG_VERSION=${GITHUB_REF#refs/tags/v}
+        echo "file=$FILE_VERSION"  >> $GITHUB_OUTPUT
+        echo "tag=$TAG_VERSION"    >> $GITHUB_OUTPUT
+        if [ "$FILE_VERSION" != "$TAG_VERSION" ]; then
+          echo "::error::Tag version ($TAG_VERSION) does not match manifest.json version ($FILE_VERSION)"
+          exit 1
+        fi
+
+    # 3 ─ Build ZIP
+    - name: Build flat ZIP
+      run: |
+        cd custom_components/intuis_connect
+        zip -r ../../intuis_connect.zip ./*          # <-- files at zip root
+        cd -
+
+    # 4 ─ Create / update GitHub Release
+    - name: Publish Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}                  # e.g. v1.3.2
+        name: Intuis Connect ${{ steps.vars.outputs.tag }}  # nice title
+        files: intuis_connect.zip
