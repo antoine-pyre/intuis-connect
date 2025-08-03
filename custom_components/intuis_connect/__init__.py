@@ -1,29 +1,34 @@
-"""Set up Intuis Connect integration."""
+
+"""Setup for Intuis Connect (v1.3.0)."""
 from __future__ import annotations
-import logging, datetime
+
+import logging, datetime, asyncio
+from collections import defaultdict
+
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+import homeassistant.helpers.service
 
-from .api import IntuisAPI, CannotConnect, InvalidAuth, APIError
 from .const import DOMAIN
+from .api import IntuisAPI, CannotConnect, InvalidAuth, APIError
 
 _LOGGER = logging.getLogger(__name__)
+
+PLATFORMS = ["climate", "binary_sensor", "sensor", "switch"]
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Create API + coordinator, register platforms & services."""
     hass.data.setdefault(DOMAIN, {})
-    username = entry.data["username"]
-    refresh_token = entry.data["refresh_token"]
-    home_id = entry.data["home_id"]
-
     session = async_get_clientsession(hass)
-    api = IntuisAPI(session, home_id)
-    api._refresh_token = refresh_token
+    api = IntuisAPI(session, home_id=entry.data["home_id"])
+    api._refresh_token = entry.data["refresh_token"]
+
     try:
         await api.async_refresh_access_token()
     except InvalidAuth as err:
@@ -31,23 +36,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except CannotConnect as err:
         raise ConfigEntryNotReady from err
 
-    # rooms mapping
     home_data = await api.async_get_homes_data()
     rooms = {r["id"]: r.get("name", f"Room {r['id']}") for r in home_data.get("rooms", [])}
     if not rooms:
-        raise ConfigEntryNotReady("No rooms found")
+        raise ConfigEntryNotReady("No rooms returned")
+
+    # State accumulators
+    minutes_counter = defaultdict(int)
+    energy_cache = {}
 
     async def _async_update():
+        """Fetch status, annotate with heating minutes and energy."""
         try:
             raw = await api.async_get_home_status()
         except (CannotConnect, APIError) as err:
             raise UpdateFailed(str(err)) from err
+
         home = raw.get("body", {}).get("home", {})
         modules = home.get("modules", [])
-        modules_by_room = {}
+        mods_by_room = defaultdict(list)
         for mod in modules:
-            modules_by_room.setdefault(mod.get("room_id"), []).append(mod)
-        data = {}
+            mods_by_room[mod.get("room_id")].append(mod)
+
+        data_by_room = {}
+        now = datetime.datetime.utcnow()
+        today_iso = now.date().isoformat()
         for room in home.get("rooms", []):
             rid = room["id"]
             info = {
@@ -57,9 +70,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "heating": False,
                 "presence": False,
                 "open_window": False,
+                "anticipation": False,
                 "power": 0,
             }
-            for mod in modules_by_room.get(rid, []):
+            for mod in mods_by_room.get(rid, []):
                 if mod.get("heating_power_request", 0) > 0:
                     info["heating"] = True
                 info["power"] = max(info["power"], mod.get("heating_power_request", 0))
@@ -67,8 +81,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     info["presence"] = True
                 if mod.get("open_window_detected"):
                     info["open_window"] = True
-            data[rid] = info
-        return data
+                if mod.get("anticipating"):
+                    info["anticipation"] = True
+
+            # Accumulate heating minutes
+            if info["heating"]:
+                minutes_counter[rid] += 5  # because update interval is 5 min
+            # Reset at midnight UTC
+            if now.hour == 0 and now.minute < 5:
+                minutes_counter[rid] = 0
+            info["minutes"] = minutes_counter[rid]
+
+            # Get daily kWh once after 02:00
+            cache_key = f"{rid}_{today_iso}"
+            if cache_key not in energy_cache and now.hour >= 2:
+                energy_cache[cache_key] = await api.async_get_home_measure(rid, today_iso)
+            info["energy"] = energy_cache.get(cache_key, 0.0)
+
+            data_by_room[rid] = info
+        return data_by_room
 
     coordinator = DataUpdateCoordinator(
         hass,
@@ -86,11 +117,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "rooms": rooms,
     }
 
-    await hass.config_entries.async_forward_entry_setups(entry, ["climate", "binary_sensor", "sensor"])
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Register service: clear_override
+    @callback
+    async def clear_override_service(call):
+        room_id = call.data["room_id"]
+        await api.async_set_room_state(room_id, "home")
+        await coordinator.async_request_refresh()
+
+    hass.services.async_register(
+        DOMAIN,
+        "clear_override",
+        clear_override_service,
+        schema=hass.helpers.service.vol.Schema({hass.helpers.service.vol.Required("room_id"): str}),
+    )
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["climate", "binary_sensor", "sensor"])
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
     return unload_ok

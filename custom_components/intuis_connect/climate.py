@@ -1,8 +1,8 @@
-"""Climate platform for Intuis Connect."""
-from homeassistant.components.climate import ClimateEntity, HVACMode, HVACAction, ClimateEntityFeature
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.const import UnitOfTemperature
 
+"""Climate platform for Intuis Connect."""
+from homeassistant.components.climate import ClimateEntity, HVACAction, HVACMode, ClimateEntityFeature
+from homeassistant.const import UnitOfTemperature
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, SUPPORTED_PRESETS, PRESET_SCHEDULE, PRESET_AWAY, PRESET_BOOST
 from .device import build_device_info
 
@@ -16,7 +16,7 @@ class IntuisClimate(CoordinatorEntity, ClimateEntity):
     _attr_max_temp = 30.0
     _attr_target_temperature_step = 0.5
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    
+
     def __init__(self, coordinator, api, home_id, room_id, room_name):
         super().__init__(coordinator)
         self._api = api
@@ -26,23 +26,21 @@ class IntuisClimate(CoordinatorEntity, ClimateEntity):
         self._attr_unique_id = f"{room_id}_climate"
         self._dev_info = build_device_info(home_id, room_id, room_name)
 
-    # device registry
     @property
     def device_info(self):
         return self._dev_info
 
-    # state properties
     @property
     def current_temperature(self):
-        return self.coordinator.data.get(self._room_id, {}).get("temperature")
+        return self.coordinator.data[self._room_id]["temperature"]
 
     @property
     def target_temperature(self):
-        return self.coordinator.data.get(self._room_id, {}).get("target_temperature")
+        return self.coordinator.data[self._room_id]["target_temperature"]
 
     @property
     def hvac_mode(self):
-        mode = self.coordinator.data.get(self._room_id, {}).get("mode")
+        mode = self.coordinator.data[self._room_id]["mode"]
         if mode in ("off", "hg"):
             return HVACMode.OFF
         if mode in ("home", "schedule", "program"):
@@ -51,7 +49,7 @@ class IntuisClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def preset_mode(self):
-        mode = self.coordinator.data.get(self._room_id, {}).get("mode")
+        mode = self.coordinator.data[self._room_id]["mode"]
         if mode == "away":
             return PRESET_AWAY
         if mode == "boost":
@@ -62,9 +60,7 @@ class IntuisClimate(CoordinatorEntity, ClimateEntity):
     def hvac_action(self):
         if self.hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
-        if self.coordinator.data.get(self._room_id, {}).get("heating"):
-            return HVACAction.HEATING
-        return HVACAction.IDLE
+        return HVACAction.HEATING if self.coordinator.data[self._room_id]["heating"] else HVACAction.IDLE
 
     async def async_set_temperature(self, **kwargs):
         temp = kwargs.get("temperature")
@@ -79,28 +75,19 @@ class IntuisClimate(CoordinatorEntity, ClimateEntity):
         elif hvac_mode == HVACMode.AUTO:
             await self._api.async_set_room_state(self._room_id, "home")
         elif hvac_mode == HVACMode.HEAT:
-            await self._api.async_set_room_state(
-                self._room_id, "manual", float(self.target_temperature or 20.0)
-            )
+            await self._api.async_set_room_state(self._room_id, "manual", float(self.target_temperature or 20.0))
         await self.coordinator.async_request_refresh()
 
     async def async_set_preset_mode(self, preset_mode: str):
         if preset_mode == PRESET_SCHEDULE:
             await self._api.async_set_room_state(self._room_id, "home")
         elif preset_mode == PRESET_AWAY:
-            dur = self.hass.config_entries.async_get_entry(self.coordinator.config_entry_id).options.get("away_duration", 1440)
-            temp = self.hass.config_entries.async_get_entry(self.coordinator.config_entry_id).options.get("away_temp", 16.0)
-            await self._api.async_set_room_state(self._room_id, "manual", temp, dur)
+            await self._api.async_set_room_state(self._room_id, "manual", 16.0, 1440)
         elif preset_mode == PRESET_BOOST:
-            dur = self.hass.config_entries.async_get_entry(self.coordinator.config_entry_id).options.get("boost_duration", 30)
-            temp = self.hass.config_entries.async_get_entry(self.coordinator.config_entry_id).options.get("boost_temp", 30.0)
-            await self._api.async_set_room_state(self._room_id, "manual", temp, dur)
+            await self._api.async_set_room_state(self._room_id, "manual", 30.0, 30)
         await self.coordinator.async_request_refresh()
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data["coordinator"]
-    api = data["api"]
-    home_id = data["home_id"]
-    entities = [IntuisClimate(coordinator, api, home_id, rid, name) for rid, name in data["rooms"].items()]
+    d = hass.data[DOMAIN][entry.entry_id]
+    entities = [IntuisClimate(d["coordinator"], d["api"], d["home_id"], rid, name) for rid, name in d["rooms"].items()]
     async_add_entities(entities)
