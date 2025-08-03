@@ -1,5 +1,10 @@
 name: Build & Release Intuis Connect
 
+
+permissions:
+  contents: write     # <-- allows tag & release creation
+  packages: read      # (optional) keep default read on packages
+  
 on:
   push:
     branches: [ master, main ]          # trigger on default branch
