@@ -1,63 +1,91 @@
-"""Sensor platform for Intuis Connect."""
+
+"""Sensors for Intuis Connect (temperature, setpoint, power, energy, heating minutes)."""
+
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .device import build_device_info
 from .const import DOMAIN
 
-class IntuisTemperatureSensor(CoordinatorEntity, SensorEntity):
+class _Base(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, home_id, room_id, room_name):
         super().__init__(coordinator)
         self._room_id = room_id
-        self._device_info = build_device_info(home_id, room_id, room_name)
-        self._attr_name = f"{room_name} Temperature"
-        self._attr_unique_id = f"{room_id}_temp"
-        self._attr_device_class = SensorDeviceClass.TEMPERATURE
-        self._attr_native_unit_of_measurement = "°C"
-        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._dev = build_device_info(home_id, room_id, room_name)
     @property
-    def native_value(self):
-        return self.coordinator.data.get(self._room_id, {}).get("temperature")
-    @property
-    def device_info(self): return self._device_info
+    def device_info(self):
+        return self._dev
 
-class IntuisSetpointSensor(CoordinatorEntity, SensorEntity):
-    def __init__(self, coordinator, home_id, room_id, room_name):
-        super().__init__(coordinator)
-        self._room_id = room_id
-        self._device_info = build_device_info(home_id, room_id, room_name)
-        self._attr_name = f"{room_name} Setpoint"
-        self._attr_unique_id = f"{room_id}_setpoint"
-        self._attr_device_class = SensorDeviceClass.TEMPERATURE
-        self._attr_native_unit_of_measurement = "°C"
-        self._attr_state_class = SensorStateClass.MEASUREMENT
+# ---------------------------------------------------------------------- live sensors
+class TemperatureSensor(_Base):
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = "°C"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    def __init__(self, coordinator, home, room, name):
+        super().__init__(coordinator, home, room, name)
+        self._attr_name = f"{name} Temperature"
+        self._attr_unique_id = f"{room}_temp"
     @property
     def native_value(self):
-        return self.coordinator.data.get(self._room_id, {}).get("target_temperature")
-    @property
-    def device_info(self): return self._device_info
+        return self.coordinator.data[self._room_id]["temperature"]
 
-class IntuisPowerSensor(CoordinatorEntity, SensorEntity):
-    def __init__(self, coordinator, home_id, room_id, room_name):
-        super().__init__(coordinator)
-        self._room_id = room_id
-        self._device_info = build_device_info(home_id, room_id, room_name)
-        self._attr_name = f"{room_name} Heating Power"
-        self._attr_unique_id = f"{room_id}_power"
-        self._attr_native_unit_of_measurement = "%"
-        self._attr_state_class = SensorStateClass.MEASUREMENT
+class SetpointSensor(_Base):
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = "°C"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    def __init__(self, coordinator, home, room, name):
+        super().__init__(coordinator, home, room, name)
+        self._attr_name = f"{name} Setpoint"
+        self._attr_unique_id = f"{room}_setpoint"
     @property
     def native_value(self):
-        return self.coordinator.data.get(self._room_id, {}).get("power")
+        return self.coordinator.data[self._room_id]["target_temperature"]
+
+class PowerSensor(_Base):
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    def __init__(self, coordinator, home, room, name):
+        super().__init__(coordinator, home, room, name)
+        self._attr_name = f"{name} Heating Power"
+        self._attr_unique_id = f"{room}_power"
     @property
-    def device_info(self): return self._device_info
+    def native_value(self):
+        return self.coordinator.data[self._room_id]["power"]
+
+# ---------------------------------------------------------------------- calculated sensors
+class EnergySensor(_Base):
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    def __init__(self, coordinator, home, room, name):
+        super().__init__(coordinator, home, room, name)
+        self._attr_name = f"{name} Energy"
+        self._attr_unique_id = f"{room}_energy"
+    @property
+    def native_value(self):
+        return self.coordinator.data[self._room_id]["energy"]
+
+class HeatingMinutesSensor(_Base):
+    _attr_native_unit_of_measurement = "min"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    def __init__(self, coordinator, home, room, name):
+        super().__init__(coordinator, home, room, name)
+        self._attr_name = f"{name} Heating Minutes"
+        self._attr_unique_id = f"{room}_heat_minutes"
+    @property
+    def native_value(self):
+        return self.coordinator.data[self._room_id]["minutes"]
 
 async def async_setup_entry(hass, entry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data["coordinator"]
+    coord = data["coordinator"]
     home_id = data["home_id"]
-    entities = []
-    for rid, name in data["rooms"].items():
-        entities.append(IntuisTemperatureSensor(coordinator, home_id, rid, name))
-        entities.append(IntuisSetpointSensor(coordinator, home_id, rid, name))
-        entities.append(IntuisPowerSensor(coordinator, home_id, rid, name))
-    async_add_entities(entities)
+    ents=[]
+    for rid, nm in data["rooms"].items():
+        ents.extend([
+            TemperatureSensor(coord, home_id, rid, nm),
+            SetpointSensor(coord, home_id, rid, nm),
+            PowerSensor(coord, home_id, rid, nm),
+            EnergySensor(coord, home_id, rid, nm),
+            HeatingMinutesSensor(coord, home_id, rid, nm),
+        ])
+    async_add_entities(ents)
