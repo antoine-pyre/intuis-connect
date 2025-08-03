@@ -2,6 +2,7 @@
   "domain": "intuis_connect",
   "name": "Intuis Connect (Netatmo)",
   "version": "1.3.2",
+  "documentation": "https://github.com/antoine-pyre/homeassistant-intuis-connect#readme",
   "requirements": [
     "aiohttp"
   ],

@@ -11,9 +11,14 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.service
+from homeassistant.helpers import config_validation as cv
+from homeassistant.const import CONF_PLATFORM
+from homeassistant.core import callback
 
 from .const import DOMAIN
 from .api import IntuisAPI, CannotConnect, InvalidAuth, APIError
+
+CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
 
