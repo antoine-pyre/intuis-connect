@@ -14,6 +14,8 @@ import homeassistant.helpers.service
 from homeassistant.helpers import config_validation as cv
 from homeassistant.const import CONF_PLATFORM
 from homeassistant.core import callback
+from homeassistant.helpers import config_validation as cv
+import voluptuous as vol
 
 from .const import DOMAIN
 from .api import IntuisAPI, CannotConnect, InvalidAuth, APIError
@@ -23,6 +25,11 @@ CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["climate", "binary_sensor", "sensor", "switch"]
+
+SERVICE_CLEAR_OVERRIDE = "clear_override"
+ATTR_ROOM_ID = "room_id"
+
+CLEAR_OVERRIDE_SCHEMA = vol.Schema({vol.Required(ATTR_ROOM_ID): str})
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
@@ -125,19 +132,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Register service: clear_override
+ 
     @callback
-    async def clear_override_service(call):
-        room_id = call.data["room_id"]
+    async def async_clear_override(call):
+        """Cancel manual/boost and resume schedule for one room."""
+        room_id = call.data[ATTR_ROOM_ID]
+        api = hass.data[DOMAIN][entry.entry_id]["api"]
         await api.async_set_room_state(room_id, "home")
-        await coordinator.async_request_refresh()
+        await hass.data[DOMAIN][entry.entry_id]["coordinator"].async_request_refresh()
 
     hass.services.async_register(
         DOMAIN,
-        "clear_override",
-        clear_override_service,
-        schema=hass.helpers.service.vol.Schema({hass.helpers.service.vol.Required("room_id"): str}),
+        SERVICE_CLEAR_OVERRIDE,
+        async_clear_override,
+        schema=CLEAR_OVERRIDE_SCHEMA,
     )
-    return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
