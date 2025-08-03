@@ -1,65 +1,49 @@
 name: Build & Release Intuis Connect
 
-
-permissions:
-  contents: write     # <-- allows tag & release creation
-  packages: read      # (optional) keep default read on packages
-
+# ------------------------------------------------------------------
+# Run *only* when a tag is pushed that starts with "v"
+# ------------------------------------------------------------------
 on:
   push:
-    branches: [ master, main ]          # trigger on default branch
-    paths:
-      - 'custom_components/intuis_connect/**'
-      - '.github/workflows/release.yml'
+    tags:
+      - 'v*'              # any tag beginning with v
+
+permissions:
+  contents: write          # needed for GitHub Releases
+  packages: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
 
     steps:
-    # 1 ─ Checkout full history (tags included)
-    - name: Checkout
-      uses: actions/checkout@v4
+    # 1 ─ Checkout the code at the tag ref
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
-    # 2 ─ Extract version from manifest.json
-    - name: Extract integration version
+    # 2 ─ Read the version from manifest.json and compare to tag
+    - name: Extract version
       id: vars
       run: |
-        VERSION=$(jq -r '.version' custom_components/intuis_connect/manifest.json)
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-    # 3 ─ Create release ZIP
-    - name: Build ZIP package
-      run: |
-        zip -r intuis_connect_${{ steps.vars.outputs.version }}.zip custom_components/intuis_connect
-
-    # 4 ─ Create (or reuse) Git tag v<version>
-    - name: Create tag if needed
-      id: tag
-      env:
-        VERSION: ${{ steps.vars.outputs.version }}
-      run: |
-        TAG="${VERSION}"
-        echo "tag=$TAG" >> $GITHUB_OUTPUT
-        if git rev-parse "$TAG" >/dev/null 2>&1; then
-          echo "Tag $TAG already exists."
-        else
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global user.name  "github-actions[bot]"
-          git tag "$TAG"
-          git push origin "$TAG"
+        FILE_VERSION=$(jq -r '.version' custom_components/intuis_connect/manifest.json)
+        TAG_VERSION=${GITHUB_REF#refs/tags/v}
+        echo "file=$FILE_VERSION"  >> $GITHUB_OUTPUT
+        echo "tag=$TAG_VERSION"    >> $GITHUB_OUTPUT
+        if [ "$FILE_VERSION" != "$TAG_VERSION" ]; then
+          echo "::error::Tag version ($TAG_VERSION) does not match manifest.json version ($FILE_VERSION)"
+          exit 1
         fi
 
-    # 5 ─ Create / update the GitHub Release and upload the asset
-    - name: Publish GitHub Release
+    # 3 ─ Build ZIP
+    - name: Build integration ZIP
+      run: |
+        zip -r intuis_connect_${{ steps.vars.outputs.tag }}.zip custom_components/intuis_connect
+
+    # 4 ─ Create / update GitHub Release
+    - name: Publish Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: ${{ steps.tag.outputs.tag }}
-        name: ${{ steps.vars.outputs.version }}
-        draft: false
-        prerelease: false
-        files: intuis_connect_${{ steps.vars.outputs.version }}.zip
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        tag_name: ${{ github.ref_name }}                  # e.g. v1.3.2
+        name: Intuis Connect ${{ steps.vars.outputs.tag }}  # nice title
+        files: intuis_connect_${{ steps.vars.outputs.tag }}.zip
