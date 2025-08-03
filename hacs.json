@@ -1,6 +1,7 @@
 {
   "name": "Intuis Connect",
   "content_in_root": false,
+  "filename": "intuis_connect",
   "zip_release": true,
   "domains": ["intuis_connect"],
   "country": "FR"
