@@ -1,4 +1,4 @@
-"""Shared helpers for device info generation."""
+"""Device helper for Intuis Connect."""
 from homeassistant.helpers.device_registry import DeviceInfo
 from .const import DOMAIN
 
