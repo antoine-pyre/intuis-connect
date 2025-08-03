@@ -4,7 +4,7 @@ name: Build & Release Intuis Connect
 permissions:
   contents: write     # <-- allows tag & release creation
   packages: read      # (optional) keep default read on packages
-  
+
 on:
   push:
     branches: [ master, main ]          # trigger on default branch
@@ -41,7 +41,7 @@ jobs:
       env:
         VERSION: ${{ steps.vars.outputs.version }}
       run: |
-        TAG="v${VERSION}"
+        TAG="${VERSION}"
         echo "tag=$TAG" >> $GITHUB_OUTPUT
         if git rev-parse "$TAG" >/dev/null 2>&1; then
           echo "Tag $TAG already exists."
@@ -57,7 +57,7 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.tag.outputs.tag }}
-        name: Intuis Connect ${{ steps.vars.outputs.version }}
+        name: ${{ steps.vars.outputs.version }}
         draft: false
         prerelease: false
         files: intuis_connect_${{ steps.vars.outputs.version }}.zip
