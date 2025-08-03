@@ -1,8 +1,9 @@
 {
-  "name": "Intuis Connect",
-  "content_in_root": true,
-  "filename": "intuis_connect.zip",
-  "zip_release": true,
-  "domains": ["intuis_connect"],
-  "country": "FR"
+    "name": "Intuis Connect",
+    "content_in_root": false,
+    "filename": "intuis_connect.zip",
+    "zip_release": false,
+    "domains": ["intuis_connect"],
+    "country": "FR",
+    "render_readme": true
 }
