@@ -1,0 +1,18 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Intuis (Netatmo)",
+        "data": {
+          "username": "Email",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Intuis Connect service.",
+      "invalid_auth": "Invalid email or password.",
+      "unknown": "Unexpected error."
+    }
+  }
+}

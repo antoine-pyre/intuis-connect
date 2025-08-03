@@ -1,0 +1,10 @@
+{
+  "domain": "intuis_connect",
+  "name": "Intuis Connect (Netatmo) Integration",
+  "version": "1.0.0",
+  "documentation": "https://github.com/your-repo/homeassistant-intuis-connect",
+  "requirements": [],
+  "codeowners": ["@your-github-username"],
+  "config_flow": true,
+  "iot_class": "Cloud Polling"
+}
