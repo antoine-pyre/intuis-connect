@@ -38,7 +38,7 @@ jobs:
     # 3 ─ Build ZIP
     - name: Build integration ZIP
       run: |
-        zip -r intuis_connect_${{ steps.vars.outputs.tag }}.zip custom_components/intuis_connect
+        zip -r intuis_connect.zip custom_components/intuis_connect
 
     # 4 ─ Create / update GitHub Release
     - name: Publish Release
@@ -46,4 +46,4 @@ jobs:
       with:
         tag_name: ${{ github.ref_name }}                  # e.g. v1.3.2
         name: Intuis Connect ${{ steps.vars.outputs.tag }}  # nice title
-        files: intuis_connect_${{ steps.vars.outputs.tag }}.zip
+        files: intuis_connect.zip
