@@ -1,13 +1,9 @@
-# Intuis Connect (Netatmo) Home Assistant Integration
+# Intuis Connect Home Assistant Integration
 
-This custom integration adds support for Intuis/Muller electric radiators with Netatmo modules.
-Install via HACS (recommended) or copy the `custom_components/intuis_connect` directory into
-your Home Assistant configuration.
+Full-featured custom component to monitor and control Muller / Intuis electric radiators equipped with Netatmo modules.
 
-## Features
-* Automatic discovery of radiators (grouped by room)
-* Climate control with temperature, modes (Auto, Manual, Off)
-* Binary sensors for presence and open-window detection
-* Write support to set temperature and modes from Home Assistant
-
-See the full documentation in the repository wiki.
+* Automatic discovery
+* Climate entities with schedule / away / boost
+* Presence & window detection
+* Sensors: temperature, setpoint, heating power
+* Config & Options flows
