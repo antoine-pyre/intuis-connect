@@ -36,9 +36,11 @@ jobs:
         fi
 
     # 3 ─ Build ZIP
-    - name: Build integration ZIP
+    - name: Build flat ZIP
       run: |
-        zip -r intuis_connect.zip custom_components/intuis_connect
+        cd custom_components/intuis_connect
+        zip -r ../../intuis_connect.zip ./*          # <-- files at zip root
+        cd -
 
     # 4 ─ Create / update GitHub Release
     - name: Publish Release
