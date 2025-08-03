@@ -1,14 +1,18 @@
-"""Binary sensor platform for Intuis Connect."""
+"""Binary sensor platform for Intuis Connect (presence and open window)."""
 from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySensorDeviceClass
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
 from .const import DOMAIN
+from .device import build_device_info
 
 class IntuisPresenceSensor(CoordinatorEntity, BinarySensorEntity):
-    def __init__(self, coordinator, home_id, room_id, name):
+    """Presence (motion) sensor for a room."""
+
+    def __init__(self, coordinator, home_id: str, room_id: str, room_name: str):
         super().__init__(coordinator)
         self._room_id = room_id
-        self._home_id = home_id
-        self._attr_name = f"{name} Presence"
+        self._device_info = build_device_info(home_id, room_id, room_name)
+        self._attr_name = f"{room_name} Presence"
         self._attr_unique_id = f"{room_id}_presence"
         self._attr_device_class = BinarySensorDeviceClass.MOTION
 
@@ -18,14 +22,16 @@ class IntuisPresenceSensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def device_info(self):
-        return {"identifiers": {(DOMAIN, f"{self._home_id}_{self._room_id}")}}
+        return self._device_info
 
 class IntuisWindowSensor(CoordinatorEntity, BinarySensorEntity):
-    def __init__(self, coordinator, home_id, room_id, name):
+    """Open-window detection sensor for a room."""
+
+    def __init__(self, coordinator, home_id: str, room_id: str, room_name: str):
         super().__init__(coordinator)
         self._room_id = room_id
-        self._home_id = home_id
-        self._attr_name = f"{name} Open Window"
+        self._device_info = build_device_info(home_id, room_id, room_name)
+        self._attr_name = f"{room_name} Open Window"
         self._attr_unique_id = f"{room_id}_window"
         self._attr_device_class = BinarySensorDeviceClass.WINDOW
 
@@ -35,7 +41,7 @@ class IntuisWindowSensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def device_info(self):
-        return {"identifiers": {(DOMAIN, f"{self._home_id}_{self._room_id}")}}
+        return self._device_info
 
 async def async_setup_entry(hass, entry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
