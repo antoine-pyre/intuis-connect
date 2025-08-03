@@ -1,14 +1,14 @@
 {
   "domain": "intuis_connect",
   "name": "Intuis Connect (Netatmo)",
-  "version": "1.3.2",
-  "documentation": "https://github.com/antoine-pyre/homeassistant-intuis-connect#readme",
-  "requirements": [
-    "aiohttp"
-  ],
   "codeowners": [
     "@your-github-username"
   ],
   "config_flow": true,
-  "iot_class": "cloud_polling"
+  "documentation": "https://github.com/antoine-pyre/homeassistant-intuis-connect#readme",
+  "iot_class": "cloud_polling",
+  "requirements": [
+    "aiohttp"
+  ],
+  "version": "1.3.2"
 }
