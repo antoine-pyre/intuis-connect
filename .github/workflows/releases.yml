@@ -26,7 +26,7 @@ jobs:
     - name: Extract version
       id: vars
       run: |
-        FILE_VERSION=$(jq -r '.version' intuis_connect/manifest.json)
+        FILE_VERSION=$(jq -r '.version' custom_components/intuis_connect/manifest.json)
         TAG_VERSION=${GITHUB_REF#refs/tags/v}
         echo "file=$FILE_VERSION"  >> $GITHUB_OUTPUT
         echo "tag=$TAG_VERSION"    >> $GITHUB_OUTPUT
@@ -38,8 +38,8 @@ jobs:
     # 3 ─ Build ZIP
     - name: Build flat ZIP
       run: |
-        cd intuis_connect
-        zip -r ../intuis_connect.zip ./*          # <-- files at zip root
+        cd custom_components/intuis_connect
+        zip -r ../../intuis_connect.zip ./*          # <-- files at zip root
         cd -
 
     # 4 ─ Create / update GitHub Release
