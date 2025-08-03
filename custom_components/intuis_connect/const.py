@@ -15,8 +15,8 @@ DEFAULT_BOOST_TEMP      = 30.0     # °C
 
 # API clusters
 BASE_URLS = [
-    "https://app-prod.intuis-sas.com",
     "https://app.muller-intuitiv.net",
+    "https://app-prod.intuis-sas.com",
 ]
 BASE_URL = BASE_URLS[0]  # used for legacy constants
 
