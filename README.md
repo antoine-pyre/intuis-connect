@@ -1,9 +1,62 @@
-# Intuis Connect Home Assistant Integration
+# Intuis Connect (Netatmo) – Home Assistant Integration
 
-Full-featured custom component to monitor and control Muller / Intuis electric radiators equipped with Netatmo modules.
+> Control and monitor **Muller / Campa / Intuis electric radiators** fitted with Netatmo “Intuitiv” modules – right from Home Assistant.
 
-* Automatic discovery
-* Climate entities with schedule / away / boost
-* Presence & window detection
-* Sensors: temperature, setpoint, heating power
-* Config & Options flows
+
+## Features
+
+* **Auto-discovery** of every radiator (grouped by room)  
+* **Climate entity** per room  
+  * Schedule / Manual / Frost modes  
+  * Presets : **Boost** and **Away** (durations & temperatures configurable)  
+* **Sensors**  
+  * Temperature, Set-point, Heating Power %  
+  * Presence & Open-window detection  
+* Config & Options flows (no YAML)  
+* HACS-ready updates
+
+---
+
+## Installation (via HACS)
+
+> **Requires Home Assistant 2024.6 or newer and HACS ≥ 1.33**
+
+1. ### Add the custom repository  
+   1. In Home Assistant, open **HACS ▸ Integrations**  
+   2. Click **⋮ Custom repositories** (upper right)  
+   3. URL :  
+      ```
+      https://github.com/antoine-pyre/homeassistant-intuis_connect
+      ```  
+      Category : **Integration** → **Add**
+
+2. ### Download the integration  
+   *Back in HACS ▸ Integrations* → search **“Intuis Connect”** → **Download** → **Restart** HA when prompted.
+
+3. ### Configure  
+   *Settings ▸ Devices & Services ▸ + Add Integration* → search **Intuis Connect (Netatmo)**  
+   Enter the **email & password** you use in the Intuis mobile app → *Submit*.
+
+That’s it – a device is created for each room with sensors **and** a fully-functional **Climate** entity.
+
+---
+
+## Dashboard quick-start
+
+| Card type | What it gives you |
+|-----------|------------------|
+| **Thermostat** *(built-in)* | Slider for manual temperature, mode selector, presets in the More-Info dialog |
+| **Button** | Create one-tap shortcuts &nbsp;→ `climate.set_preset_mode` (`boost`, `away`) |
+| **Mushroom Climate** | Compact card with mode icons + preset menu (needs the [Mushroom](https://github.com/piitaya/lovelace-mushroom) add-on) |
+
+Example Boost button:
+
+```yaml
+type: button
+icon: mdi:fire
+name: Boost 30 min
+tap_action:
+  action: call-service
+  service: climate.set_preset_mode
+  target: {entity_id: climate.living_room}
+  data: {preset_mode: boost}
