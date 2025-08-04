@@ -23,7 +23,7 @@ class IntuisRoomDefinition:
 
     def __repr__(self) -> str:
         """Return a string representation of the room."""
-        return f"IntuisRoomDefinition(id={self.id}, name={self.name})"
+        return f"IntuisRoomDefinition(id={self.id}, name={self.name}, type={self.type}, module_ids={self.module_ids}, modules={self.modules}, therm_relay={self.therm_relay})"
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> IntuisRoomDefinition:

@@ -98,7 +98,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
         "home_id": intuis_api.home_id,
         "rooms_definitions": rooms_definitions,
-        "modules": coordinator.data["modules"],
     }
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)
 
