@@ -1,0 +1,25 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Intuis (Netatmo)",
+        "data": {
+          "username": "Email",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate Intuis account",
+        "description": "Credentials expired for {username}. Enter new password."
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to Intuis service.",
+      "invalid_auth": "Invalid email / password.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "reauth_successful": "Reauthentication successful."
+    }
+  }
+}

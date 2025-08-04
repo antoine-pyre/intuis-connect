@@ -1,0 +1,17 @@
+clear_override:
+  name: Clear override / resume schedule
+  description: >
+    Cancels any manual or boost set-point for a specific room and returns the
+    radiator to its scheduled mode.
+  target:
+    entity:
+      domain: climate
+  fields:
+    room_id:
+      required: true
+      example: room_123456
+      selector:
+        text:
+      description: >
+        The integer/string room ID. You can find it in the entity_id of your
+        climate device (e.g. climate.room_123456).
