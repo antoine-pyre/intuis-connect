@@ -95,12 +95,13 @@ class IntuisRoom:
 class IntuisData:
     """Class to handle data fetching and processing for the Intuis Connect integration."""
 
-    def __init__(self, api: IntuisAPI, rooms_definitions: dict[str, IntuisRoomDefinition]) -> None:
+    def __init__(self, api: IntuisAPI, rooms_definitions: dict[str, IntuisRoomDefinition], schedules: list[IntuisSchedule]) -> None:
         """Initialize the data handler."""
         self._api = api
         self._energy_cache: dict[str, float] = {}
         self._minutes_counter: dict[str, int] = {}
         self._rooms_definitions = rooms_definitions
+        self._schedules = schedules
 
     async def async_update(self) -> dict[str, Any]:
         """Fetch and process data from the API."""
@@ -151,9 +152,6 @@ class IntuisData:
 
             data_by_room[rid] = info
 
-        # --- pull the active schedule ---
-        schedules = [IntuisSchedule.from_dict(t) for t in home.get("schedules", [])]
-
         # return structured data
         _LOGGER.debug("Coordinator update completed")
         result = {
@@ -161,7 +159,7 @@ class IntuisData:
             "home_id": self._api.home_id,
             "rooms": data_by_room,
             "modules": modules,
-            "schedules": schedules
+            "schedules": self._schedules,
         }
 
         _LOGGER.debug("Returning data: %s", result)

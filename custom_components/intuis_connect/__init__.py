@@ -22,6 +22,7 @@ from .const import (
 )
 from .data import IntuisData, IntuisRoomDefinition
 from .entity import IntuisDataUpdateCoordinator
+from .intuis_schedule import IntuisSchedule
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,8 +80,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
     _LOGGER.debug("Rooms definitions: %s", rooms_definitions)
 
+    # --- pull the active schedule ---
+    _LOGGER.debug("Fetching active schedules")
+    _LOGGER.debug("schedules: %s", home_data.get("schedules", []))
+    schedules = [IntuisSchedule.from_dict(t) for t in home_data.get("schedules", [])]
+
+
     # ---------- setup coordinator --------------------------------------------------
-    intuis_data = IntuisData(intuis_api, rooms_definitions)
+    intuis_data = IntuisData(intuis_api, rooms_definitions, schedules)
 
     coordinator: IntuisDataUpdateCoordinator = DataUpdateCoordinator(
         hass,
