@@ -28,6 +28,12 @@ HOMESTATUS_PATH = "/syncapi/v1/homestatus"
 SETSTATE_PATH = "/syncapi/v1/setstate"
 HOMEMEASURE_PATH = "/syncapi/v1/homemeasure"
 
+ENERGY_BASE = "https://connect.intuis.net/api"
+GET_SCHEDULE_PATH = "/gethomeschedule"
+SET_SCHEDULE_PATH = "/updatenewhomeschedule"
+DELETE_SCHEDULE_PATH = "/deletenewhomeschedule"
+SWITCH_SCHEDULE_PATH = "/switchhomeschedule"
+
 # Legacy full URLs so imports keep working
 AUTH_URL = f"{BASE_URL}{AUTH_PATH}"
 API_GET_HOMESDATA = f"{BASE_URL}{HOMESDATA_PATH}"

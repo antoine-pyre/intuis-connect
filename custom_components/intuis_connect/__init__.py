@@ -22,7 +22,7 @@ CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
 _LOGGER.debug("Intuis Connect component initialized")
 
-PLATFORMS = ["climate", "binary_sensor", "sensor"]
+PLATFORMS = ["calendar", "climate", "binary_sensor", "sensor"]
 
 SERVICE_CLEAR_OVERRIDE = "clear_override"
 ATTR_ROOM_ID = "room_id"
@@ -140,9 +140,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             data_by_room[rid] = info
 
+        # ─── pull the active schedule ───────────────────────────
+        schedule = {}
+        active_id = home.get("active_schedule_id")
+        if active_id:
+            schedule = await api.async_get_schedule(api.home_id, active_id)
+        _LOGGER.debug("Active schedule for home %s: %s", api.home_id, schedule)
+
         # return both rooms and modules
         _LOGGER.debug("Coordinator update completed")
-        return {"rooms": data_by_room, "modules": modules}
+        return {
+            "rooms": data_by_room,
+            "modules": modules,
+            "schedule": schedule,
+        }
 
     coordinator = DataUpdateCoordinator(
         hass,
@@ -160,6 +171,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "home_id": api.home_id,
         "rooms": rooms,
         "modules": coordinator.data["modules"],
+        "schedule": coordinator.data["schedule"],
     }
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)
 
