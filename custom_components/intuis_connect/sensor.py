@@ -8,8 +8,9 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import UnitOfTemperature, UnitOfEnergy
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .data import IntuisRoom, IntuisEntity
+from .data import IntuisRoom
 from .device import build_device_info
+from .entity import IntuisEntity
 from .helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
