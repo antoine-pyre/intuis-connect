@@ -26,7 +26,7 @@ class TemperatureSensor(_Base):
         self._attr_unique_id = f"{room}_temp"
     @property
     def native_value(self):
-        return self.coordinator.data[self._room_id]["temperature"]
+        return self.coordinator.data["rooms"][self._room_id]["temperature"]
 
 class SetpointSensor(_Base):
     _attr_device_class = SensorDeviceClass.TEMPERATURE
@@ -38,7 +38,7 @@ class SetpointSensor(_Base):
         self._attr_unique_id = f"{room}_setpoint"
     @property
     def native_value(self):
-        return self.coordinator.data[self._room_id]["target_temperature"]
+        return self.coordinator.data["rooms"][self._room_id]["target_temperature"]
 
 class PowerSensor(_Base):
     _attr_native_unit_of_measurement = "%"
@@ -49,7 +49,7 @@ class PowerSensor(_Base):
         self._attr_unique_id = f"{room}_power"
     @property
     def native_value(self):
-        return self.coordinator.data[self._room_id]["power"]
+        return self.coordinator.data["rooms"][self._room_id]["power"]
 
 # ---------------------------------------------------------------------- calculated sensors
 class EnergySensor(_Base):
@@ -62,7 +62,7 @@ class EnergySensor(_Base):
         self._attr_unique_id = f"{room}_energy"
     @property
     def native_value(self):
-        return self.coordinator.data[self._room_id]["energy"]
+        return self.coordinator.data["rooms"][self._room_id]["energy"]
 
 class HeatingMinutesSensor(_Base):
     _attr_native_unit_of_measurement = "min"
@@ -73,7 +73,7 @@ class HeatingMinutesSensor(_Base):
         self._attr_unique_id = f"{room}_heat_minutes"
     @property
     def native_value(self):
-        return self.coordinator.data[self._room_id]["minutes"]
+        return self.coordinator.data["rooms"][self._room_id]["minutes"]
 
 async def async_setup_entry(hass, entry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]

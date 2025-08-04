@@ -32,15 +32,15 @@ class IntuisClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def current_temperature(self):
-        return self.coordinator.data[self._room_id]["temperature"]
+        return self.coordinator.data["rooms"][self._room_id]["temperature"]
 
     @property
     def target_temperature(self):
-        return self.coordinator.data[self._room_id]["target_temperature"]
+        return self.coordinator.data["rooms"][self._room_id]["target_temperature"]
 
     @property
     def hvac_mode(self):
-        mode = self.coordinator.data[self._room_id]["mode"]
+        mode = self.coordinator.data["rooms"][self._room_id]["mode"]
         if mode in ("off", "hg"):
             return HVACMode.OFF
         if mode in ("home", "schedule", "program"):
@@ -49,7 +49,7 @@ class IntuisClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def preset_mode(self):
-        mode = self.coordinator.data[self._room_id]["mode"]
+        mode = self.coordinator.data["rooms"][self._room_id]["mode"]
         if mode == "away":
             return PRESET_AWAY
         if mode == "boost":
@@ -60,7 +60,7 @@ class IntuisClimate(CoordinatorEntity, ClimateEntity):
     def hvac_action(self):
         if self.hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
-        return HVACAction.HEATING if self.coordinator.data[self._room_id]["heating"] else HVACAction.IDLE
+        return HVACAction.HEATING if self.coordinator.data["rooms"][self._room_id]["heating"] else HVACAction.IDLE
 
     async def async_set_temperature(self, **kwargs):
         temp = kwargs.get("temperature")

@@ -22,21 +22,21 @@ class PresenceSensor(_Base):
         super().__init__(coordinator, h, r, n, f"{n} Presence", f"{r}_presence", BinarySensorDeviceClass.MOTION)
     @property
     def is_on(self):
-        return self.coordinator.data[self._room_id]["presence"]
+        return self.coordinator.data["rooms"][self._room_id]["presence"]
 
 class WindowSensor(_Base):
     def __init__(self, coordinator, h, r, n):
         super().__init__(coordinator, h, r, n, f"{n} Open Window", f"{r}_window", BinarySensorDeviceClass.WINDOW)
     @property
     def is_on(self):
-        return self.coordinator.data[self._room_id]["open_window"]
+        return self.coordinator.data["rooms"][self._room_id]["open_window"]
 
 class AnticipationSensor(_Base):
     def __init__(self, coordinator, h, r, n):
         super().__init__(coordinator, h, r, n, f"{n} Anticipation", f"{r}_anticipation", BinarySensorDeviceClass.HEAT)
     @property
     def is_on(self):
-        return self.coordinator.data[self._room_id]["anticipation"]
+        return self.coordinator.data["rooms"][self._room_id]["anticipation"]
 
 async def async_setup_entry(hass, entry, async_add_entities):
     d = hass.data[DOMAIN][entry.entry_id]
