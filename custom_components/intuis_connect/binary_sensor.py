@@ -129,4 +129,4 @@ async def async_setup_entry(
                 AnticipationSensor(coordinator, home_id, room),
             ]
         )
-    async_add_entities(ent)
+    async_add_entities(ent, update_before_add=True)

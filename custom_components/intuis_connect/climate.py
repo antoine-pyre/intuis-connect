@@ -198,4 +198,4 @@ async def async_setup_entry(
         entities.append(
             IntuisConnectClimate(coordinator, home_id, rooms.get(room_id), api)
         )
-    async_add_entities(entities)
+    async_add_entities(entities, update_before_add=True)
