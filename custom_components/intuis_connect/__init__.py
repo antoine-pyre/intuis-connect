@@ -22,6 +22,7 @@ from .api import IntuisAPI, CannotConnect, InvalidAuth, APIError
 CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
+_LOGGER.debug("Intuis Connect component initialized")
 
 PLATFORMS = ["climate", "binary_sensor", "sensor"]
 
@@ -35,6 +36,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Intuis Connect from a config entry."""
+    _LOGGER.debug("Setting up entry %s", entry.entry_id)
     hass.data.setdefault(DOMAIN, {})
 
     session = async_get_clientsession(hass)
@@ -42,13 +44,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     api._refresh_token = entry.data["refresh_token"]
 
     try:
+        _LOGGER.debug("Refreshing access token for entry %s", entry.entry_id)
         await api.async_refresh_access_token()
+        _LOGGER.debug("Access token refreshed")
     except InvalidAuth as err:
+        _LOGGER.error("Invalid authentication: %s", err)
         raise ConfigEntryAuthFailed from err
     except CannotConnect as err:
+        _LOGGER.warning("Cannot connect to Intuis API: %s", err)
         raise ConfigEntryNotReady from err
 
     home_data = await api.async_get_homes_data()
+    _LOGGER.debug("Retrieved homes data: %s", home_data)
     rooms = {r["id"]: r.get("name", f"Room {r['id']}") for r in home_data["rooms"]}
 
     # ---------- coordinator update -------------------------------------------------
@@ -56,12 +63,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     energy_cache: dict[str, float] = {}
 
     async def _async_update():
+        _LOGGER.debug("Coordinator update started")
         try:
             status = await api.async_get_home_status()
         except (CannotConnect, APIError) as err:
+            _LOGGER.error("Error fetching home status: %s", err)
             raise UpdateFailed(str(err)) from err
 
         home = status["body"]["home"]
+        _LOGGER.debug("Home status received: %s", home)
         modules_raw = home.get("modules", [])
         rooms_raw = home.get("rooms", [])
 
@@ -74,6 +84,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "room_name": rooms.get(mod.get("room_id"), "Unknown"),
                 "keypad_locked": bool(mod.get("keypad_locked")),
             }
+        _LOGGER.debug("Built module information for %d modules", len(modules))
 
         # ---- build room dict ------------------------------------------------------
         data_by_room: dict[str, dict] = {}
@@ -119,14 +130,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # ---- daily kWh ---------------------------------------------------------
             cache_key = f"{rid}_{today_iso}"
             if cache_key not in energy_cache and now.hour >= 2:
+                _LOGGER.debug("Fetching energy data for room %s on %s", rid, today_iso)
                 energy_cache[cache_key] = await api.async_get_home_measure(
                     rid, today_iso
                 )
             info["energy"] = energy_cache.get(cache_key, 0.0)
+            _LOGGER.debug("Room %s data compiled: %s", rid, info)
 
             data_by_room[rid] = info
 
         # return both rooms and modules
+        _LOGGER.debug("Coordinator update completed")
         return {"rooms": data_by_room, "modules": modules}
 
     coordinator = DataUpdateCoordinator(
