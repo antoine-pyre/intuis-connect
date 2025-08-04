@@ -126,13 +126,13 @@ class IntuisData:
             info.minutes = self._minutes_counter[rid]
 
             # ---- daily kWh ---
-            cache_key = f"{rid}_{today_iso}"
-            if cache_key not in self._energy_cache and now.hour >= 2:
-                _LOGGER.debug("Fetching energy data for room %s on %s", rid, today_iso)
-                self._energy_cache[cache_key] = await self._api.async_get_home_measure(
-                    rid, today_iso
-                )
-            info.energy = self._energy_cache.get(cache_key, 0.0)
+            # cache_key = f"{rid}_{today_iso}"
+            # if cache_key not in self._energy_cache and now.hour >= 2:
+            #     _LOGGER.debug("Fetching energy data for room %s on %s", rid, today_iso)
+            #     self._energy_cache[cache_key] = await self._api.async_get_home_measure(
+            #         rid, today_iso
+            #     )
+            # info.energy = self._energy_cache.get(cache_key, 0.0)
             _LOGGER.debug("Room %s data compiled: %s", rid, info)
 
             data_by_room[rid] = info
