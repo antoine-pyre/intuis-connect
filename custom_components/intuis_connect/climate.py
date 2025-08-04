@@ -1,4 +1,5 @@
 """Climate platform for Intuis Connect."""
+import asyncio
 import logging
 
 from homeassistant.components.climate import ClimateEntity, HVACAction, HVACMode, ClimateEntityFeature
@@ -21,9 +22,11 @@ from .const import (
     API_MODE_BOOST,
 )
 from .device import build_device_info
-from .helper import get_room_name, get_home, get_room
+from .helper import get_room_name, get_room
 
 _LOGGER = logging.getLogger(__name__)
+
+RETRY_DELAY = 1  # seconds
 
 
 class IntuisConnectClimate(CoordinatorEntity, ClimateEntity):
@@ -104,7 +107,7 @@ class IntuisConnectClimate(CoordinatorEntity, ClimateEntity):
         self._attr_hvac_mode = HVACMode.HEAT
         self._attr_preset_mode = None
         self.async_write_ha_state()
-        await self.coordinator.async_request_refresh()
+        await self._request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode):
         if hvac_mode == HVACMode.OFF:
@@ -121,7 +124,7 @@ class IntuisConnectClimate(CoordinatorEntity, ClimateEntity):
         else:
             self._attr_preset_mode = None
         self.async_write_ha_state()
-        await self.coordinator.async_request_refresh()
+        await self._request_refresh()
 
     async def async_set_preset_mode(self, preset_mode: str):
         if preset_mode == PRESET_SCHEDULE:
@@ -145,8 +148,14 @@ class IntuisConnectClimate(CoordinatorEntity, ClimateEntity):
             self._attr_hvac_mode = HVACMode.HEAT
         self._attr_preset_mode = preset_mode
         self.async_write_ha_state()
-        await self.coordinator.async_request_refresh()
+        await self._request_refresh()
 
+    async def _request_refresh(self):
+        """Request a refresh of the coordinator data. Performing twice to ensure the state is updated."""
+        _LOGGER.debug("Requesting refresh for room %s", self._room_id)
+        await self.coordinator.async_request_refresh()
+        await asyncio.sleep(RETRY_DELAY)
+        await self.coordinator.async_request_refresh()
 
 async def async_setup_entry(hass, entry, async_add_entities):
     d = hass.data[DOMAIN][entry.entry_id]
