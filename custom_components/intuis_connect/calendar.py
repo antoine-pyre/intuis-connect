@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import IntuisDataUpdateCoordinator
 from .api import IntuisAPI
 from .const import DOMAIN
+from .data import IntuisRoom
 from .helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,16 +31,17 @@ class IntuisScheduleCalendar(
         coordinator: IntuisDataUpdateCoordinator,
         api: IntuisAPI,
         home_id: str,
-        room_id: str,
+        room: IntuisRoom,
         room_name: str,
     ) -> None:
         """Initialize the calendar entity."""
         super().__init__(coordinator)
         self._api = api
         self._home_id = home_id
-        self._room_id = room_id
+        self._room_id = room.id
+        self._room = room
         self._attr_name = f"{room_name} Schedule"
-        self._attr_unique_id = f"{home_id}_{room_id}_schedule"
+        self._attr_unique_id = f"{home_id}_{room.id}_schedule"
 
     @property
     def event(self) -> CalendarEvent | None:
@@ -123,17 +125,14 @@ class IntuisScheduleCalendar(
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+        hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up Calendar entities for each room."""
-
+    """Set up the climate entities."""
     coordinator, home_id, rooms, api = get_basic_utils(hass, entry)
 
-    entities: list[IntuisScheduleCalendar] = []
-    for room_id, room in rooms:
-        room_name = room.name
+    entities = []
+    for room_id in rooms:
         entities.append(
-            IntuisScheduleCalendar(coordinator, api, home_id, room_id, room_name)
+            IntuisScheduleCalendar(coordinator, home_id, rooms.get(room_id), api)
         )
-
     async_add_entities(entities)
