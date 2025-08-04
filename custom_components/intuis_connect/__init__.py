@@ -23,7 +23,7 @@ CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["climate", "binary_sensor", "sensor", "switch"]
+PLATFORMS = ["climate", "binary_sensor", "sensor"]
 
 SERVICE_CLEAR_OVERRIDE = "clear_override"
 ATTR_ROOM_ID = "room_id"
