@@ -14,7 +14,7 @@ from .const import (
     DEFAULT_AWAY_TEMP, DEFAULT_BOOST_TEMP,
 )
 
-class IntuisConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 2
     _reauth_entry: config_entries.ConfigEntry | None = None
     _username: str | None = None
