@@ -1,5 +1,7 @@
 """Sensor platform for Intuis Connect."""
 from __future__ import annotations
+
+import logging
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
@@ -8,6 +10,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .device import build_device_info
+
+_LOGGER = logging.getLogger(__name__)
 
 # Define the metrics you want: key in data, human label, unit, device_class string
 SENSOR_TYPES: dict[str, tuple[str, str, str]] = {
@@ -74,6 +78,7 @@ class IntuisSensor(CoordinatorEntity, SensorEntity):
         """Return the current value of this sensor."""
         rooms = self.coordinator.data.get("rooms", {})
         room = rooms.get(self._room_id)
+        _LOGGER.debug("Fetching %s for room %s: %s", self._metric, self._room_id, room.get(self._metric))
         if room is None:
             return None
         return room.get(self._metric)
