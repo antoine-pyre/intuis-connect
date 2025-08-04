@@ -35,6 +35,7 @@ from .const import (
     PRESET_BOOST,
     PRESET_SCHEDULE,
 )
+from .data import IntuisRoom
 from .device import build_device_info
 from .helper import get_basic_utils
 
@@ -58,15 +59,15 @@ class IntuisConnectClimate(
         self,
         coordinator: IntuisDataUpdateCoordinator,
         home_id: str,
-        room_id: str,
-        room_name: str,
+        room: IntuisRoom,
         api: IntuisAPI,
     ) -> None:
         """Initialize the climate entity."""
         super().__init__(coordinator)
         self._home_id = home_id
-        self._room_id = room_id
-        self._attr_name = room_name
+        self._room = room
+        self._room_id = room.id
+        self._attr_name = room.name
         self._attr_unique_id = f"{self.coordinator.data['id']}_{self._room_id}"
         self._api = api
         self._attr_assumed_state = True
@@ -194,8 +195,8 @@ async def async_setup_entry(
     coordinator, home_id, rooms, api = get_basic_utils(hass, entry)
 
     entities = []
-    for room_id, room_name in rooms:
+    for room_id in rooms:
         entities.append(
-            IntuisConnectClimate(coordinator, home_id, room_id, room_name, api)
+            IntuisConnectClimate(coordinator, home_id, rooms.get(room_id), api)
         )
     async_add_entities(entities)

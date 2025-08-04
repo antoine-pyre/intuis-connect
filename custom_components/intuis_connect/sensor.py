@@ -8,6 +8,7 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import UnitOfTemperature, UnitOfEnergy
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .data import IntuisRoom
 from .device import build_device_info
 from .helper import get_basic_utils
 
@@ -25,17 +26,16 @@ SENSOR_TYPES: dict[str, tuple[str, str, str]] = {
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up Intuis Connect sensors from a config entry."""
-    coordinator, home_id, rooms = get_basic_utils(hass, entry)
+    coordinator, home_id, rooms, api = get_basic_utils(hass, entry)
 
     entities: list[IntuisSensor] = []
-    for room_id, room_name in rooms.items():
+    for room_id in rooms:
         for metric, (label, unit, device_class) in SENSOR_TYPES.items():
             entities.append(
                 IntuisSensor(
                     coordinator,
                     home_id,
-                    room_id,
-                    room_name,
+                    rooms.get(room_id),
                     metric,
                     label,
                     unit,
@@ -52,8 +52,7 @@ class IntuisSensor(CoordinatorEntity, SensorEntity):
             self,
             coordinator,
             home_id: str,
-            room_id: str,
-            room_name: str,
+            room: IntuisRoom,
             metric: str,
             label: str,
             unit: str,
@@ -62,14 +61,15 @@ class IntuisSensor(CoordinatorEntity, SensorEntity):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._home_id = home_id
-        self._room_id = room_id
+        self._room_id = room.id
+        self._room = room
         self._metric = metric
-        self._attr_name = f"{room_name} {label}"
+        self._attr_name = f"{room.name} {label}"
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
-        self._attr_unique_id = f"{home_id}_{room_id}_{metric}"
+        self._attr_unique_id = f"{home_id}_{room.id}_{metric}"
         # Point to the same device as the thermostat, etc.
-        self._attr_device_info = build_device_info(home_id, room_id, room_name)
+        self._attr_device_info = build_device_info(home_id, room.id, room.name)
 
     @property
     def native_value(self) -> float | int | None:
