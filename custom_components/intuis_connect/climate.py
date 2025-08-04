@@ -31,7 +31,7 @@ from .const import (
     DEFAULT_BOOST_TEMP,
     PRESET_AWAY,
     PRESET_BOOST,
-    PRESET_SCHEDULE,
+    PRESET_SCHEDULE, API_MODE_AUTO,
 )
 from .data import IntuisRoom
 from .device import build_device_info
@@ -99,7 +99,7 @@ class IntuisConnectClimate(
         mode = self._get_room().mode
         if mode == API_MODE_OFF:
             return HVACMode.OFF
-        if mode == API_MODE_HOME:
+        if mode == API_MODE_AUTO:
             return HVACMode.AUTO
         if mode in (API_MODE_MANUAL, API_MODE_AWAY, API_MODE_BOOST):
             return HVACMode.HEAT

@@ -65,6 +65,7 @@ CONF_BOOST_TEMP = "boost_temp"
 # API modes
 API_MODE_OFF = "off"
 API_MODE_HOME = "home"
+API_MODE_AUTO = "auto"
 API_MODE_MANUAL = "manual"
 API_MODE_AWAY = "away"
 API_MODE_BOOST = "boost"
