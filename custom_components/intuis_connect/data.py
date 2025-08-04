@@ -43,12 +43,12 @@ class IntuisRoomDefinition:
 class IntuisRoom:
     """Class to represent a room in the Intuis Connect system."""
 
-    heating: bool
+    heating: bool = False
     minutes: int = 0
     energy: float = 0.0
 
     def __init__(self, definition: IntuisRoomDefinition, id: str, name: str, mode: str, target_temperature: float,
-                 temperature: float, heating: bool, presence: bool, open_window: bool, anticipation: bool,
+                 temperature: float, presence: bool, open_window: bool, anticipation: bool,
                  muller_type: str, boost_status: str) -> None:
         """Initialize the room with its definition."""
         self.definition = definition
@@ -57,7 +57,6 @@ class IntuisRoom:
         self.mode = mode
         self.target_temperature = target_temperature
         self.temperature = temperature
-        self.heating = heating
         self.presence = presence
         self.open_window = open_window
         self.anticipation = anticipation
@@ -71,10 +70,9 @@ class IntuisRoom:
             definition=definition,
             id=data["id"],
             name=definition.name,
-            mode=data.get("mode", "auto"),
-            target_temperature=data.get("target_temperature", 0.0),
-            temperature=data.get("temperature", 0.0),
-            heating=data.get("heating", False),
+            mode=data.get("therm_setpoint_mode", "unknown"),
+            temperature=data.get("therm_measured_temperature", 0.0),
+            target_temperature=data.get("therm_setpoint_temperature", 0.0),
             presence=data.get("presence", False),
             open_window=data.get("open_window", False),
             anticipation=data.get("anticipation", False),

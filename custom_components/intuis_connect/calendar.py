@@ -133,4 +133,4 @@ async def async_setup_entry(
         entities.append(
             IntuisScheduleCalendar(coordinator, api, home_id, rooms.get(room_id))
         )
-    async_add_entities(entities)
+    async_add_entities(entities, update_before_add=True)
