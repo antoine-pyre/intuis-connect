@@ -33,7 +33,10 @@ class IntuisScheduleCalendar(
             room: IntuisRoom
     ) -> None:
         """Initialize the calendar entity."""
-        super().__init__(coordinator, room, home_id)
+        CoordinatorEntity.__init__(self, coordinator)
+        CalendarEntity.__init__(self)
+        IntuisEntity.__init__(self, coordinator, room, home_id)
+
         self._api = api
         self._attr_name = f"{room.name} Schedule"
         self._attr_unique_id = f"{home_id}_{room.id}_schedule"

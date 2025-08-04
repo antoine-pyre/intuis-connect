@@ -44,7 +44,10 @@ class IntuisSensor(CoordinatorEntity, SensorEntity, IntuisEntity):
             device_class: str | None,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, room, home_id)
+        CoordinatorEntity.__init__(self, coordinator)
+        SensorEntity.__init__(self)
+        IntuisEntity.__init__(self, coordinator, room, home_id)
+
         self._metric = metric
         self._attr_name = f"{room.name} {label}"
         self._attr_native_unit_of_measurement = unit
