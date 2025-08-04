@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from homeassistant.components.goodwe.sensor import TEXT_SENSOR
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import UnitOfTemperature, UnitOfEnergy, UnitOfPower
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -17,7 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 SENSOR_TYPES: dict[str, tuple[str, str, str]] = {
     "temperature": ("Temperature", UnitOfTemperature.CELSIUS, "temperature"),
     "target_temperature": ("Setpoint", UnitOfTemperature.CELSIUS, None),
-    "power": ("Heating Power", UnitOfPower.WATT, "power"),
+    "muller_type": ("Device type", TEXT_SENSOR, None),
     "energy": ("Energy Today", UnitOfEnergy.KILO_WATT_HOUR, "energy"),
     "minutes": ("Heating Minutes", "min", None),
 }

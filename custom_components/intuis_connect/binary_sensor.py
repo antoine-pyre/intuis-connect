@@ -74,11 +74,11 @@ class WindowSensor(_Base):
 
 class AnticipationSensor(_Base):
     def __init__(
-        self,
-        coordinator: IntuisDataUpdateCoordinator,
-        h: str,
-        r: str,
-        n: str,
+            self,
+            coordinator: IntuisDataUpdateCoordinator,
+            h: str,
+            r: str,
+            n: str,
     ) -> None:
         super().__init__(
             coordinator,
@@ -93,6 +93,29 @@ class AnticipationSensor(_Base):
     @property
     def is_on(self) -> bool:
         return self.coordinator.data["rooms"][self._room_id]["anticipation"]
+
+
+class BoostStatusSensor(_Base):
+    def __init__(
+            self,
+            coordinator: IntuisDataUpdateCoordinator,
+            h: str,
+            r: str,
+            n: str,
+    ) -> None:
+        super().__init__(
+            coordinator,
+            h,
+            r,
+            n,
+            f"{n} Boost Status",
+            f"{r}_boost_status",
+            BinarySensorDeviceClass.HEAT,
+        )
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.data["rooms"][self._room_id]["boost_status"] != "disabled"
 
 
 async def async_setup_entry(

@@ -27,18 +27,6 @@ class IntuisData:
         # --- fetch raw data ---
         home = await self._api.async_get_home_status()
         rooms_raw: list[dict[str, Any]] = home.get("rooms", [])
-        modules_raw: list[dict[str, Any]] = home.get("modules", [])
-
-        # --- process modules ---
-        modules: dict[str, dict[str, Any]] = {
-            m["id"]: {
-                "id": m["id"],
-                "name": m["name"],
-                "room_id": m.get("room_id"),
-                "locked": m.get("keypad_locked", 0) == 1,
-            }
-            for m in modules_raw
-        }
 
         # --- process rooms ---
         data_by_room: dict[str, dict[str, Any]] = {}
@@ -51,27 +39,11 @@ class IntuisData:
                 "target_temperature": room.get("therm_setpoint_temperature"),
                 "temperature": room.get("therm_measured_temperature"),
                 "heating": room.get("heating_status", 0) == 1,
-                "presence": any(
-                    m.get("presence_detected")
-                    for m in modules_raw
-                    if m.get("room_id") == rid
-                ),
-                "open_window": any(
-                    m.get("open_window_detected")
-                    for m in modules_raw
-                    if m.get("room_id") == rid
-                ),
-                "anticipation": any(
-                    m.get("anticipating") for m in modules_raw if m.get("room_id") == rid
-                ),
-                "power": max(
-                    (
-                        m.get("heating_power_request", 0)
-                        for m in modules_raw
-                        if m.get("room_id") == rid
-                    ),
-                    default=0,
-                ),
+                "presence": room.get("presence", False),
+                "open_window": room.get("open_window", False),
+                "anticipation": room.get("anticipating", False),
+                "muller_type": room.get("muller_type", ""),
+                "boost_status": room.get("boost_status", "disabled"),
             }
 
             # ---- heating-minutes counter ---

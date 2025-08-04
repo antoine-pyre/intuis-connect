@@ -236,25 +236,6 @@ class IntuisAPI:
             raise APIError("Empty home status response")
         return home
 
-    async def async_set_child_lock(self, module_id: str, locked: bool) -> None:
-        """Set the child lock state for a module."""
-        _LOGGER.debug("Setting child lock for module %s to %s", module_id, locked)
-        payload = {
-            "app_type": APP_TYPE,
-            "app_version": APP_VERSION,
-            "home": {
-                "id": self.home_id,
-                "modules": [{"id": module_id, "keypad_locked": 1 if locked else 0}],
-            },
-        }
-        await self._async_request(
-            "post",
-            SETSTATE_PATH,
-            json=payload,
-            headers={"Content-Type": "application/json"},
-        )
-        _LOGGER.info("Child lock for module %s set to %s", module_id, locked)
-
     async def async_set_room_state(
         self,
         room_id: str,
