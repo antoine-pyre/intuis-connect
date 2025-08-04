@@ -145,7 +145,7 @@ class IntuisSchedule:
         _LOGGER.debug("Creating IntuisSchedule from data: %s", data)
         timetables = [IntuisTimetable.from_dict(t) for t in data.get("timetables", [])]
 
-        type = data["type"],
+        type = data["type"]
 
         zones = [IntuisZone.from_dict(z, type) for z in data.get("zones", [])]
 
@@ -157,6 +157,6 @@ class IntuisSchedule:
             away_temp=data["away_temp"],
             hg_temp=data["hg_temp"],
             id=data["id"],
-            type=data["type"],
+            type=type,
             selected=data.get("selected", False)
         )
