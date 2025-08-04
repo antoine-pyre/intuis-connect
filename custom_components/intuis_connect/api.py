@@ -1,9 +1,9 @@
-
 """Async API client for Intuis Connect cloud."""
 from __future__ import annotations
 
-import asyncio, logging, time
-from datetime import datetime
+import asyncio
+import logging
+import time
 from typing import Any, Dict
 
 import aiohttp
@@ -15,17 +15,22 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class CannotConnect(Exception):
     """Errors related to connectivity."""
+
 
 class InvalidAuth(Exception):
     """Authentication/Token errors."""
 
+
 class APIError(Exception):
     """Generic API errors."""
 
+
 class IntuisAPI:
     """Minimal client wrapping the Intuis Netatmo endpoints."""
+
     def __init__(self, session: aiohttp.ClientSession, home_id: str | None = None):
         self._session = session
         self._base_url: str = BASE_URLS[0]
@@ -117,11 +122,13 @@ class IntuisAPI:
         await self._ensure_token()
         headers = {"Authorization": f"Bearer {self._access_token}"}
         payload = {"home_id": self.home_id}
-        async with self._session.post(f"{self._base_url}{HOMESTATUS_PATH}", headers=headers, data=payload, timeout=10) as resp:
+        async with self._session.post(f"{self._base_url}{HOMESTATUS_PATH}", headers=headers, data=payload,
+                                      timeout=10) as resp:
             if resp.status == 401:
                 await self.async_refresh_access_token()
                 headers["Authorization"] = f"Bearer {self._access_token}"
-                resp = await self._session.post(f"{self._base_url}{HOMESTATUS_PATH}", headers=headers, data=payload, timeout=10)
+                resp = await self._session.post(f"{self._base_url}{HOMESTATUS_PATH}", headers=headers, data=payload,
+                                                timeout=10)
             if resp.status != 200:
                 raise APIError("homestatus failed")
             return await resp.json()
@@ -144,7 +151,6 @@ class IntuisAPI:
             if resp.status not in (200, 204):
                 raise APIError(f"Child-lock failed ({resp.status})")
 
-
     async def async_set_child_lock(self, room_id: str, locked: bool):
         await self._ensure_token()
         payload = {
@@ -153,9 +159,31 @@ class IntuisAPI:
             "home": {"id": self.home_id, "modules": [{"id": room_id, "keypad_lock": 1 if locked else 0}]},
         }
         headers = {"Authorization": f"Bearer {self._access_token}", "Content-Type": "application/json"}
-        async with self._session.post(f"{self._base_url}{SETSTATE_PATH}", headers=headers, json=payload, timeout=10) as resp:
+        async with self._session.post(f"{self._base_url}{SETSTATE_PATH}", headers=headers, json=payload,
+                                      timeout=10) as resp:
             if resp.status not in (200, 204):
                 raise APIError("child-lock setstate failed")
+
+    async def async_set_room_state(self, room_id: str, mode: str, temp: float | None = None,
+                                   duration: int | None = None):
+        """Send setstate command for one room."""
+        await self._ensure_token()
+        room_payload: Dict[str, Any] = {"id": room_id, "therm_setpoint_mode": mode}
+        if mode == "manual":
+            if temp is None:
+                raise APIError("Manual mode requires temperature")
+            end = int(time.time()) + (duration or 120) * 60
+            room_payload.update({"therm_setpoint_temperature": float(temp), "therm_setpoint_end_time": end})
+        payload = {
+            "app_type": APP_TYPE,
+            "app_version": APP_VERSION,
+            "home": {"id": self.home_id, "rooms": [room_payload], "timezone": self.home_timezone},
+        }
+        headers = {"Authorization": f"Bearer {self._access_token}", "Content-Type": "application/json"}
+        async with self._session.post(f"{self._base_url}{SETSTATE_PATH}", headers=headers, json=payload,
+                                      timeout=10) as resp:
+            if resp.status not in (200, 204):
+                raise APIError("setstate failed")
 
     async def async_get_home_measure(self, room_id: str, date_iso: str) -> float:
         """Return kWh for given room and date (YYYY-MM-DD) or 0.0 on failure."""
@@ -169,7 +197,8 @@ class IntuisAPI:
             "date_end": date_iso,
         }
         headers = {"Authorization": f"Bearer {self._access_token}"}
-        async with self._session.post(f"{self._base_url}{HOMEMEASURE_PATH}", headers=headers, data=payload, timeout=10) as resp:
+        async with self._session.post(f"{self._base_url}{HOMEMEASURE_PATH}", headers=headers, data=payload,
+                                      timeout=10) as resp:
             if resp.status != 200:
                 return 0.0
             data = await resp.json()
