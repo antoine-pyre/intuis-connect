@@ -7,6 +7,7 @@ from typing import Any, List
 
 from .api import IntuisAPI
 from .intuis_module import IntuisModule
+from .intuis_schedule import IntuisSchedule
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,7 +92,6 @@ class IntuisRoom:
         """Return a string representation of the room."""
         return f"IntuisRoom(definition={self.definition}, id={self.id}, name={self.name}, mode={self.mode}, target_temperature={self.target_temperature}, temperature={self.temperature}, heating={self.heating}, presence={self.presence}, open_window={self.open_window}, anticipation={self.anticipation}, muller_type={self.muller_type}, boost_status={self.boost_status}, modules={self.modules})"
 
-
 class IntuisData:
     """Class to handle data fetching and processing for the Intuis Connect integration."""
 
@@ -152,28 +152,20 @@ class IntuisData:
             data_by_room[rid] = info
 
         # --- pull the active schedule ---
-        schedule: dict[str, Any] = {}
-        active_id = home.get("active_schedule_id")
-        if active_id:
-            # This method might need to be implemented in api.py if not present
-            if hasattr(self._api, "async_get_schedule"):
-                schedule = await self._api.async_get_schedule(
-                    self._api.home_id, active_id
-                )
-                _LOGGER.debug(
-                    "Active schedule for home %s: %s", self._api.home_id, schedule
-                )
-            else:
-                _LOGGER.warning("async_get_schedule not found in API")
+        schedules_raw: dict[str, Any] = home.get("schedules", {})
+        _LOGGER.debug("Raw schedules data: %s", schedules_raw)
+
+        schedules: list[IntuisSchedule] = []
+        for schedule_id, schedule_data in schedules_raw.items():
+            schedules.append(IntuisSchedule.from_dict(schedule_data))
+
 
         # return structured data
         _LOGGER.debug("Coordinator update completed")
         result = {
             "id": self._api.home_id,
             "home_id": self._api.home_id,
-            "active_schedule_id": active_id,
             "rooms": data_by_room,
-            "schedule": schedule,
             "modules": modules,
         }
 
