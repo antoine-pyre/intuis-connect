@@ -86,7 +86,7 @@ def get_home_id(hass: HomeAssistant, entry: ConfigEntry) -> str:
         _LOGGER.error("No data found for entry %s", entry.entry_id)
         return "unknown_home"
 
-    return get_api(hass, entry).get("home_id", "unknown_home")
+    return get_api(hass, entry).home_id
 
 
 def get_basic_utils(hass: HomeAssistant, entry: ConfigEntry) -> Tuple[
