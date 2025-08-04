@@ -25,8 +25,7 @@ class IntuisData:
         today_iso = now.strftime("%Y-%m-%d")
 
         # --- fetch raw data ---
-        status_res = await self._api.async_get_home_status()
-        home = status_res.get("home", {})
+        home = await self._api.async_get_home_status()
         rooms_raw: list[dict[str, Any]] = home.get("rooms", [])
         modules_raw: list[dict[str, Any]] = home.get("modules", [])
 
