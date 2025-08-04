@@ -8,7 +8,7 @@ from homeassistant.const import ATTR_TEMPERATURE, PRECISION_WHOLE, TEMP_CELSIUS
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device import build_device_info
-from .const import DOMAIN
+from .const import DOMAIN, SUPPORT_FLAGS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ class IntuisClimate(CoordinatorEntity, ClimateEntity):
 
     _attr_temperature_unit = TEMP_CELSIUS
     _attr_precision = PRECISION_WHOLE
+    _attr_supported_features = SUPPORT_FLAGS
 
     def __init__(self, coordinator, api, home_id, room_id, room_name):
         super().__init__(coordinator)
