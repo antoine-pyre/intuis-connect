@@ -36,9 +36,6 @@ def get_coordinator(hass, entry) -> IntuisDataUpdateCoordinator:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
 
-    if not isinstance(coordinator, IntuisDataUpdateCoordinator):
-        _LOGGER.error("Expected IntuisDataUpdateCoordinator, got %s", type(coordinator))
-        raise TypeError("Invalid coordinator type")
     return coordinator
 
 def get_home(coordinator: IntuisDataUpdateCoordinator) -> str:
@@ -86,9 +83,6 @@ def get_api(hass: HomeAssistant, entry: ConfigEntry) -> IntuisAPI:
         raise ValueError("No API instance found")
     data = hass.data[DOMAIN][entry.entry_id]
     api = data.get("api")
-    if not isinstance(api, IntuisAPI):
-        _LOGGER.error("Expected IntuisAPI, got %s", type(api))
-        raise TypeError("Invalid API type")
     return api
 
 def get_basic_utils(hass: HomeAssistant, entry: ConfigEntry) -> Tuple[IntuisDataUpdateCoordinator, str, dict[str, IntuisRoom], IntuisAPI]:
