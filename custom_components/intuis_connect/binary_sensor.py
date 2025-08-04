@@ -43,8 +43,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
     ent=[]
     for rid, name in d["rooms"].items():
         ent.extend([
-            PresenceSensor(d["coordinator"], d["home_id"], rid, name),
-            WindowSensor(d["coordinator"], d["home_id"], rid, name),
+            # PresenceSensor(d["coordinator"], d["home_id"], rid, name),
+            # WindowSensor(d["coordinator"], d["home_id"], rid, name),
             AnticipationSensor(d["coordinator"], d["home_id"], rid, name),
         ])
     async_add_entities(ent)

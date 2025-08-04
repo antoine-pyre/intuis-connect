@@ -1,47 +1,79 @@
-name: Build & Release Intuis Connect
+name: Release Intuis Connect
 
-# ------------------------------------------------------------------
-# Run *only* when a tag is pushed that starts with "v"
-# ------------------------------------------------------------------
 on:
   push:
-    tags:
-      - 'v*'              # any tag beginning with v
+    branches:
+      - main
 
 permissions:
-  contents: write          # needed for GitHub Releases
+  contents: write
   packages: read
 
 jobs:
   release:
+    # Don’t run this workflow if it was triggered by the bump commit
+    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
 
     steps:
-      # 1 ─ Checkout the code at the tag ref
-      - uses: actions/checkout@v4
+      # 1. Checkout full repo (tags too)
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2 ─ Read the version from manifest.json and compare to tag
+      # 2. Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      # 3. Bump patch version
+      - name: Bump patch version
+        id: bump
+        run: |
+          python3 scripts/bump_version.py
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add custom_components/intuis_connect/manifest.json
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }}"
+          git push origin HEAD:main
+
+      # 4. Extract bumped version
       - name: Extract version
         id: vars
         run: |
-          FILE_VERSION=$(jq -r '.version' custom_components/intuis_connect/manifest.json)
-          TAG_VERSION=${GITHUB_REF#refs/tags/v}
-          echo "file=$FILE_VERSION"  >> $GITHUB_OUTPUT
-          echo "tag=$TAG_VERSION"    >> $GITHUB_OUTPUT
-          if [ "$FILE_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::Tag version ($TAG_VERSION) does not match manifest.json version ($FILE_VERSION)"
-            exit 1
+          VERSION=$(jq -r .version custom_components/intuis_connect/manifest.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # 5. Build ZIP asset
+      - name: Build integration ZIP
+        run: |
+          cd custom_components/intuis_connect
+          zip -r ../../intuis_connect_${{ steps.vars.outputs.version }}.zip ./*
+          cd -
+
+      # 6. Create Git tag if it doesn't exist
+      - name: Create Tag
+        id: tag
+        run: |
+          TAG="v${{ steps.vars.outputs.version }}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
           fi
 
-      # 4 ─ Create / update GitHub Release
-      - name: Publish Release
+      # 7. Publish GitHub Release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}                  # e.g. v1.3.2
-          name: Intuis Connect ${{ steps.vars.outputs.tag }}  # nice title
-          body: |
-              ## Intuis Connect ${{ steps.vars.outputs.tag }}
-              - Version: ${{ steps.vars.outputs.file }}
-              - Release date: ${{ github.event.head_commit.timestamp }}
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Intuis Connect ${{ steps.vars.outputs.version }}
+          draft: false
+          prerelease: false
+          files: intuis_connect_${{ steps.vars.outputs.version }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
