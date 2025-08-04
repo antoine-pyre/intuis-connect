@@ -61,7 +61,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # ---------- setup API ----------------------------------------------------------
     session = async_get_clientsession(hass)
     intuis_api = IntuisAPI(session, home_id=entry.data["home_id"])
-    intuis_api.home_id = entry.data[CONF_HOME_ID]
+    intuis_api.home_id = entry.data["home_id"]
     intuis_api.refresh_token = entry.data[CONF_REFRESH_TOKEN]
 
     try:
@@ -84,9 +84,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
 
     # ---------- store everything ---------------------------------------------------
+    _LOGGER.debug("Storing data for entry %s", entry.entry_id)
     hass.data[DOMAIN][entry.entry_id] = {
         "api": intuis_api,
         "coordinator": coordinator,
+        "home_id": intuis_api.home_id,
+        "rooms": coordinator.data.get("rooms", {}),
+        "modules": coordinator.data["modules"],
     }
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)
 

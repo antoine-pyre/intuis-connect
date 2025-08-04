@@ -116,6 +116,7 @@ class IntuisData:
         _LOGGER.debug("Coordinator update completed")
         return {
             "id": self._api.home_id,
+            "home_id": self._api.home_id,
             "active_schedule_id": active_id,
             "rooms": data_by_room,
             "modules": modules,
