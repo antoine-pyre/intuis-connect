@@ -100,7 +100,7 @@ async def async_setup_entry(
 ) -> None:
     d = hass.data[DOMAIN][entry.entry_id]
     coordinator: IntuisDataUpdateCoordinator = d["coordinator"]
-    home_id = coordinator.data["id"]
+    home_id = d["api"].home_id
 
     ent: list[BinarySensorEntity] = []
     for room_id, room_data in coordinator.data["rooms"].items():

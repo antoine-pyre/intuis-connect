@@ -56,13 +56,14 @@ class IntuisConnectClimate(
     def __init__(
         self,
         coordinator: IntuisDataUpdateCoordinator,
+        home_id: str,
         room_id: str,
         room_name: str,
         api: IntuisAPI,
     ) -> None:
         """Initialize the climate entity."""
         super().__init__(coordinator)
-        self._home_id = coordinator.data["id"]
+        self._home_id = home_id
         self._room_id = room_id
         self._attr_name = room_name
         self._attr_unique_id = f"{self.coordinator.data['id']}_{self._room_id}"
@@ -192,9 +193,10 @@ async def async_setup_entry(
     d = hass.data[DOMAIN][entry.entry_id]
     api: IntuisAPI = d["api"]
     coordinator: IntuisDataUpdateCoordinator = d["coordinator"]
+    home_id = d["api"].home_id
     entities = []
     for room_id, room_name in coordinator.data["rooms"].items():
         entities.append(
-            IntuisConnectClimate(coordinator, room_id, room_name, api)
+            IntuisConnectClimate(coordinator, home_id, room_id, room_name, api)
         )
     async_add_entities(entities)
