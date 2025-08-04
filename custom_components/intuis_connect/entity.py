@@ -1,6 +1,10 @@
-from custom_components.intuis_connect import IntuisDataUpdateCoordinator
+from typing import Any
+
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+
 from custom_components.intuis_connect.data import IntuisRoom
 
+IntuisDataUpdateCoordinator = DataUpdateCoordinator[dict[str, Any]]
 
 class IntuisEntity:
     """Base class for Intuis entities."""
