@@ -10,10 +10,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import IntuisDataUpdateCoordinator
 from .data import IntuisRoom
 from .device import build_device_info
-from .entity import IntuisEntity
+from .entity import IntuisEntity, IntuisDataUpdateCoordinator
 from .helper import get_basic_utils, get_room
 
 

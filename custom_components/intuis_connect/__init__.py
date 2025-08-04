@@ -21,6 +21,7 @@ from .const import (
     CONF_REFRESH_TOKEN,
 )
 from .data import IntuisData, IntuisRoomDefinition
+from .entity import IntuisDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,7 +37,6 @@ ATTR_ROOM_ID = "room_id"
 
 CLEAR_OVERRIDE_SCHEMA = vol.Schema({vol.Required(ATTR_ROOM_ID): str})
 
-IntuisDataUpdateCoordinator = DataUpdateCoordinator[dict[str, Any]]
 
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
