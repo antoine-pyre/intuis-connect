@@ -230,7 +230,11 @@ class IntuisAPI:
         ) as resp:
             result = await resp.json()
         _LOGGER.debug("Home status response: %s", result)
-        return result
+        home = result.get("body", {}).get("home", {})
+        if not home:
+            _LOGGER.error("Home status response is empty or malformed: %s", result)
+            raise APIError("Empty home status response")
+        return home
 
     async def async_set_child_lock(self, module_id: str, locked: bool) -> None:
         """Set the child lock state for a module."""
