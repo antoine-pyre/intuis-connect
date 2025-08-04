@@ -182,6 +182,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
     d = hass.data[DOMAIN][entry.entry_id]
     api = d["api"]
     coordinator = d["coordinator"]
-    home_id = d["home_id"]
-    entities = [IntuisConnectClimate(coordinator, home_id, room_id, api) for room_id in d["rooms"]]
+    home_id = coordinator.data["id"]
+    entities = [
+        IntuisConnectClimate(coordinator, home_id, room_id, api)
+        for room_id in coordinator.data["rooms"]
+    ]
     async_add_entities(entities)
