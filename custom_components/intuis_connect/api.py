@@ -4,13 +4,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import aiohttp
 
 from .const import (
     BASE_URLS, AUTH_PATH, HOMESDATA_PATH, HOMESTATUS_PATH, SETSTATE_PATH, HOMEMEASURE_PATH,
-    CLIENT_ID, CLIENT_SECRET, AUTH_SCOPE, USER_PREFIX, APP_TYPE, APP_VERSION
+    CLIENT_ID, CLIENT_SECRET, AUTH_SCOPE, USER_PREFIX, APP_TYPE, APP_VERSION, ENERGY_BASE, SET_SCHEDULE_PATH,
+    DELETE_SCHEDULE_PATH, SWITCH_SCHEDULE_PATH, GET_SCHEDULE_PATH
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -235,3 +236,73 @@ class IntuisAPI:
             _LOGGER.debug("No measure data in response for room %s on date %s", room_id, date_iso)
             return 0.0
         return float(measures[0][1])
+
+    async def async_get_schedule(
+            self, home_id: str, schedule_id: int
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Fetch the full timetable for a given schedule.
+        Returns a dict { room_id: [ { id, start, end, temp }, … ], … }.
+        """
+        await self._ensure_token()
+        params = {"home_id": home_id, "schedule_id": schedule_id}
+        url = f"{ENERGY_BASE}{GET_SCHEDULE_PATH}"
+        async with self._session.get(url, params=params, timeout=10) as resp:
+            if resp.status != 200:
+                raise APIError(f"get_schedule failed (HTTP {resp.status})")
+            body = await resp.json()
+        rooms = {}
+        for room in body.get("rooms", []):
+            rid = room["room_id"]
+            rooms[rid] = room.get("slots", [])
+        return rooms
+
+    async def async_set_schedule_slot(
+            self,
+            home_id: str,
+            schedule_id: int,
+            room_id: str,
+            start: str,
+            end: str,
+            temperature: float,
+    ) -> None:
+        """Create or update a single timeslot in the given schedule."""
+        await self._ensure_token()
+        payload = {
+            "home_id": home_id,
+            "schedule_id": schedule_id,
+            "zones": [
+                {
+                    "room_id": room_id,
+                    "timetable": [
+                        {"start": start, "end": end, "temp": temperature}
+                    ],
+                }
+            ],
+        }
+        url = f"{ENERGY_BASE}{SET_SCHEDULE_PATH}"
+        async with self._session.post(url, json=payload, timeout=10) as resp:
+            if resp.status not in (200, 204):
+                raise APIError(f"set_schedule_slot failed (HTTP {resp.status})")
+
+    async def async_delete_schedule_slot(
+            self, home_id: str, slot_id: str
+    ) -> None:
+        """Delete a specific schedule slot by its ID."""
+        await self._ensure_token()
+        params = {"home_id": home_id, "slot_id": slot_id}
+        url = f"{ENERGY_BASE}{DELETE_SCHEDULE_PATH}"
+        async with self._session.delete(url, params=params, timeout=10) as resp:
+            if resp.status not in (200, 204):
+                raise APIError(f"delete_schedule_slot failed (HTTP {resp.status})")
+
+    async def async_switch_schedule(
+            self, home_id: str, schedule_id: int
+    ) -> None:
+        """Switch the active weekly schedule."""
+        await self._ensure_token()
+        payload = {"home_id": home_id, "schedule_id": schedule_id}
+        url = f"{ENERGY_BASE}{SWITCH_SCHEDULE_PATH}"
+        async with self._session.post(url, json=payload, timeout=10) as resp:
+            if resp.status not in (200, 204):
+                raise APIError(f"switch_schedule failed (HTTP {resp.status})")
