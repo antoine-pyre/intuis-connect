@@ -32,6 +32,7 @@ ATTR_ROOM_ID = "room_id"
 CLEAR_OVERRIDE_SCHEMA = vol.Schema({vol.Required(ATTR_ROOM_ID): str})
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    _LOGGER.debug("async_setup")
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -160,15 +161,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "rooms": rooms,
         "modules": coordinator.data["modules"],
     }
+    _LOGGER.debug("Stored data for entry %s", entry.entry_id)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # ---------- clear-override service --------------------------------------------
     @callback
     async def async_clear_override(call):
+        _LOGGER.debug("Clearing override for room %s", call.data[ATTR_ROOM_ID])
         room_id = call.data[ATTR_ROOM_ID]
         await api.async_set_room_state(room_id, "home")
         await coordinator.async_request_refresh()
+        _LOGGER.debug("Override cleared for room %s", room_id)
 
     hass.services.async_register(
         DOMAIN, SERVICE_CLEAR_OVERRIDE, async_clear_override, schema=CLEAR_OVERRIDE_SCHEMA
@@ -177,7 +181,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    _LOGGER.debug("Unloading entry %s", entry.entry_id)
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
+        _LOGGER.debug("Unloaded entry %s", entry.entry_id)
     return unload_ok

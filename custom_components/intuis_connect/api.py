@@ -50,6 +50,8 @@ class IntuisAPI:
         if self._expiry and asyncio.get_running_loop().time() > self._expiry - 60:
             _LOGGER.debug("Access token expired or about to expire, refreshing token")
             await self.async_refresh_access_token()
+        else:
+            _LOGGER.debug("Access token is valid")
 
     def _save_tokens(self, data: Dict[str, Any]):
         _LOGGER.debug("Saving tokens, expires in %s seconds", data.get("expires_in"))
@@ -78,14 +80,16 @@ class IntuisAPI:
                         _LOGGER.warning("Login failed on %s status %s", base, resp.status)
                         continue
                     data = await resp.json()
+                    if "access_token" in data:
+                        _LOGGER.debug("Login successful on %s", base)
+                        self._base_url = base
+                        self._save_tokens(data)
+                        break
+                    else:
+                        _LOGGER.warning("Login response on %s did not contain access_token", base)
             except aiohttp.ClientError as e:
                 _LOGGER.warning("Client error during login on %s: %s", base, e)
                 continue
-            if "access_token" in data:
-                _LOGGER.debug("Login successful on %s", base)
-                self._base_url = base
-                self._save_tokens(data)
-                break
         else:
             _LOGGER.error("Unable to log in on any cluster")
             raise CannotConnect("Unable to log in on any cluster")
@@ -115,8 +119,8 @@ class IntuisAPI:
                 _LOGGER.error("Token refresh failed with status %s", resp.status)
                 raise InvalidAuth("Token refresh failed")
             data = await resp.json()
-        _LOGGER.debug("Token refresh successful, new expiry in %s seconds", data.get("expires_in"))
-        self._save_tokens(data)
+            _LOGGER.debug("Token refresh successful, new expiry in %s seconds", data.get("expires_in"))
+            self._save_tokens(data)
 
     # ---------- data endpoints ---------------------------------------------------
     async def async_get_homes_data(self) -> Dict[str, Any]:
@@ -133,6 +137,9 @@ class IntuisAPI:
                 _LOGGER.error("Homes data request failed with status %s", resp.status)
                 raise APIError("homesdata failed")
             data = await resp.json()
+        if not data.get("body", {}).get("homes"):
+            _LOGGER.error("Homes data response is empty or malformed: %s", data)
+            raise APIError("Empty homesdata response")
         _LOGGER.debug("Homes data received: %s", data)
         home = data.get("body", {}).get("homes", [])[0]
         self.home_id = home["id"]
@@ -164,35 +171,20 @@ class IntuisAPI:
         await self._ensure_token()
         payload = {
             "app_type": APP_TYPE,
+            "app_version": APP_VERSION,
             "home": {
                 "id": self.home_id,
-                "modules": [
-                    {"id": module_id, "keypad_locked": 1 if locked else 0}
-                ],
+                "modules": [{"id": module_id, "keypad_locked": 1 if locked else 0}],
             },
         }
-        headers = {"Authorization": f"Bearer {self._access_token}"}
+        headers = {"Authorization": f"Bearer {self._access_token}", "Content-Type": "application/json"}
         async with self._session.post(
                 f"{self._base_url}{SETSTATE_PATH}", json=payload, headers=headers, timeout=10
         ) as resp:
             if resp.status not in (200, 204):
                 _LOGGER.error("Child-lock setstate failed with status %s", resp.status)
                 raise APIError(f"Child-lock failed ({resp.status})")
-
-    async def async_set_child_lock(self, room_id: str, locked: bool):
-        _LOGGER.debug("Setting child lock (duplicate) for room %s to %s", room_id, locked)
-        await self._ensure_token()
-        payload = {
-            "app_type": APP_TYPE,
-            "app_version": APP_VERSION,
-            "home": {"id": self.home_id, "modules": [{"id": room_id, "keypad_lock": 1 if locked else 0}]},
-        }
-        headers = {"Authorization": f"Bearer {self._access_token}", "Content-Type": "application/json"}
-        async with self._session.post(f"{self._base_url}{SETSTATE_PATH}", headers=headers, json=payload,
-                                      timeout=10) as resp:
-            if resp.status not in (200, 204):
-                _LOGGER.error("Child-lock duplicate setstate failed with status %s", resp.status)
-                raise APIError("child-lock setstate failed")
+            _LOGGER.info("Child lock for module %s set to %s", module_id, locked)
 
     async def async_set_room_state(self, room_id: str, mode: str, temp: float | None = None,
                                    duration: int | None = None):
@@ -216,6 +208,7 @@ class IntuisAPI:
             if resp.status not in (200, 204):
                 _LOGGER.error("Set room state failed with status %s", resp.status)
                 raise APIError("setstate failed")
+            _LOGGER.info("Room %s state set to mode=%s, temp=%s", room_id, mode, temp)
 
     async def async_get_home_measure(self, room_id: str, date_iso: str) -> float:
         _LOGGER.debug("Fetching home measure for room %s on date %s", room_id, date_iso)
@@ -238,4 +231,7 @@ class IntuisAPI:
             data = await resp.json()
         _LOGGER.debug("Home measure data received: %s", data)
         measures = data.get("body", {}).get("measure", [])
-        return float(measures[0][1]) if measures else 0.0
+        if not measures:
+            _LOGGER.debug("No measure data in response for room %s on date %s", room_id, date_iso)
+            return 0.0
+        return float(measures[0][1])
