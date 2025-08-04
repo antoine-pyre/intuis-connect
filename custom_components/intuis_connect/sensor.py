@@ -76,9 +76,9 @@ class IntuisSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float | int | None:
         """Return the current value of this sensor."""
-        rooms = self.coordinator.data.get("rooms", {})
-        room = rooms.get(self._room_id)
-        _LOGGER.debug("Fetching %s for room %s: %s", self._metric, self._room_id, room.get(self._metric))
+        rooms = self.coordinator.data["rooms"]
+        room = rooms[self._room_id]
+        _LOGGER.debug("Fetching %s for room %s: %s", self._metric, self._room_id, room)
         if room is None:
             return None
         return room.get(self._metric)
