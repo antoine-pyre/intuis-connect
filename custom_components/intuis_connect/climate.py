@@ -62,7 +62,9 @@ class IntuisConnectClimate(
             api: IntuisAPI,
     ) -> None:
         """Initialize the climate entity."""
-        super().__init__(coordinator, room, home_id)
+        CoordinatorEntity.__init__(self, coordinator)
+        ClimateEntity.__init__(self)
+        IntuisEntity.__init__(self, coordinator, room, home_id)
         self._home_id = home_id
         self._attr_name = room.name
         self._attr_unique_id = f"{self.coordinator.data['id']}_{self._room.id}"

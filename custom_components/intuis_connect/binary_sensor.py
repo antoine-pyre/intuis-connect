@@ -26,7 +26,9 @@ class _Base(CoordinatorEntity[IntuisDataUpdateCoordinator], BinarySensorEntity, 
             uid: str,
             device_class: BinarySensorDeviceClass,
     ) -> None:
-        super().__init__(coordinator)
+        CoordinatorEntity.__init__(self, coordinator)
+        BinarySensorEntity.__init__(self)
+        IntuisEntity.__init__(self, coordinator, room, home_id)
         self._coordinator = coordinator
         self._attr_name = name
         self._attr_unique_id = uid
