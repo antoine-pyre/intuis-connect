@@ -14,15 +14,6 @@ from .helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
 
-# Define the metrics you want: key in data, human label, unit, device_class string
-SENSOR_TYPES: dict[str, tuple[str, str, str]] = {
-    "temperature": ("Temperature", UnitOfTemperature.CELSIUS, "temperature"),
-    "target_temperature": ("Setpoint", UnitOfTemperature.CELSIUS, None),
-    "muller_type": ("Device type", TEXT_SENSOR, None),
-    "energy": ("Energy Today", UnitOfEnergy.KILO_WATT_HOUR, "energy"),
-    "minutes": ("Heating Minutes", "min", None),
-}
-
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up Intuis Connect sensors from a config entry."""
@@ -30,18 +21,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     entities: list[IntuisSensor] = []
     for room_id in rooms:
-        for metric, (label, unit, device_class) in SENSOR_TYPES.items():
-            entities.append(
-                IntuisSensor(
-                    coordinator,
-                    home_id,
-                    rooms.get(room_id),
-                    metric,
-                    label,
-                    unit,
-                    device_class,
-                )
-            )
+        entities.append(IntuisTemperatureSensor(coordinator, home_id, rooms.get(room_id)))
+        entities.append(IntuisTargetTemperatureSensor(coordinator, home_id, rooms.get(room_id)))
+        entities.append(IntuisMullerTypeSensor(coordinator, home_id, rooms.get(room_id)))
+        entities.append(IntuisEnergySensor(coordinator, home_id, rooms.get(room_id)))
+        entities.append(IntuisMinutesSensor(coordinator, home_id, rooms.get(room_id)))
     async_add_entities(entities)
 
 
@@ -74,14 +58,136 @@ class IntuisSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float | int | None:
         """Return the current value of this sensor."""
-        rooms = self.coordinator.data["rooms"]
-        room = rooms[self._room_id]
-        _LOGGER.debug("Fetching %s for room %s: %s", self._metric, self._room_id, room)
-        if room is None:
-            return None
-        return room.get(self._metric)
+        raise NotImplementedError(
+            f"Subclasses of IntuisSensor must implement native_value for {self._metric}"
+        )
 
     @property
     def device_info(self):
         """Return device registry info."""
         return self._attr_device_info
+
+class IntuisMullerTypeSensor(IntuisSensor):
+    """Specialized sensor for device type."""
+
+    def __init__(self, coordinator, home_id: str, room: IntuisRoom) -> None:
+        """Initialize the muller type sensor."""
+        super().__init__(
+            coordinator,
+            home_id,
+            room,
+            "muller_type",
+            "Device Type",
+            TEXT_SENSOR,
+            None,
+        )
+        self._attr_icon = "mdi:device-hub"
+
+    @property
+    def native_value(self) -> str:
+        """Return the current device type."""
+        # Ensure we handle None values gracefully
+        muller_type = self._room.muller_type
+        if muller_type is None:
+            return ""
+        return muller_type
+
+class IntuisTargetTemperatureSensor(IntuisSensor):
+    """Specialized sensor for target temperature."""
+
+    def __init__(self, coordinator, home_id: str, room: IntuisRoom) -> None:
+        """Initialize the target temperature sensor."""
+        super().__init__(
+            coordinator,
+            home_id,
+            room,
+            "target_temperature",
+            "Setpoint",
+            UnitOfTemperature.CELSIUS,
+            None,
+        )
+        self._attr_icon = "mdi:thermometer"
+
+    @property
+    def native_value(self) -> float:
+        """Return the current target temperature."""
+        # Ensure we handle None values gracefully
+        target_temp = self._room.target_temperature
+        if target_temp is None:
+            return 0.0
+        return target_temp
+
+class IntuisTemperatureSensor(IntuisSensor):
+    """Specialized sensor for temperature data."""
+
+    def __init__(self, coordinator, home_id: str, room: IntuisRoom) -> None:
+        """Initialize the temperature sensor."""
+        super().__init__(
+            coordinator,
+            home_id,
+            room,
+            "temperature",
+            "Temperature",
+            UnitOfTemperature.CELSIUS,
+            "temperature",
+        )
+        self._attr_icon = "mdi:thermometer"
+
+    @property
+    def native_value(self) -> float:
+        """Return the current temperature value."""
+        # Ensure we handle None values gracefully
+        temperature = self._room.temperature
+        if temperature is None:
+            return 0.0
+        return temperature
+
+class IntuisMinutesSensor(IntuisSensor):
+    """Specialized sensor for heating minutes."""
+
+    def __init__(self, coordinator, home_id: str, room: IntuisRoom) -> None:
+        """Initialize the minutes sensor."""
+        super().__init__(
+            coordinator,
+            home_id,
+            room,
+            "minutes",
+            "Heating Minutes",
+            "min",
+            None,
+        )
+        self._attr_icon = "mdi:timer"
+
+    @property
+    def native_value(self) -> int:
+        """Return the current heating minutes value."""
+        # Ensure we handle None values gracefully
+        minutes = self._room.minutes
+        if minutes is None:
+            return 0
+        return minutes
+
+class IntuisEnergySensor(IntuisSensor):
+    """Specialized sensor for energy data."""
+
+    def __init__(self, coordinator, home_id: str, room: IntuisRoom) -> None:
+        """Initialize the energy sensor."""
+        super().__init__(
+            coordinator,
+            home_id,
+            room,
+            "energy",
+            "Energy Today",
+            UnitOfEnergy.KILO_WATT_HOUR,
+            "energy",
+        )
+        self._attr_icon = "mdi:flash"
+
+    @property
+    def native_value(self) -> float:
+        """Return the current energy value."""
+        # Ensure we handle None values gracefully
+        energy = self._room.energy
+        if energy is None:
+            return 0.0
+        return energy
