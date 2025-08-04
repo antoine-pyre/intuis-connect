@@ -11,8 +11,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import IntuisDataUpdateCoordinator
-from .data import IntuisRoom, IntuisEntity
+from .data import IntuisRoom
 from .device import build_device_info
+from .entity import IntuisEntity
 from .helper import get_basic_utils, get_room
 
 
