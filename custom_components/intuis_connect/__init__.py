@@ -9,11 +9,12 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .api import IntuisAPI
+from .api import IntuisAPI, InvalidAuth, CannotConnect
 from .const import (
     DOMAIN,
     CONF_HOME_ID,
@@ -59,12 +60,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # ---------- setup API ----------------------------------------------------------
     session = async_get_clientsession(hass)
-    api = IntuisAPI(session)
-    api.home_id = entry.data[CONF_HOME_ID]
-    api.refresh_token = entry.data[CONF_REFRESH_TOKEN]
+    intuis_api = IntuisAPI(session, home_id=entry.data["home_id"])
+    intuis_api.home_id = entry.data[CONF_HOME_ID]
+    intuis_api.refresh_token = entry.data[CONF_REFRESH_TOKEN]
+
+    try:
+        await intuis_api.async_refresh_access_token()
+    except InvalidAuth as err:
+        raise ConfigEntryAuthFailed from err
+    except CannotConnect as err:
+        raise ConfigEntryNotReady from err
 
     # ---------- setup coordinator --------------------------------------------------
-    intuis_data = IntuisData(api)
+    intuis_data = IntuisData(intuis_api)
 
     coordinator: IntuisDataUpdateCoordinator = DataUpdateCoordinator(
         hass,
@@ -77,7 +85,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # ---------- store everything ---------------------------------------------------
     hass.data[DOMAIN][entry.entry_id] = {
-        "api": api,
+        "api": intuis_api,
         "coordinator": coordinator,
     }
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)
