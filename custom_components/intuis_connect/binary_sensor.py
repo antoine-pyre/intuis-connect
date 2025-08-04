@@ -23,7 +23,7 @@ class _Base(CoordinatorEntity[IntuisDataUpdateCoordinator], BinarySensorEntity, 
             home_id: str,
             room: IntuisRoom,
             name: str,
-            uid: str,
+            metric: str,
             device_class: BinarySensorDeviceClass,
     ) -> None:
         CoordinatorEntity.__init__(self, coordinator)
@@ -31,7 +31,7 @@ class _Base(CoordinatorEntity[IntuisDataUpdateCoordinator], BinarySensorEntity, 
         IntuisEntity.__init__(self, coordinator, room, home_id)
         self._coordinator = coordinator
         self._attr_name = name
-        self._attr_unique_id = uid
+        self._attr_unique_id = f"{self._get_id_prefix()}_{metric}"
         self._attr_device_class = device_class
         self._dev = build_device_info(home_id, room.id, room.name)
 
@@ -48,7 +48,7 @@ class PresenceSensor(_Base):
             r: IntuisRoom,
     ) -> None:
         super().__init__(
-            coordinator, h, r, f"{r.name} Presence", f"{r.id}_presence", BinarySensorDeviceClass.MOTION
+            coordinator, h, r, f"{r.name} Presence", "presence", BinarySensorDeviceClass.MOTION
         )
 
     @property
@@ -64,7 +64,7 @@ class WindowSensor(_Base):
             r: IntuisRoom,
     ) -> None:
         super().__init__(
-            coordinator, h, r, f"{r.name} Open Window", f"{r.id}_window", BinarySensorDeviceClass.WINDOW
+            coordinator, h, r, f"{r.name} Open Window", "window", BinarySensorDeviceClass.WINDOW
         )
 
     @property
@@ -84,7 +84,7 @@ class AnticipationSensor(_Base):
             h,
             r,
             f"{r.name} Anticipation",
-            f"{r.id}_anticipation",
+            "anticipation",
             BinarySensorDeviceClass.HEAT,
         )
 
@@ -105,7 +105,7 @@ class BoostStatusSensor(_Base):
             h,
             r,
             f"{r.name} Boost Status",
-            f"{r.id}_boost_status",
+            "boost_status",
             BinarySensorDeviceClass.HEAT,
         )
 

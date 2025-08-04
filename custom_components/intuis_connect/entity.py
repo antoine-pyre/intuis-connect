@@ -18,3 +18,6 @@ class IntuisEntity:
         """Get the room object by ID."""
         rooms = self._coordinator.data.get("rooms", {})
         return rooms.get(self._room.id)
+
+    def _get_id_prefix(self):
+        return f"intuis_{self._home_id}_{self._room.id}"

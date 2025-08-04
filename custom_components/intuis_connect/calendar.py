@@ -39,7 +39,7 @@ class IntuisScheduleCalendar(
 
         self._api = api
         self._attr_name = f"{room.name} Schedule"
-        self._attr_unique_id = f"{home_id}_{room.id}_schedule"
+        self._attr_unique_id = f"{self._get_id_prefix()}_calendar"
 
     @property
     def event(self) -> CalendarEvent | None:

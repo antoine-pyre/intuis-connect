@@ -67,7 +67,7 @@ class IntuisConnectClimate(
         IntuisEntity.__init__(self, coordinator, room, home_id)
         self._home_id = home_id
         self._attr_name = room.name
-        self._attr_unique_id = f"{self.coordinator.data['id']}_{self._room.id}"
+        self._attr_unique_id = f"{self._get_id_prefix()}_climate"
         self._api = api
         self._attr_assumed_state = True
         self._attr_hvac_mode: HVACMode | None = None
