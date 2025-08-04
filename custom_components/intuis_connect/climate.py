@@ -119,45 +119,58 @@ class IntuisConnectClimate(CoordinatorEntity, ClimateEntity):
 
         self.async_write_ha_state()
 
-        # Determine API mode and target temperature based on HVAC mode
-        api_mode = None
-        target_temp = None  # Default to 20 if no target temp set
-        if hvac_mode == HVACMode.OFF:
-            api_mode = API_MODE_OFF
-        elif hvac_mode == HVACMode.AUTO:
-            api_mode = API_MODE_HOME
-        elif hvac_mode == HVACMode.HEAT:
-            api_mode = API_MODE_MANUAL
-            target_temp = float(self.target_temperature or 20.0)
-        await self._api.async_set_room_state(self._room_id, api_mode, target_temp)
+        async def _do_set_hvac_mode():
+            # Determine API mode and target temperature based on HVAC mode
+            api_mode = None
+            target_temp = None  # Default to 20 if no target temp set
+            if hvac_mode == HVACMode.OFF:
+                api_mode = API_MODE_OFF
+            elif hvac_mode == HVACMode.AUTO:
+                api_mode = API_MODE_HOME
+            elif hvac_mode == HVACMode.HEAT:
+                api_mode = API_MODE_MANUAL
+                target_temp = float(self.target_temperature or 20.0)
+            try:
+                await self._api.async_set_room_state(self._room_id, api_mode, target_temp)
+            except Exception as e:
+                _LOGGER.error("Failed to set HVAC mode %s for room %s: %s", hvac_mode, self._room_id, e)
+            finally:
+                await self._request_refresh()
 
-        await self._request_refresh()
+        self.hass.async_create_task(_do_set_hvac_mode())
 
     async def async_set_preset_mode(self, preset_mode: str):
         self._attr_preset_mode = preset_mode
         self.async_write_ha_state()
 
-        api_mode = None
-        temp = None
-        duration = None
-
-        if preset_mode == PRESET_SCHEDULE:
-            api_mode = API_MODE_HOME
-            temp = None  # No specific temperature for schedule mode
+        async def _do_set_preset_mode():
+            api_mode = None
+            temp = None
             duration = None
-            self._attr_hvac_mode = HVACMode.AUTO
-        elif preset_mode == PRESET_AWAY:
-            api_mode = API_MODE_AWAY
-            temp = DEFAULT_AWAY_TEMP
-            duration = DEFAULT_AWAY_DURATION
-            self._attr_hvac_mode = HVACMode.HEAT
-        elif preset_mode == PRESET_BOOST:
-            api_mode = API_MODE_BOOST
-            temp = DEFAULT_BOOST_TEMP
-            duration = DEFAULT_BOOST_DURATION
-            self._attr_hvac_mode = HVACMode.HEAT
-        await self._api.async_set_room_state(self._room_id, api_mode, temp, duration)
-        await self._request_refresh()
+
+            if preset_mode == PRESET_SCHEDULE:
+                api_mode = API_MODE_HOME
+                temp = None  # No specific temperature for schedule mode
+                duration = None
+                self._attr_hvac_mode = HVACMode.AUTO
+            elif preset_mode == PRESET_AWAY:
+                api_mode = API_MODE_AWAY
+                temp = DEFAULT_AWAY_TEMP
+                duration = DEFAULT_AWAY_DURATION
+                self._attr_hvac_mode = HVACMode.HEAT
+            elif preset_mode == PRESET_BOOST:
+                api_mode = API_MODE_BOOST
+                temp = DEFAULT_BOOST_TEMP
+                duration = DEFAULT_BOOST_DURATION
+                self._attr_hvac_mode = HVACMode.HEAT
+            try:
+                await self._api.async_set_room_state(self._room_id, api_mode, temp, duration)
+            except Exception as e:
+                _LOGGER.error("Failed to set preset mode %s for room %s: %s", preset_mode, self._room_id, e)
+            finally:
+                await self._request_refresh()
+        self.hass.async_create_task(_do_set_preset_mode())
+
 
     async def _request_refresh(self):
         """Request a refresh of the coordinator data."""
