@@ -75,7 +75,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # build a static map of room_id → room_name
     rooms = {
         r["id"]: r.get("name", f"Room {r['id']}")
-        for r in home_data["body"]["homes"][0]["rooms"]
+        for r in home_data["rooms"]
     }
 
     # ---------- setup coordinator --------------------------------------------------
