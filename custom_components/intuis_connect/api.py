@@ -10,8 +10,8 @@ import aiohttp
 
 from .const import (
     BASE_URLS, AUTH_PATH, HOMESDATA_PATH, HOMESTATUS_PATH, SETSTATE_PATH, HOMEMEASURE_PATH,
-    CLIENT_ID, CLIENT_SECRET, AUTH_SCOPE, USER_PREFIX, APP_TYPE, APP_VERSION, ENERGY_BASE, SET_SCHEDULE_PATH,
-    DELETE_SCHEDULE_PATH, SWITCH_SCHEDULE_PATH, GET_SCHEDULE_PATH
+    CLIENT_ID, CLIENT_SECRET, AUTH_SCOPE, USER_PREFIX, APP_TYPE, APP_VERSION,
+    DEFAULT_MANUAL_DURATION
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,6 +42,16 @@ class IntuisAPI:
         self._expiry: float | None = None
         _LOGGER.debug("IntuisAPI initialized with home_id=%s", home_id)
 
+    @property
+    def refresh_token(self) -> str | None:
+        """Return the current refresh token."""
+        return self._refresh_token
+
+    @refresh_token.setter
+    def refresh_token(self, value: str):
+        """Set the refresh token."""
+        self._refresh_token = value
+
     # ---------- internal helpers ------------------------------------------------
     async def _ensure_token(self):
         _LOGGER.debug("Ensuring access token is valid")
@@ -59,6 +69,40 @@ class IntuisAPI:
         self._access_token = data["access_token"]
         self._refresh_token = data.get("refresh_token")
         self._expiry = asyncio.get_running_loop().time() + data.get("expires_in", 10800)
+
+    async def _async_request(
+        self, method: str, path: str, retry: bool = True, **kwargs
+    ) -> aiohttp.ClientResponse:
+        """Make a request and handle token refresh."""
+        await self._ensure_token()
+        headers = kwargs.pop("headers", {})
+        headers["Authorization"] = f"Bearer {self._access_token}"
+
+        url = f"{self._base_url}{path}"
+        _LOGGER.debug("Making API request: %s %s", method, url)
+
+        try:
+            resp = await self._session.request(
+                method, url, headers=headers, timeout=10, **kwargs
+            )
+
+            if resp.status == 401 and retry:
+                _LOGGER.warning(
+                    "Request unauthorized (401), refreshing token and retrying."
+                )
+                await self.async_refresh_access_token()
+                # Call self again, but without retry to avoid infinite loop
+                return await self._async_request(method, path, retry=False, **kwargs)
+
+            resp.raise_for_status()
+            return resp
+
+        except aiohttp.ClientResponseError as e:
+            _LOGGER.error("API request failed for %s: %s", path, e)
+            raise APIError(f"Request failed for {path}: {e.status}") from e
+        except aiohttp.ClientError as e:
+            _LOGGER.error("Cannot connect to API for %s: %s", path, e)
+            raise CannotConnect(f"Cannot connect for {path}") from e
 
     # ---------- auth ------------------------------------------------------------
     async def async_login(self, username: str, password: str) -> str:
@@ -126,18 +170,9 @@ class IntuisAPI:
     # ---------- data endpoints ---------------------------------------------------
     async def async_get_homes_data(self) -> Dict[str, Any]:
         _LOGGER.debug("Fetching homes data from %s", self._base_url + HOMESDATA_PATH)
-        await self._ensure_token()
-        headers = {"Authorization": f"Bearer {self._access_token}"}
-        async with self._session.get(f"{self._base_url}{HOMESDATA_PATH}", headers=headers, timeout=10) as resp:
-            if resp.status == 401:
-                _LOGGER.warning("Homes data request unauthorized, refreshing token and retrying")
-                await self.async_refresh_access_token()
-                headers["Authorization"] = f"Bearer {self._access_token}"
-                resp = await self._session.get(f"{self._base_url}{HOMESDATA_PATH}", headers=headers, timeout=10)
-            if resp.status != 200:
-                _LOGGER.error("Homes data request failed with status %s", resp.status)
-                raise APIError("homesdata failed")
+        async with await self._async_request("get", HOMESDATA_PATH) as resp:
             data = await resp.json()
+
         if not data.get("body", {}).get("homes"):
             _LOGGER.error("Homes data response is empty or malformed: %s", data)
             raise APIError("Empty homesdata response")
@@ -150,26 +185,14 @@ class IntuisAPI:
 
     async def async_get_home_status(self) -> Dict[str, Any]:
         _LOGGER.debug("Fetching home status for home_id=%s", self.home_id)
-        await self._ensure_token()
-        headers = {"Authorization": f"Bearer {self._access_token}"}
         payload = {"home_id": self.home_id}
-        async with self._session.post(f"{self._base_url}{HOMESTATUS_PATH}", headers=headers, data=payload,
-                                      timeout=10) as resp:
-            if resp.status == 401:
-                await self.async_refresh_access_token()
-                headers["Authorization"] = f"Bearer {self._access_token}"
-                resp = await self._session.post(f"{self._base_url}{HOMESTATUS_PATH}", headers=headers, data=payload,
-                                                timeout=10)
-            if resp.status != 200:
-                _LOGGER.error("Home status request failed with status %s", resp.status)
-                raise APIError("homestatus failed")
+        async with await self._async_request("post", HOMESTATUS_PATH, data=payload) as resp:
             result = await resp.json()
         _LOGGER.debug("Home status response: %s", result)
         return result
 
     async def async_set_child_lock(self, module_id: str, locked: bool):
         _LOGGER.debug("Setting child lock for module %s to %s", module_id, locked)
-        await self._ensure_token()
         payload = {
             "app_type": APP_TYPE,
             "app_version": APP_VERSION,
@@ -178,43 +201,40 @@ class IntuisAPI:
                 "modules": [{"id": module_id, "keypad_locked": 1 if locked else 0}],
             },
         }
-        headers = {"Authorization": f"Bearer {self._access_token}", "Content-Type": "application/json"}
-        async with self._session.post(
-                f"{self._base_url}{SETSTATE_PATH}", json=payload, headers=headers, timeout=10
-        ) as resp:
-            if resp.status not in (200, 204):
-                _LOGGER.error("Child-lock setstate failed with status %s", resp.status)
-                raise APIError(f"Child-lock failed ({resp.status})")
-            _LOGGER.info("Child lock for module %s set to %s", module_id, locked)
+        await self._async_request(
+            "post",
+            SETSTATE_PATH,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        _LOGGER.info("Child lock for module %s set to %s", module_id, locked)
 
     async def async_set_room_state(self, room_id: str, mode: str, temp: float | None = None,
                                    duration: int | None = None):
         _LOGGER.debug("Setting room state for room %s: mode=%s, temp=%s, duration=%s", room_id, mode, temp, duration)
         """Send setstate command for one room."""
-        await self._ensure_token()
         room_payload: Dict[str, Any] = {"id": room_id, "therm_setpoint_mode": mode}
         if mode == "manual":
             if temp is None:
                 raise APIError("Manual mode requires temperature")
-            end = int(time.time()) + (duration or 120) * 60
+            end = int(time.time()) + (duration or DEFAULT_MANUAL_DURATION) * 60
             room_payload.update({"therm_setpoint_temperature": float(temp), "therm_setpoint_end_time": end})
         payload = {
             "app_type": APP_TYPE,
             "app_version": APP_VERSION,
             "home": {"id": self.home_id, "rooms": [room_payload], "timezone": self.home_timezone},
         }
-        headers = {"Authorization": f"Bearer {self._access_token}", "Content-Type": "application/json"}
-        async with self._session.post(f"{self._base_url}{SETSTATE_PATH}", headers=headers, json=payload,
-                                      timeout=10) as resp:
-            if resp.status not in (200, 204):
-                _LOGGER.error("Set room state failed with status %s", resp.status)
-                raise APIError("setstate failed")
-            _LOGGER.info("Room %s state set to mode=%s, temp=%s", room_id, mode, temp)
+        await self._async_request(
+            "post",
+            SETSTATE_PATH,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        _LOGGER.info("Room %s state set to mode=%s, temp=%s", room_id, mode, temp)
 
     async def async_get_home_measure(self, room_id: str, date_iso: str) -> float:
         _LOGGER.debug("Fetching home measure for room %s on date %s", room_id, date_iso)
         """Return kWh for given room and date (YYYY-MM-DD) or 0.0 on failure."""
-        await self._ensure_token()
         payload = {
             "home_id": self.home_id,
             "room_id": room_id,
@@ -223,19 +243,25 @@ class IntuisAPI:
             "date_begin": date_iso,
             "date_end": date_iso,
         }
-        headers = {"Authorization": f"Bearer {self._access_token}"}
-        async with self._session.post(f"{self._base_url}{HOMEMEASURE_PATH}", headers=headers, data=payload,
-                                      timeout=10) as resp:
-            if resp.status != 200:
-                _LOGGER.warning("Home measure request failed with status %s, returning 0.0", resp.status)
+        try:
+            async with await self._async_request(
+                "post", HOMEMEASURE_PATH, data=payload
+            ) as resp:
+                data = await resp.json()
+            _LOGGER.debug("Home measure data received: %s", data)
+            measures = data.get("body", {}).get("measure", [])
+            if not measures:
+                _LOGGER.debug("No measure data in response for room %s on date %s", room_id, date_iso)
                 return 0.0
-            data = await resp.json()
-        _LOGGER.debug("Home measure data received: %s", data)
-        measures = data.get("body", {}).get("measure", [])
-        if not measures:
-            _LOGGER.debug("No measure data in response for room %s on date %s", room_id, date_iso)
+            return float(measures[0][1])
+        except APIError:
+            _LOGGER.warning(
+                "Home measure request failed for room %s on date %s, returning 0.0",
+                room_id,
+                date_iso,
+                exc_info=True,
+            )
             return 0.0
-        return float(measures[0][1])
 
     async def async_get_schedule(
             self, home_id: str, schedule_id: int
@@ -306,3 +332,4 @@ class IntuisAPI:
         async with self._session.post(url, json=payload, timeout=10) as resp:
             if resp.status not in (200, 204):
                 raise APIError(f"switch_schedule failed (HTTP {resp.status})")
+
