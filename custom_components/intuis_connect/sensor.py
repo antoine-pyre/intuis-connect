@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.goodwe.sensor import TEXT_SENSOR
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import UnitOfTemperature, UnitOfEnergy
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -40,7 +39,7 @@ class IntuisSensor(CoordinatorEntity, SensorEntity, IntuisEntity):
             room: IntuisRoom,
             metric: str,
             label: str,
-            unit: str,
+            unit: str | None,
             device_class: str | None,
     ) -> None:
         """Initialize the sensor."""
@@ -68,6 +67,7 @@ class IntuisSensor(CoordinatorEntity, SensorEntity, IntuisEntity):
         """Return device registry info."""
         return self._attr_device_info
 
+
 class IntuisMullerTypeSensor(IntuisSensor):
     """Specialized sensor for device type."""
 
@@ -79,8 +79,8 @@ class IntuisMullerTypeSensor(IntuisSensor):
             room,
             "muller_type",
             "Device Type",
-            TEXT_SENSOR,
-            None,
+            unit=None,
+            device_class=None,
         )
         self._attr_icon = "mdi:device-hub"
         self._attr_available = False
@@ -93,6 +93,7 @@ class IntuisMullerTypeSensor(IntuisSensor):
         if muller_type is None:
             return ""
         return muller_type
+
 
 class IntuisTargetTemperatureSensor(IntuisSensor):
     """Specialized sensor for target temperature."""
@@ -119,6 +120,7 @@ class IntuisTargetTemperatureSensor(IntuisSensor):
             return 0.0
         return target_temp
 
+
 class IntuisTemperatureSensor(IntuisSensor):
     """Specialized sensor for temperature data."""
 
@@ -144,6 +146,7 @@ class IntuisTemperatureSensor(IntuisSensor):
             return 0.0
         return temperature
 
+
 class IntuisMinutesSensor(IntuisSensor):
     """Specialized sensor for heating minutes."""
 
@@ -168,6 +171,7 @@ class IntuisMinutesSensor(IntuisSensor):
         if minutes is None:
             return 0
         return minutes
+
 
 class IntuisEnergySensor(IntuisSensor):
     """Specialized sensor for energy data."""
