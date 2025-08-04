@@ -36,6 +36,7 @@ from .const import (
     PRESET_SCHEDULE,
 )
 from .device import build_device_info
+from .helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -190,12 +191,10 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up the climate entities."""
-    d = hass.data[DOMAIN][entry.entry_id]
-    api: IntuisAPI = d["api"]
-    coordinator: IntuisDataUpdateCoordinator = d["coordinator"]
-    home_id = d["api"].home_id
+    coordinator, home_id, rooms, api = get_basic_utils(hass, entry)
+
     entities = []
-    for room_id, room_name in coordinator.data["rooms"].items():
+    for room_id, room_name in rooms:
         entities.append(
             IntuisConnectClimate(coordinator, home_id, room_id, room_name, api)
         )

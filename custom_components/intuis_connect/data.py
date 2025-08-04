@@ -9,10 +9,12 @@ from .api import IntuisAPI
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class IntuisRoomDefinition:
     """Class to define a room in the Intuis Connect system."""
 
-    def __init__(self, id: str, name: str, type: str, module_ids: list[str] = None, modules: list[dict[str, Any]] = None, therm_relay: dict[str, Any] = None) -> None:
+    def __init__(self, id: str, name: str, type: str, module_ids: list[str] = None,
+                 modules: list[dict[str, Any]] = None, therm_relay: dict[str, Any] = None) -> None:
         """Initialize the room definition."""
         self.id = id
         self.name = name
@@ -37,6 +39,54 @@ class IntuisRoomDefinition:
             therm_relay=data.get("therm_relay")
         )
 
+
+class IntuisRoom:
+    """Class to represent a room in the Intuis Connect system."""
+
+    heating: bool
+    minutes: int = 0
+    energy: float = 0.0
+
+    def __init__(self, definition: IntuisRoomDefinition, id: str, name: str, mode: str, target_temperature: float,
+                 temperature: float, heating: bool, presence: bool, open_window: bool, anticipation: bool,
+                 muller_type: str, boost_status: str) -> None:
+        """Initialize the room with its definition."""
+        self.definition = definition
+        self.id = id
+        self.name = name
+        self.mode = mode
+        self.target_temperature = target_temperature
+        self.temperature = temperature
+        self.heating = heating
+        self.presence = presence
+        self.open_window = open_window
+        self.anticipation = anticipation
+        self.muller_type = muller_type
+        self.boost_status = boost_status
+
+    @staticmethod
+    def from_dict(definition: IntuisRoomDefinition, data: dict[str, Any]) -> IntuisRoom:
+        """Create a room from a dictionary and its definition."""
+        return IntuisRoom(
+            definition=definition,
+            id=data["id"],
+            name=data["name"],
+            mode=data.get("mode", "auto"),
+            target_temperature=data.get("target_temperature", 0.0),
+            temperature=data.get("temperature", 0.0),
+            heating=data.get("heating", False),
+            presence=data.get("presence", False),
+            open_window=data.get("open_window", False),
+            anticipation=data.get("anticipation", False),
+            muller_type=data.get("muller_type", ""),
+            boost_status=data.get("boost_status", "disabled")
+        )
+
+    def __repr__(self) -> str:
+        """Return a string representation of the room."""
+        return f"IntuisRoom(definition={self.definition}, id={self.id}, name={self.name}, mode={self.mode}, target_temperature={self.target_temperature}, temperature={self.temperature}, heating={self.heating}, presence={self.presence}, open_window={self.open_window}, anticipation={self.anticipation}, muller_type={self.muller_type}, boost_status={self.boost_status})"
+
+
 class IntuisData:
     """Class to handle data fetching and processing for the Intuis Connect integration."""
 
@@ -57,32 +107,23 @@ class IntuisData:
         rooms_raw: list[dict[str, Any]] = home.get("rooms", [])
 
         # --- process rooms ---
-        data_by_room: dict[str, dict[str, Any]] = {}
+        data_by_room: dict[str, IntuisRoom] = {}
         for room in rooms_raw:
             rid = room["id"]
-            info: dict[str, Any] = {
-                "id": rid,
-                "name": self._rooms_definitions.get(rid).name,
-                "mode": room.get("therm_setpoint_mode"),
-                "target_temperature": room.get("therm_setpoint_temperature"),
-                "temperature": room.get("therm_measured_temperature"),
-                "heating": room.get("heating_status", 0) == 1,
-                "presence": room.get("presence", False),
-                "open_window": room.get("open_window", False),
-                "anticipation": room.get("anticipating", False),
-                "muller_type": room.get("muller_type", ""),
-                "boost_status": room.get("boost_status", "disabled"),
-            }
+            info: IntuisRoom = IntuisRoom.from_dict(
+                self._rooms_definitions.get(rid, IntuisRoomDefinition.from_dict(room)),
+                room
+            )
 
             # ---- heating-minutes counter ---
             if rid not in self._minutes_counter:
                 self._minutes_counter[rid] = 0
 
-            if info["heating"]:
+            if info.heating:
                 self._minutes_counter[rid] += 5  # Assuming update interval is 5 minutes
             if now.hour == 0 and now.minute < 5:  # Reset daily
                 self._minutes_counter[rid] = 0
-            info["minutes"] = self._minutes_counter[rid]
+            info.minutes = self._minutes_counter[rid]
 
             # ---- daily kWh ---
             cache_key = f"{rid}_{today_iso}"
@@ -91,7 +132,7 @@ class IntuisData:
                 self._energy_cache[cache_key] = await self._api.async_get_home_measure(
                     rid, today_iso
                 )
-            info["energy"] = self._energy_cache.get(cache_key, 0.0)
+            info.energy = self._energy_cache.get(cache_key, 0.0)
             _LOGGER.debug("Room %s data compiled: %s", rid, info)
 
             data_by_room[rid] = info
@@ -113,7 +154,7 @@ class IntuisData:
 
         # return structured data
         _LOGGER.debug("Coordinator update completed")
-        result =  {
+        result = {
             "id": self._api.home_id,
             "home_id": self._api.home_id,
             "active_schedule_id": active_id,
