@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import IntuisDataUpdateCoordinator
 from .api import IntuisAPI
 from .const import DOMAIN
+from .helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -125,14 +126,12 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up Calendar entities for each room."""
-    d = hass.data[DOMAIN][entry.entry_id]
-    coordinator: IntuisDataUpdateCoordinator = d["coordinator"]
-    api: IntuisAPI = d["api"]
-    home_id = d["api"].home_id
+
+    coordinator, home_id, rooms, api = get_basic_utils(hass, entry)
 
     entities: list[IntuisScheduleCalendar] = []
-    for room_id, room_data in coordinator.data["rooms"].items():
-        room_name = room_data["name"]
+    for room_id, room in rooms:
+        room_name = room.name
         entities.append(
             IntuisScheduleCalendar(coordinator, api, home_id, room_id, room_name)
         )

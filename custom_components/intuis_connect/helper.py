@@ -5,9 +5,12 @@ import logging
 from typing import Any, Tuple
 
 from aiohttp import ClientSession
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 
-from . import IntuisDataUpdateCoordinator
+from . import IntuisDataUpdateCoordinator, DOMAIN
 from .api import IntuisAPI, CannotConnect, InvalidAuth
+from .data import IntuisRoom
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,14 +31,31 @@ async def async_validate_api(
         raise InvalidAuth("unknown") from e
 
 
+def get_coordinator(hass, entry) -> IntuisDataUpdateCoordinator:
+    """Get the Intuis data update coordinator from the Home Assistant instance."""
+    data = hass.data[DOMAIN][entry.entry_id]
+    coordinator = data["coordinator"]
+
+    if not isinstance(coordinator, IntuisDataUpdateCoordinator):
+        _LOGGER.error("Expected IntuisDataUpdateCoordinator, got %s", type(coordinator))
+        raise TypeError("Invalid coordinator type")
+    return coordinator
+
 def get_home(coordinator: IntuisDataUpdateCoordinator) -> str:
     """Get the home ID from the coordinator data."""
     return coordinator.data.get("id", "unknown_home")
 
 
-def get_room(coordinator: IntuisDataUpdateCoordinator, room_id: str) -> dict[str, Any] | None:
+def get_rooms(coordinator: IntuisDataUpdateCoordinator) -> dict[str, IntuisRoom]:
+    """Get the rooms data from the coordinator."""
+    rooms = coordinator.data.get("rooms", {})
+    if not rooms:
+        _LOGGER.warning("No rooms found in coordinator data")
+    return rooms
+
+def get_room(coordinator: IntuisDataUpdateCoordinator, room_id: str) -> IntuisRoom | None:
     """Get the room data from the coordinator by room ID."""
-    room = coordinator.data["rooms"].get(room_id)
+    room = get_rooms(coordinator).get(room_id)
     if room:
         return room
     _LOGGER.warning("Room %s not found in coordinator data", room_id)
@@ -44,8 +64,38 @@ def get_room(coordinator: IntuisDataUpdateCoordinator, room_id: str) -> dict[str
 
 def get_room_name(coordinator: IntuisDataUpdateCoordinator, room_id: str) -> str | None:
     """Get the name of a room by its ID."""
-    room = coordinator.data.get("rooms", {}).get(room_id)
+    room = get_room(coordinator, room_id)
     if room and "name" in room:
         return room["name"]
     _LOGGER.warning("Room %s not found", room_id)
     return None
+
+def get_home_id(hass: HomeAssistant, entry: ConfigEntry) -> str:
+    """Get the home ID from the config entry."""
+    if DOMAIN not in hass.data or entry.entry_id not in hass.data[DOMAIN]:
+        _LOGGER.error("No data found for entry %s", entry.entry_id)
+        return "unknown_home"
+
+    data = hass.data[DOMAIN][entry.entry_id]
+    return data.get("api", {}).get("home_id", "unknown_home")
+
+def get_api(hass: HomeAssistant, entry: ConfigEntry) -> IntuisAPI:
+    """Get the Intuis API instance from the Home Assistant instance."""
+    if DOMAIN not in hass.data or entry.entry_id not in hass.data[DOMAIN]:
+        _LOGGER.error("No data found for entry %s", entry.entry_id)
+        raise ValueError("No API instance found")
+    data = hass.data[DOMAIN][entry.entry_id]
+    api = data.get("api")
+    if not isinstance(api, IntuisAPI):
+        _LOGGER.error("Expected IntuisAPI, got %s", type(api))
+        raise TypeError("Invalid API type")
+    return api
+
+def get_basic_utils(hass: HomeAssistant, entry: ConfigEntry) -> Tuple[IntuisDataUpdateCoordinator, str, dict[str, IntuisRoom], IntuisAPI]:
+    """Get basic utilities from the Home Assistant instance."""
+    coordinator = get_coordinator(hass, entry)
+    home_id = get_home_id(hass, entry)
+    rooms = get_rooms(coordinator)
+    api = get_api(hass, entry)
+
+    return coordinator, home_id, rooms, api

@@ -11,20 +11,20 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import IntuisDataUpdateCoordinator
-from .const import DOMAIN
 from .device import build_device_info
+from .helper import get_basic_utils
 
 
 class _Base(CoordinatorEntity[IntuisDataUpdateCoordinator], BinarySensorEntity):
     def __init__(
-        self,
-        coordinator: IntuisDataUpdateCoordinator,
-        home_id: str,
-        room_id: str,
-        room_name: str,
-        name: str,
-        uid: str,
-        device_class: BinarySensorDeviceClass,
+            self,
+            coordinator: IntuisDataUpdateCoordinator,
+            home_id: str,
+            room_id: str,
+            room_name: str,
+            name: str,
+            uid: str,
+            device_class: BinarySensorDeviceClass,
     ) -> None:
         super().__init__(coordinator)
         self._room_id = room_id
@@ -40,11 +40,11 @@ class _Base(CoordinatorEntity[IntuisDataUpdateCoordinator], BinarySensorEntity):
 
 class PresenceSensor(_Base):
     def __init__(
-        self,
-        coordinator: IntuisDataUpdateCoordinator,
-        h: str,
-        r: str,
-        n: str,
+            self,
+            coordinator: IntuisDataUpdateCoordinator,
+            h: str,
+            r: str,
+            n: str,
     ) -> None:
         super().__init__(
             coordinator, h, r, n, f"{n} Presence", f"{r}_presence", BinarySensorDeviceClass.MOTION
@@ -57,11 +57,11 @@ class PresenceSensor(_Base):
 
 class WindowSensor(_Base):
     def __init__(
-        self,
-        coordinator: IntuisDataUpdateCoordinator,
-        h: str,
-        r: str,
-        n: str,
+            self,
+            coordinator: IntuisDataUpdateCoordinator,
+            h: str,
+            r: str,
+            n: str,
     ) -> None:
         super().__init__(
             coordinator, h, r, n, f"{n} Open Window", f"{r}_window", BinarySensorDeviceClass.WINDOW
@@ -119,20 +119,17 @@ class BoostStatusSensor(_Base):
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+        hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    d = hass.data[DOMAIN][entry.entry_id]
-    coordinator: IntuisDataUpdateCoordinator = d["coordinator"]
-    home_id = d["api"].home_id
+    coordinator, home_id, rooms, api = get_basic_utils(hass, entry)
 
     ent: list[BinarySensorEntity] = []
-    for room_id, room_data in coordinator.data["rooms"].items():
-        room_name = room_data["name"]
+    for room_id, room in rooms:
         ent.extend(
             [
-                PresenceSensor(coordinator, home_id, room_id, room_name),
-                WindowSensor(coordinator, home_id, room_id, room_name),
-                AnticipationSensor(coordinator, home_id, room_id, room_name),
+                PresenceSensor(coordinator, home_id, room_id, room.name),
+                WindowSensor(coordinator, home_id, room_id, room.name),
+                AnticipationSensor(coordinator, home_id, room_id, room.name),
             ]
         )
     async_add_entities(ent)

@@ -2,15 +2,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from homeassistant.components.goodwe.sensor import TEXT_SENSOR
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.const import UnitOfTemperature, UnitOfEnergy, UnitOfPower
+from homeassistant.const import UnitOfTemperature, UnitOfEnergy
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
 from .device import build_device_info
+from .helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,12 +22,10 @@ SENSOR_TYPES: dict[str, tuple[str, str, str]] = {
     "minutes": ("Heating Minutes", "min", None),
 }
 
+
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up Intuis Connect sensors from a config entry."""
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data["coordinator"]
-    home_id = data["api"].home_id
-    rooms = data["rooms"]
+    coordinator, home_id, rooms = get_basic_utils(hass, entry)
 
     entities: list[IntuisSensor] = []
     for room_id, room_name in rooms.items():
