@@ -3,30 +3,23 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.const import (
-    TEMP_CELSIUS,
-    ENERGY_KILO_WATT_HOUR,
-    POWER_WATT,
-    DEVICE_CLASS_TEMPERATURE,
-    DEVICE_CLASS_ENERGY,
-    DEVICE_CLASS_POWER,
-)
+from homeassistant.const import UnitOfTemperature, UnitOfEnergy, UnitOfPower
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .device import build_device_info
 
-# List of metrics we expose, with (key, name, unit, device_class)
+# Define the metrics you want: key in data, human label, unit, device_class string
 SENSOR_TYPES: dict[str, tuple[str, str, str]] = {
-    "temperature": ("Temperature", TEMP_CELSIUS, DEVICE_CLASS_TEMPERATURE),
-    "target_temperature": ("Setpoint", TEMP_CELSIUS, None),
-    "heating_power_request": ("Heating Power", "W", DEVICE_CLASS_POWER),
-    "energy": ("Energy Today", ENERGY_KILO_WATT_HOUR, DEVICE_CLASS_ENERGY),
+    "temperature": ("Temperature", UnitOfTemperature.CELSIUS, "temperature"),
+    "target_temperature": ("Setpoint", UnitOfTemperature.CELSIUS, None),
+    "power": ("Heating Power", UnitOfPower.WATT, "power"),
+    "energy": ("Energy Today", UnitOfEnergy.KILO_WATT_HOUR, "energy"),
     "minutes": ("Heating Minutes", "min", None),
 }
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up the Intuis Connect sensors from a config entry."""
+    """Set up Intuis Connect sensors from a config entry."""
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
     home_id = data["home_id"]
@@ -38,7 +31,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
             entities.append(
                 IntuisSensor(
                     coordinator,
-                    data["api"],
                     home_id,
                     room_id,
                     room_name,
@@ -52,12 +44,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 
 class IntuisSensor(CoordinatorEntity, SensorEntity):
-    """Generic Intuis Connect room sensor."""
+    """Generic sensor for an Intuis Connect room metric."""
 
     def __init__(
             self,
             coordinator,
-            api: Any,
             home_id: str,
             room_id: str,
             room_name: str,
@@ -68,7 +59,6 @@ class IntuisSensor(CoordinatorEntity, SensorEntity):
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._api = api
         self._home_id = home_id
         self._room_id = room_id
         self._metric = metric
@@ -76,7 +66,7 @@ class IntuisSensor(CoordinatorEntity, SensorEntity):
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
         self._attr_unique_id = f"{home_id}_{room_id}_{metric}"
-        # Tie back to the same device as the climate entity
+        # Point to the same device as the thermostat, etc.
         self._attr_device_info = build_device_info(home_id, room_id, room_name)
 
     @property
@@ -86,10 +76,9 @@ class IntuisSensor(CoordinatorEntity, SensorEntity):
         room = rooms.get(self._room_id)
         if room is None:
             return None
-        # Some metrics might be missing; default to None
         return room.get(self._metric)
 
     @property
     def device_info(self):
-        """Return device registry information."""
+        """Return device registry info."""
         return self._attr_device_info
