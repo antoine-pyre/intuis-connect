@@ -73,13 +73,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     home_data = await intuis_api.async_get_homes_data()
     # build a static map of room_id → room_name
-    rooms : dict[str, IntuisRoomDefinition] = {
+    rooms_definitions : dict[str, IntuisRoomDefinition] = {
         r["id"]: IntuisRoomDefinition.from_dict(r)
         for r in home_data["rooms"]
     }
 
     # ---------- setup coordinator --------------------------------------------------
-    intuis_data = IntuisData(intuis_api)
+    intuis_data = IntuisData(intuis_api, rooms_definitions)
 
     coordinator: IntuisDataUpdateCoordinator = DataUpdateCoordinator(
         hass,
@@ -96,7 +96,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "api": intuis_api,
         "coordinator": coordinator,
         "home_id": intuis_api.home_id,
-        "rooms": rooms,
+        "rooms_definitions": rooms_definitions,
         "modules": coordinator.data["modules"],
     }
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)
