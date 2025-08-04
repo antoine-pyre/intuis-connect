@@ -1,6 +1,6 @@
 {
     "name": "Intuis Connect",
-    "content_in_root": true,
+    "content_in_root": false,
     "zip_release": false,
     "domains": ["intuis_connect"],
     "country": "FR",
