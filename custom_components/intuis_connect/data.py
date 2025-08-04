@@ -114,7 +114,7 @@ class IntuisData:
 
         # return structured data
         _LOGGER.debug("Coordinator update completed")
-        return {
+        result =  {
             "id": self._api.home_id,
             "home_id": self._api.home_id,
             "active_schedule_id": active_id,
@@ -122,3 +122,6 @@ class IntuisData:
             "modules": modules,
             "schedule": schedule,
         }
+
+        _LOGGER.debug("Returning data: %s", result)
+        return result
