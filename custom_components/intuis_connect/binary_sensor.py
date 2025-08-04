@@ -49,11 +49,17 @@ class AnticipationSensor(_Base):
 
 async def async_setup_entry(hass, entry, async_add_entities):
     d = hass.data[DOMAIN][entry.entry_id]
+    coordinator = d["coordinator"]
+    home_id = coordinator.data["id"]
+
     ent = []
-    for rid, name in d["rooms"].items():
-        ent.extend([
-            # PresenceSensor(d["coordinator"], d["home_id"], rid, name),
-            # WindowSensor(d["coordinator"], d["home_id"], rid, name),
-            AnticipationSensor(d["coordinator"], d["home_id"], rid, name),
-        ])
+    for room_id, room_data in coordinator.data["rooms"].items():
+        room_name = room_data["name"]
+        ent.extend(
+            [
+                PresenceSensor(coordinator, home_id, room_id, room_name),
+                WindowSensor(coordinator, home_id, room_id, room_name),
+                AnticipationSensor(coordinator, home_id, room_id, room_name),
+            ]
+        )
     async_add_entities(ent)

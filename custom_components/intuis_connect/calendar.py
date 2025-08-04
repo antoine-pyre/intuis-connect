@@ -139,14 +139,14 @@ class IntuisScheduleCalendar(CoordinatorEntity, CalendarEntity):
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up Calendar entities for each room."""
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data["coordinator"]
-    api = data["api"]
-    home_id = data["home_id"]
-    rooms = data["rooms"]
+    d = hass.data[DOMAIN][entry.entry_id]
+    coordinator = d["coordinator"]
+    api = d["api"]
+    home_id = coordinator.data["id"]
 
     entities: list[IntuisScheduleCalendar] = []
-    for room_id, room_name in rooms.items():
+    for room_id, room_data in coordinator.data["rooms"].items():
+        room_name = room_data["name"]
         entities.append(
             IntuisScheduleCalendar(coordinator, api, home_id, room_id, room_name)
         )

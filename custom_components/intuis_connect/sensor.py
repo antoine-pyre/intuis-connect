@@ -94,16 +94,20 @@ class HeatingMinutesSensor(_Base):
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    data = hass.data[DOMAIN][entry.entry_id]
-    coord = data["coordinator"]
-    home_id = data["home_id"]
+    d = hass.data[DOMAIN][entry.entry_id]
+    coordinator = d["coordinator"]
+    home_id = coordinator.data["id"]
+
     ents = []
-    for rid, nm in data["rooms"].items():
-        ents.extend([
-            TemperatureSensor(coord, home_id, rid, nm),
-            SetpointSensor(coord, home_id, rid, nm),
-            PowerSensor(coord, home_id, rid, nm),
-            EnergySensor(coord, home_id, rid, nm),
-            HeatingMinutesSensor(coord, home_id, rid, nm),
-        ])
+    for room_id, room_data in coordinator.data["rooms"].items():
+        room_name = room_data["name"]
+        ents.extend(
+            [
+                TemperatureSensor(coordinator, home_id, room_id, room_name),
+                SetpointSensor(coordinator, home_id, room_id, room_name),
+                PowerSensor(coordinator, home_id, room_id, room_name),
+                EnergySensor(coordinator, home_id, room_id, room_name),
+                HeatingMinutesSensor(coordinator, home_id, room_id, room_name),
+            ]
+        )
     async_add_entities(ents)
