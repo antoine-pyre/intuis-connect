@@ -9,15 +9,43 @@ from .api import IntuisAPI
 
 _LOGGER = logging.getLogger(__name__)
 
+class IntuisRoomDefinition:
+    """Class to define a room in the Intuis Connect system."""
+
+    def __init__(self, id: str, name: str, type: str, module_ids: list[str] = None, modules: list[dict[str, Any]] = None, therm_relay: dict[str, Any] = None) -> None:
+        """Initialize the room definition."""
+        self.id = id
+        self.name = name
+        self.type = type
+        self.module_ids = module_ids or []
+        self.modules = modules or []
+        self.therm_relay = therm_relay
+
+    def __repr__(self) -> str:
+        """Return a string representation of the room."""
+        return f"IntuisRoomDefinition(id={self.id}, name={self.name})"
+
+    @staticmethod
+    def from_dict(data: dict[str, Any]) -> IntuisRoomDefinition:
+        """Create a room definition from a dictionary."""
+        return IntuisRoomDefinition(
+            id=data["id"],
+            name=data["name"],
+            type=data["type"],
+            module_ids=data.get("module_ids", []),
+            modules=data.get("modules", []),
+            therm_relay=data.get("therm_relay")
+        )
 
 class IntuisData:
     """Class to handle data fetching and processing for the Intuis Connect integration."""
 
-    def __init__(self, api: IntuisAPI) -> None:
+    def __init__(self, api: IntuisAPI, rooms_definitions: dict[str, IntuisRoomDefinition]) -> None:
         """Initialize the data handler."""
         self._api = api
         self._energy_cache: dict[str, float] = {}
         self._minutes_counter: dict[str, int] = {}
+        self._rooms_definitions = rooms_definitions
 
     async def async_update(self) -> dict[str, Any]:
         """Fetch and process data from the API."""
@@ -34,6 +62,7 @@ class IntuisData:
             rid = room["id"]
             info: dict[str, Any] = {
                 "id": rid,
+                "name": self._rooms_definitions.get(rid, {}).get("name"),
                 "mode": room.get("therm_setpoint_mode"),
                 "target_temperature": room.get("therm_setpoint_temperature"),
                 "temperature": room.get("therm_measured_temperature"),

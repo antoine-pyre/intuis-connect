@@ -20,7 +20,7 @@ from .const import (
     CONF_HOME_ID,
     CONF_REFRESH_TOKEN,
 )
-from .data import IntuisData
+from .data import IntuisData, IntuisRoomDefinition
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,8 +73,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     home_data = await intuis_api.async_get_homes_data()
     # build a static map of room_id → room_name
-    rooms = {
-        r["id"]: r.get("name", f"Room {r['id']}")
+    rooms : dict[str, IntuisRoomDefinition] = {
+        r["id"]: IntuisRoomDefinition.from_dict(r)
         for r in home_data["rooms"]
     }
 
