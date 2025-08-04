@@ -1,13 +1,31 @@
 """Binary sensors (presence, window, anticipation)."""
-from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySensorDeviceClass
+from __future__ import annotations
+
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntity,
+)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from . import IntuisDataUpdateCoordinator
 from .const import DOMAIN
 from .device import build_device_info
 
 
-class _Base(CoordinatorEntity, BinarySensorEntity):
-    def __init__(self, coordinator, home_id, room_id, room_name, name, uid, device_class):
+class _Base(CoordinatorEntity[IntuisDataUpdateCoordinator], BinarySensorEntity):
+    def __init__(
+        self,
+        coordinator: IntuisDataUpdateCoordinator,
+        home_id: str,
+        room_id: str,
+        room_name: str,
+        name: str,
+        uid: str,
+        device_class: BinarySensorDeviceClass,
+    ) -> None:
         super().__init__(coordinator)
         self._room_id = room_id
         self._attr_name = name
@@ -21,38 +39,70 @@ class _Base(CoordinatorEntity, BinarySensorEntity):
 
 
 class PresenceSensor(_Base):
-    def __init__(self, coordinator, h, r, n):
-        super().__init__(coordinator, h, r, n, f"{n} Presence", f"{r}_presence", BinarySensorDeviceClass.MOTION)
+    def __init__(
+        self,
+        coordinator: IntuisDataUpdateCoordinator,
+        h: str,
+        r: str,
+        n: str,
+    ) -> None:
+        super().__init__(
+            coordinator, h, r, n, f"{n} Presence", f"{r}_presence", BinarySensorDeviceClass.MOTION
+        )
 
     @property
-    def is_on(self):
+    def is_on(self) -> bool:
         return self.coordinator.data["rooms"][self._room_id]["presence"]
 
 
 class WindowSensor(_Base):
-    def __init__(self, coordinator, h, r, n):
-        super().__init__(coordinator, h, r, n, f"{n} Open Window", f"{r}_window", BinarySensorDeviceClass.WINDOW)
+    def __init__(
+        self,
+        coordinator: IntuisDataUpdateCoordinator,
+        h: str,
+        r: str,
+        n: str,
+    ) -> None:
+        super().__init__(
+            coordinator, h, r, n, f"{n} Open Window", f"{r}_window", BinarySensorDeviceClass.WINDOW
+        )
 
     @property
-    def is_on(self):
+    def is_on(self) -> bool:
         return self.coordinator.data["rooms"][self._room_id]["open_window"]
 
 
 class AnticipationSensor(_Base):
-    def __init__(self, coordinator, h, r, n):
-        super().__init__(coordinator, h, r, n, f"{n} Anticipation", f"{r}_anticipation", BinarySensorDeviceClass.HEAT)
+    def __init__(
+        self,
+        coordinator: IntuisDataUpdateCoordinator,
+        h: str,
+        r: str,
+        n: str,
+    ) -> None:
+        super().__init__(
+            coordinator,
+            h,
+            r,
+            n,
+            f"{n} Anticipation",
+            f"{r}_anticipation",
+            BinarySensorDeviceClass.HEAT,
+        )
 
     @property
-    def is_on(self):
+    def is_on(self) -> bool:
         return self.coordinator.data["rooms"][self._room_id]["anticipation"]
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
     d = hass.data[DOMAIN][entry.entry_id]
-    coordinator = d["coordinator"]
+    coordinator: IntuisDataUpdateCoordinator = d["coordinator"]
     home_id = coordinator.data["id"]
 
-    ent = []
+    ent: list[BinarySensorEntity] = []
     for room_id, room_data in coordinator.data["rooms"].items():
         room_name = room_data["name"]
         ent.extend(

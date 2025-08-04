@@ -2,30 +2,37 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
-from typing import cast
+from datetime import datetime, timedelta
+from typing import Any, cast
 
 import homeassistant.util.dt as dt_util
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from . import IntuisDataUpdateCoordinator
+from .api import IntuisAPI
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class IntuisScheduleCalendar(CoordinatorEntity, CalendarEntity):
+class IntuisScheduleCalendar(
+    CoordinatorEntity[IntuisDataUpdateCoordinator], CalendarEntity
+):
     """Expose each room’s weekly schedule as a Calendar."""
 
     def __init__(
-            self,
-            coordinator,
-            api,
-            home_id: str,
-            room_id: str,
-            room_name: str,
+        self,
+        coordinator: IntuisDataUpdateCoordinator,
+        api: IntuisAPI,
+        home_id: str,
+        room_id: str,
+        room_name: str,
     ) -> None:
+        """Initialize the calendar entity."""
         super().__init__(coordinator)
         self._api = api
         self._home_id = home_id
@@ -37,22 +44,9 @@ class IntuisScheduleCalendar(CoordinatorEntity, CalendarEntity):
     def event(self) -> CalendarEvent | None:
         """Return the next upcoming event slot, or None."""
         now = dt_util.utcnow()
-        slots = self.coordinator.data.get("schedule", {}).get(self._room_id, [])
-        for slot in slots:
-            start = dt_util.parse_datetime(slot["start"])
-            if start and start >= now:
-                end = dt_util.parse_datetime(slot.get("end")) or (start + timedelta(hours=1))
-                event: CalendarEvent = cast(
-                    CalendarEvent,
-                    {
-                        "start": start,
-                        "end": end,
-                        "summary": f"{slot['temp']}°C",
-                        "description": f"{self._attr_name}: {slot['temp']}°C",
-                        "id": slot.get("id"),
-                    },
-                )
-                return event
+        for ev in self.event_list:
+            if ev.start_datetime_local and ev.start_datetime_local > now:
+                return ev
         return None
 
     @property
@@ -62,39 +56,40 @@ class IntuisScheduleCalendar(CoordinatorEntity, CalendarEntity):
         slots = self.coordinator.data.get("schedule", {}).get(self._room_id, [])
         for slot in slots:
             start = dt_util.parse_datetime(slot["start"])
-            end = dt_util.parse_datetime(slot.get("end")) or (start + timedelta(hours=1))
+            end = dt_util.parse_datetime(slot.get("end")) or (
+                start + timedelta(hours=1)
+            )
             if not start:
                 continue
-            ev: CalendarEvent = cast(
-                CalendarEvent,
-                {
-                    "start": start,
-                    "end": end,
-                    "summary": f"{slot['temp']}°C",
-                    "description": f"{self._attr_name}: {slot['temp']}°C",
-                    "id": slot.get("id"),
-                },
+            ev: CalendarEvent = CalendarEvent(
+                start=start,
+                end=end,
+                summary=f"{slot['temp']}°C",
+                description=f"{self._attr_name}: {slot['temp']}°C",
+                uid=slot.get("id"),
             )
             events.append(ev)
         return events
 
     async def async_get_events(
-            self,
-            hass: HomeAssistant,
-            start_date: dt_util.dt.datetime,
-            end_date: dt_util.dt.datetime | None = None,
+        self,
+        hass: HomeAssistant,
+        start_date: datetime,
+        end_date: datetime,
     ) -> list[CalendarEvent]:
         """Return calendar events within a datetime range."""
         return [
-            ev for ev in self.event_list
-            if ev.start >= start_date and (end_date is None or ev.start <= end_date)
+            ev
+            for ev in self.event_list
+            if ev.start_datetime_local
+               and start_date <= ev.start_datetime_local <= end_date
         ]
 
-    async def async_create_event(self, **event_data) -> CalendarEvent:
-        """Called when the user creates/edits an event."""
-        temp = float(event_data["summary"].rstrip("°C"))
-        start_val = event_data["start"]
-        end_val = event_data.get("end") or (start_val + timedelta(hours=1))
+    async def async_create_event(self, **kwargs: Any) -> None:
+        """Add a new event to the calendar."""
+        temp = float(kwargs["summary"].rstrip("°C"))
+        start_val: datetime = kwargs["start"]
+        end_val: datetime = kwargs.get("end") or (start_val + timedelta(hours=1))
         start = start_val.isoformat()
         end = end_val.isoformat()
         try:
@@ -110,23 +105,12 @@ class IntuisScheduleCalendar(CoordinatorEntity, CalendarEntity):
             _LOGGER.error("Failed to create schedule slot: %s", err)
             raise
         await self.coordinator.async_request_refresh()
-        created: CalendarEvent = cast(
-            CalendarEvent,
-            {
-                "start": start_val,
-                "end": end_val,
-                "summary": f"{temp}°C",
-                "description": f"{self._attr_name}: {temp}°C",
-                # 'id' not returned immediately; calendar will refresh
-            },
-        )
-        return created
 
     async def async_delete_event(
-            self,
-            uid: str,
-            recurrence_id: str | None = None,
-            recurrence_range: str | None = None,
+        self,
+        uid: str,
+        recurrence_id: str | None = None,
+        recurrence_range: str | None = None,
     ) -> None:
         """Delete an event on the calendar."""
         try:
@@ -137,11 +121,13 @@ class IntuisScheduleCalendar(CoordinatorEntity, CalendarEntity):
         await self.coordinator.async_request_refresh()
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
     """Set up Calendar entities for each room."""
     d = hass.data[DOMAIN][entry.entry_id]
-    coordinator = d["coordinator"]
-    api = d["api"]
+    coordinator: IntuisDataUpdateCoordinator = d["coordinator"]
+    api: IntuisAPI = d["api"]
     home_id = coordinator.data["id"]
 
     entities: list[IntuisScheduleCalendar] = []

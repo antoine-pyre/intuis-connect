@@ -1,7 +1,9 @@
 """Data handling for the Intuis Connect integration."""
+from __future__ import annotations
+
 import logging
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 from .api import IntuisAPI
 
@@ -11,13 +13,13 @@ _LOGGER = logging.getLogger(__name__)
 class IntuisData:
     """Class to handle data fetching and processing for the Intuis Connect integration."""
 
-    def __init__(self, api: IntuisAPI):
+    def __init__(self, api: IntuisAPI) -> None:
         """Initialize the data handler."""
         self._api = api
-        self._energy_cache: Dict[str, float] = {}
-        self._minutes_counter: Dict[str, int] = {}
+        self._energy_cache: dict[str, float] = {}
+        self._minutes_counter: dict[str, int] = {}
 
-    async def async_update(self) -> Dict[str, Any]:
+    async def async_update(self) -> dict[str, Any]:
         """Fetch and process data from the API."""
         now = datetime.now()
         today_iso = now.strftime("%Y-%m-%d")
@@ -25,11 +27,11 @@ class IntuisData:
         # --- fetch raw data ---
         status_res = await self._api.async_get_home_status()
         home = status_res.get("home", {})
-        rooms_raw = home.get("rooms", [])
-        modules_raw = home.get("modules", [])
+        rooms_raw: list[dict[str, Any]] = home.get("rooms", [])
+        modules_raw: list[dict[str, Any]] = home.get("modules", [])
 
         # --- process modules ---
-        modules = {
+        modules: dict[str, dict[str, Any]] = {
             m["id"]: {
                 "id": m["id"],
                 "name": m["name"],
@@ -40,10 +42,10 @@ class IntuisData:
         }
 
         # --- process rooms ---
-        data_by_room = {}
+        data_by_room: dict[str, dict[str, Any]] = {}
         for room in rooms_raw:
             rid = room["id"]
-            info = {
+            info: dict[str, Any] = {
                 "id": rid,
                 "name": room["name"],
                 "mode": room.get("therm_setpoint_mode"),
@@ -96,13 +98,17 @@ class IntuisData:
             data_by_room[rid] = info
 
         # --- pull the active schedule ---
-        schedule = {}
+        schedule: dict[str, Any] = {}
         active_id = home.get("active_schedule_id")
         if active_id:
             # This method might need to be implemented in api.py if not present
             if hasattr(self._api, "async_get_schedule"):
-                schedule = await self._api.async_get_schedule(self._api.home_id, active_id)
-                _LOGGER.debug("Active schedule for home %s: %s", self._api.home_id, schedule)
+                schedule = await self._api.async_get_schedule(
+                    self._api.home_id, active_id
+                )
+                _LOGGER.debug(
+                    "Active schedule for home %s: %s", self._api.home_id, schedule
+                )
             else:
                 _LOGGER.warning("async_get_schedule not found in API")
 
