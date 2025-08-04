@@ -24,7 +24,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         entities.append(IntuisTemperatureSensor(coordinator, home_id, rooms.get(room_id)))
         entities.append(IntuisTargetTemperatureSensor(coordinator, home_id, rooms.get(room_id)))
         entities.append(IntuisMullerTypeSensor(coordinator, home_id, rooms.get(room_id)))
-        entities.append(IntuisEnergySensor(coordinator, home_id, rooms.get(room_id)))
+        # entities.append(IntuisEnergySensor(coordinator, home_id, rooms.get(room_id)))
         entities.append(IntuisMinutesSensor(coordinator, home_id, rooms.get(room_id)))
     async_add_entities(entities, update_before_add=True)
 
