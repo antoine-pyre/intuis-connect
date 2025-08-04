@@ -70,7 +70,7 @@ class IntuisRoom:
         return IntuisRoom(
             definition=definition,
             id=data["id"],
-            name=data["name"],
+            name=definition.name,
             mode=data.get("mode", "auto"),
             target_temperature=data.get("target_temperature", 0.0),
             temperature=data.get("temperature", 0.0),
