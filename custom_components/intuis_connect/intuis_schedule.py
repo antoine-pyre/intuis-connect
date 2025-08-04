@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
-import logging
-
 _LOGGER = logging.getLogger(__name__)
+
 
 class IntuisScheduleRoom:
     """Class to represent a room in the Intuis Connect system."""
@@ -20,6 +20,23 @@ class IntuisScheduleRoom:
         return IntuisScheduleRoom(
             id=data["id"],
             therm_setpoint_temperature=data["therm_setpoint_temperature"]
+        )
+
+
+class IntuisRoomTemperature:
+    """Class to represent a room temperature in the Intuis Connect system."""
+
+    def __init__(self, room_id: str, temp: int) -> None:
+        """Initialize the room temperature."""
+        self.room_id = room_id
+        self.temp = temp
+
+    @staticmethod
+    def from_dict(data: dict[str, Any]) -> IntuisRoomTemperature:
+        """Create a room temperature from a dictionary."""
+        return IntuisRoomTemperature(
+            room_id=data["room_id"],
+            temp=data["temp"]
         )
 
 
@@ -39,8 +56,8 @@ class IntuisZone:
     @staticmethod
     def from_dict(data: dict[str, Any]) -> IntuisZone:
         """Create a zone from a dictionary."""
-        rooms_temp = [IntuisRoomTemperature.from_dict(rt) for rt in
-                      data.get("rooms_temp", [])]
+        _LOGGER.debug("Creating IntuisZone from data: %s", data)
+        rooms_temp = [IntuisRoomTemperature.from_dict(rt) for rt in data.get("rooms_temp", [])]
         rooms = [IntuisScheduleRoom.from_dict(r) for r in data.get("rooms", [])]
         return IntuisZone(
             id=data["id"],
@@ -65,23 +82,6 @@ class IntuisTimetable:
         return IntuisTimetable(
             zone_id=data["zone_id"],
             m_offset=data["m_offset"]
-        )
-
-
-class IntuisRoomTemperature:
-    """Class to represent a room temperature in the Intuis Connect system."""
-
-    def __init__(self, room_id: str, temp: int) -> None:
-        """Initialize the room temperature."""
-        self.room_id = room_id
-        self.temp = temp
-
-    @staticmethod
-    def from_dict(data: dict[str, Any]) -> IntuisRoomTemperature:
-        """Create a room temperature from a dictionary."""
-        return IntuisRoomTemperature(
-            room_id=data["room_id"],
-            temp=data["temp"]
         )
 
 

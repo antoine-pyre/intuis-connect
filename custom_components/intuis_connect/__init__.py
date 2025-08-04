@@ -85,7 +85,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("schedules: %s", home_data.get("schedules", []))
     schedules = [IntuisSchedule.from_dict(t) for t in home_data.get("schedules", [])]
 
-
     # ---------- setup coordinator --------------------------------------------------
     intuis_data = IntuisData(intuis_api, rooms_definitions, schedules)
 
