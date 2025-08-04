@@ -62,7 +62,7 @@ class IntuisData:
             rid = room["id"]
             info: dict[str, Any] = {
                 "id": rid,
-                "name": self._rooms_definitions.get(rid, {}).get("name"),
+                "name": self._rooms_definitions.get(rid).name,
                 "mode": room.get("therm_setpoint_mode"),
                 "target_temperature": room.get("therm_setpoint_temperature"),
                 "temperature": room.get("therm_measured_temperature"),

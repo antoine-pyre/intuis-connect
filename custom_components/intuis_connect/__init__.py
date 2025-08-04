@@ -77,6 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         r["id"]: IntuisRoomDefinition.from_dict(r)
         for r in home_data["rooms"]
     }
+    _LOGGER.debug("Rooms definitions: %s", rooms_definitions)
 
     # ---------- setup coordinator --------------------------------------------------
     intuis_data = IntuisData(intuis_api, rooms_definitions)
