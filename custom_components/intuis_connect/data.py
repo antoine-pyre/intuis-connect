@@ -161,7 +161,7 @@ class IntuisData:
             "home_id": self._api.home_id,
             "rooms": data_by_room,
             "modules": modules,
-            schedules: schedules
+            "schedules": schedules
         }
 
         _LOGGER.debug("Returning data: %s", result)
