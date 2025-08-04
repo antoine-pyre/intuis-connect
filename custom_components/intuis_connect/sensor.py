@@ -8,7 +8,7 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import UnitOfTemperature, UnitOfEnergy
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .data import IntuisRoom
+from .data import IntuisRoom, IntuisEntity
 from .device import build_device_info
 from .helper import get_basic_utils
 
@@ -29,7 +29,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities(entities)
 
 
-class IntuisSensor(CoordinatorEntity, SensorEntity):
+class IntuisSensor(CoordinatorEntity, SensorEntity, IntuisEntity):
     """Generic sensor for an Intuis Connect room metric."""
 
     def __init__(
@@ -43,10 +43,7 @@ class IntuisSensor(CoordinatorEntity, SensorEntity):
             device_class: str | None,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._home_id = home_id
-        self._room_id = room.id
-        self._room = room
+        super().__init__(coordinator, room, home_id)
         self._metric = metric
         self._attr_name = f"{room.name} {label}"
         self._attr_native_unit_of_measurement = unit
@@ -82,6 +79,7 @@ class IntuisMullerTypeSensor(IntuisSensor):
             None,
         )
         self._attr_icon = "mdi:device-hub"
+        self._attr_available = False
 
     @property
     def native_value(self) -> str:

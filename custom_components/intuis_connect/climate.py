@@ -30,12 +30,11 @@ from .const import (
     DEFAULT_AWAY_TEMP,
     DEFAULT_BOOST_DURATION,
     DEFAULT_BOOST_TEMP,
-    DOMAIN,
     PRESET_AWAY,
     PRESET_BOOST,
     PRESET_SCHEDULE,
 )
-from .data import IntuisRoom
+from .data import IntuisRoom, IntuisEntity
 from .device import build_device_info
 from .helper import get_basic_utils
 
@@ -43,32 +42,30 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class IntuisConnectClimate(
-    CoordinatorEntity[IntuisDataUpdateCoordinator], ClimateEntity
+    CoordinatorEntity[IntuisDataUpdateCoordinator], ClimateEntity, IntuisEntity
 ):
     """Climate entity for an Intuis Connect-compatible device."""
 
     _attr_hvac_modes = [HVACMode.AUTO, HVACMode.HEAT, HVACMode.OFF]
     _attr_preset_modes = [PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE]
     _attr_supported_features = (
-        ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
+            ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
     )
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_has_entity_name = True
 
     def __init__(
-        self,
-        coordinator: IntuisDataUpdateCoordinator,
-        home_id: str,
-        room: IntuisRoom,
-        api: IntuisAPI,
+            self,
+            coordinator: IntuisDataUpdateCoordinator,
+            home_id: str,
+            room: IntuisRoom,
+            api: IntuisAPI,
     ) -> None:
         """Initialize the climate entity."""
-        super().__init__(coordinator)
+        super().__init__(coordinator, room, home_id)
         self._home_id = home_id
-        self._room = room
-        self._room_id = room.id
         self._attr_name = room.name
-        self._attr_unique_id = f"{self.coordinator.data['id']}_{self._room_id}"
+        self._attr_unique_id = f"{self.coordinator.data['id']}_{self._room.id}"
         self._api = api
         self._attr_assumed_state = True
         self._attr_hvac_mode: HVACMode | None = None
@@ -78,26 +75,26 @@ class IntuisConnectClimate(
     @property
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
-        return build_device_info(self._home_id, self._room_id, self._attr_name)
+        return build_device_info(self._home_id, self._get_room().id, self._attr_name)
 
     @property
     def current_temperature(self) -> StateType:
         """Return the current temperature."""
-        return self.coordinator.data["rooms"][self._room_id]["temperature"]
+        return self._get_room().temperature
 
     @property
     def target_temperature(self) -> StateType:
         """Return the target temperature."""
         if self._attr_target_temperature is not None:
             return self._attr_target_temperature
-        return self.coordinator.data["rooms"][self._room_id]["target_temperature"]
+        return self._get_room().target_temperature
 
     @property
     def hvac_mode(self) -> HVACMode | None:
         """Return hvac operation ie. heat, cool mode."""
         if self._attr_hvac_mode is not None:
             return self._attr_hvac_mode
-        mode = self.coordinator.data["rooms"][self._room_id]["mode"]
+        mode = self._get_room().mode
         if mode == API_MODE_OFF:
             return HVACMode.OFF
         if mode == API_MODE_HOME:
@@ -112,7 +109,7 @@ class IntuisConnectClimate(
         """Return the current preset mode."""
         if self._attr_preset_mode is not None:
             return self._attr_preset_mode
-        mode = self.coordinator.data["rooms"][self._room_id]["mode"]
+        mode = self._get_room().mode
         if mode == API_MODE_AWAY:
             return PRESET_AWAY
         if mode == API_MODE_BOOST:
@@ -126,7 +123,7 @@ class IntuisConnectClimate(
             return HVACAction.OFF
         return (
             HVACAction.HEATING
-            if self.coordinator.data["rooms"][self._room_id]["heating"]
+            if self._get_room().heating
             else HVACAction.IDLE
         )
 
@@ -136,7 +133,7 @@ class IntuisConnectClimate(
         if temp is None:
             return
         await self._api.async_set_room_state(
-            self._room_id, API_MODE_MANUAL, float(temp)
+            self._get_room().id, API_MODE_MANUAL, float(temp)
         )
         self._attr_target_temperature = temp
         self._attr_hvac_mode = HVACMode.HEAT
@@ -147,12 +144,12 @@ class IntuisConnectClimate(
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new hvac mode."""
         if hvac_mode == HVACMode.OFF:
-            await self._api.async_set_room_state(self._room_id, API_MODE_OFF)
+            await self._api.async_set_room_state(self._get_room().id, API_MODE_OFF)
         elif hvac_mode == HVACMode.AUTO:
-            await self._api.async_set_room_state(self._room_id, API_MODE_HOME)
+            await self._api.async_set_room_state(self._get_room().id, API_MODE_HOME)
         elif hvac_mode == HVACMode.HEAT:
             await self._api.async_set_room_state(
-                self._room_id, API_MODE_MANUAL, float(self.target_temperature or 20.0)
+                self._get_room().id, API_MODE_MANUAL, float(self.target_temperature or 20.0)
             )
         self._attr_hvac_mode = hvac_mode
         if hvac_mode == HVACMode.AUTO:
@@ -165,11 +162,11 @@ class IntuisConnectClimate(
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new preset mode."""
         if preset_mode == PRESET_SCHEDULE:
-            await self._api.async_set_room_state(self._room_id, API_MODE_HOME)
+            await self._api.async_set_room_state(self._get_room().id, API_MODE_HOME)
             self._attr_hvac_mode = HVACMode.AUTO
         elif preset_mode == PRESET_AWAY:
             await self._api.async_set_room_state(
-                self._room_id,
+                self._get_room().id,
                 API_MODE_AWAY,
                 DEFAULT_AWAY_TEMP,
                 DEFAULT_AWAY_DURATION,
@@ -177,7 +174,7 @@ class IntuisConnectClimate(
             self._attr_hvac_mode = HVACMode.HEAT
         elif preset_mode == PRESET_BOOST:
             await self._api.async_set_room_state(
-                self._room_id,
+                self._get_room().id,
                 API_MODE_BOOST,
                 DEFAULT_BOOST_TEMP,
                 DEFAULT_BOOST_DURATION,
@@ -189,7 +186,7 @@ class IntuisConnectClimate(
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+        hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up the climate entities."""
     coordinator, home_id, rooms, api = get_basic_utils(hass, entry)
