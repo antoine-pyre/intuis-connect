@@ -15,14 +15,14 @@ DEFAULT_AWAY_TEMP = 16.0  # °C
 DEFAULT_BOOST_TEMP = 30.0  # °C
 
 # API clusters
-BASE_URLS = [
+BASE_URLS: list[str] = [
     "https://app.muller-intuitiv.net",
     "https://app-prod.intuis-sas.com",
 ]
-BASE_URL = BASE_URLS[0]  # used for legacy constants
+BASE_URL: str = BASE_URLS[0]  # used for legacy constants
 
 # Endpoint paths
-AUTH_PATH = "/oauth2/token"
+AUTH_PATH: str = "/oauth2/token"
 HOMESDATA_PATH = "/api/homesdata"
 HOMESTATUS_PATH = "/syncapi/v1/homestatus"
 SETSTATE_PATH = "/syncapi/v1/setstate"
@@ -51,9 +51,9 @@ APP_VERSION = "1108100"
 
 # Presets
 PRESET_SCHEDULE = "schedule"
-PRESET_AWAY = "away"
-PRESET_BOOST = "boost"
-SUPPORTED_PRESETS = [PRESET_SCHEDULE, PRESET_AWAY, PRESET_BOOST]
+PRESET_AWAY     = "away"
+PRESET_BOOST    = "boost"
+SUPPORTED_PRESETS: list[str] = [PRESET_SCHEDULE, PRESET_AWAY, PRESET_BOOST]
 
 # Options
 CONF_MANUAL_DURATION = "manual_duration"

@@ -3,41 +3,51 @@ from __future__ import annotations
 
 import datetime
 import logging
+from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .api import IntuisAPI, CannotConnect, InvalidAuth
+from .api import IntuisAPI
 from .const import (
     DOMAIN,
-    CONF_USERNAME,
-    CONF_PASSWORD,
-    CONF_REFRESH_TOKEN,
     CONF_HOME_ID,
+    CONF_REFRESH_TOKEN,
 )
 from .data import IntuisData
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["calendar", "climate", "binary_sensor", "sensor"]
+PLATFORMS: list[Platform] = [
+    Platform.CALENDAR,
+    Platform.CLIMATE,
+    Platform.BINARY_SENSOR,
+    Platform.SENSOR,
+]
 
 SERVICE_CLEAR_OVERRIDE = "clear_override"
 ATTR_ROOM_ID = "room_id"
 
 CLEAR_OVERRIDE_SCHEMA = vol.Schema({vol.Required(ATTR_ROOM_ID): str})
 
+IntuisDataUpdateCoordinator = DataUpdateCoordinator[dict[str, Any]]
 
-async def update_listener(hass: HomeAssistant, entry: ConfigEntry):
+
+async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""
     _LOGGER.debug("Reloading entry %s due to options update", entry.entry_id)
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up the Intuis Connect component."""
     _LOGGER.debug("async_setup")
+    hass.data.setdefault(DOMAIN, {})
     return True
 
 
@@ -56,7 +66,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # ---------- setup coordinator --------------------------------------------------
     intuis_data = IntuisData(api)
 
-    coordinator = DataUpdateCoordinator(
+    coordinator: IntuisDataUpdateCoordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,
         name=DOMAIN,
@@ -79,9 +89,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
     _LOGGER.debug("Unloading entry %s", entry.entry_id)
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
+    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN].pop(entry.entry_id)
         _LOGGER.debug("Unloaded entry %s", entry.entry_id)
     return unload_ok
