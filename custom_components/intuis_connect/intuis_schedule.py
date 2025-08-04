@@ -126,14 +126,12 @@ class IntuisTimetable:
 class IntuisSchedule:
 
     def __init__(self, timetables: list[IntuisTimetable], zones: list[IntuisZone], name: str, default: bool,
-                 away_temp: int, hg_temp: int, id: str, type: str, selected: bool) -> None:
+                 id: str, type: str, selected: bool) -> None:
         """Initialize the Intuis schedule."""
         self.timetables = timetables
         self.zones = zones
         self.name = name
         self.default = default
-        self.away_temp = away_temp
-        self.hg_temp = hg_temp
         self.id = id
         self.type = type
         self.selected = selected
@@ -149,14 +147,63 @@ class IntuisSchedule:
 
         zones = [IntuisZone.from_dict(z, type) for z in data.get("zones", [])]
 
-        return IntuisSchedule(
-            timetables=timetables,
-            zones=zones,
-            name=data["name"],
-            default=data["default"],
-            away_temp=data["away_temp"],
-            hg_temp=data["hg_temp"],
-            id=data["id"],
-            type=type,
-            selected=data.get("selected", False)
-        )
+        if type is None:
+            raise ValueError("Schedule type is required")
+        if type not in ["therm", "electricity"]:
+            raise ValueError(f"Unknown schedule type: {type}")
+        if type == "therm":
+            return IntuisThermSchedule(
+                timetables=timetables,
+                zones=zones,
+                name=data["name"],
+                default=data["default"],
+                away_temp=data["away_temp"],
+                hg_temp=data["hg_temp"],
+                id=data["id"],
+                type=type,
+                selected=data.get("selected", False)
+            )
+        if type == "electricity":
+            return IntuisElectricitySchedule(
+                timetables=timetables,
+                zones=zones,
+                name=data["name"],
+                default=data["default"],
+                id=data["id"],
+                type=type,
+                selected=data.get("selected", False),
+                tariff=data["tariff"],
+                tariff_option=data["tariff_option"],
+                power_threshold=data["power_threshold"],
+                contract_power_unit=data["contract_power_unit"],
+                version=data["version"]
+            )
+        raise ValueError(f"Unknown schedule type: {type}")
+
+
+class IntuisThermSchedule(IntuisSchedule):
+    """Class to represent a thermostat schedule in the Intuis Connect system."""
+
+    def __init__(self, timetables: list[IntuisTimetable], zones: list[IntuisZone], name: str, default: bool,
+                 away_temp: int, hg_temp: int, id: str, type: str, selected: bool) -> None:
+        """Initialize the thermostat schedule."""
+        IntuisSchedule.__init__(self, timetables, zones, name, default, id, type, selected)
+        _LOGGER.debug("Initialized IntuisThermSchedule with id: %s, name: %s", id, name)
+        self.away_temp = away_temp
+        self.hg_temp = hg_temp
+
+
+class IntuisElectricitySchedule(IntuisSchedule):
+    """Class to represent an electricity schedule in the Intuis Connect system."""
+
+    def __init__(self, timetables: list[IntuisTimetable], zones: list[IntuisZone], name: str, default: bool,
+                 id: str, type: str, selected: bool, tariff: str, tariff_option: str, power_threshold: int,
+                 contract_power_unit: str, version: int) -> None:
+        """Initialize the electricity schedule."""
+        IntuisSchedule.__init__(self, timetables, zones, name, default, id, type, selected)
+        _LOGGER.debug("Initialized IntuisElectricitySchedule with id: %s, name: %s", id, name)
+        self.tariff = tariff
+        self.tariff_option = tariff_option
+        self.power_threshold = power_threshold
+        self.contract_power_unit = contract_power_unit
+        self.version = version
