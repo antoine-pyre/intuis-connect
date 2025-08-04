@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, List
 
 from .api import IntuisAPI
+from .intuis_module import IntuisModule
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class IntuisRoom:
 
     def __init__(self, definition: IntuisRoomDefinition, id: str, name: str, mode: str, target_temperature: float,
                  temperature: float, presence: bool, open_window: bool, anticipation: bool,
-                 muller_type: str, boost_status: str) -> None:
+                 muller_type: str, boost_status: str, modules: List[IntuisModule]) -> None:
         """Initialize the room with its definition."""
         self.definition = definition
         self.id = id
@@ -62,10 +63,15 @@ class IntuisRoom:
         self.anticipation = anticipation
         self.muller_type = muller_type
         self.boost_status = boost_status
+        self.modules = modules
 
     @staticmethod
-    def from_dict(definition: IntuisRoomDefinition, data: dict[str, Any]) -> IntuisRoom:
+    def from_dict(definition: IntuisRoomDefinition, data: dict[str, Any], modules: List[IntuisModule]) -> IntuisRoom:
         """Create a room from a dictionary and its definition."""
+
+        # Filter modules based on the room definition
+        filtered_modules = [module for module in modules if module.id in definition.module_ids]
+
         return IntuisRoom(
             definition=definition,
             id=data["id"],
@@ -77,12 +83,13 @@ class IntuisRoom:
             open_window=data.get("open_window", False),
             anticipation=data.get("anticipation", False),
             muller_type=data.get("muller_type", ""),
-            boost_status=data.get("boost_status", "disabled")
+            boost_status=data.get("boost_status", "disabled"),
+            modules=filtered_modules
         )
 
     def __repr__(self) -> str:
         """Return a string representation of the room."""
-        return f"IntuisRoom(definition={self.definition}, id={self.id}, name={self.name}, mode={self.mode}, target_temperature={self.target_temperature}, temperature={self.temperature}, heating={self.heating}, presence={self.presence}, open_window={self.open_window}, anticipation={self.anticipation}, muller_type={self.muller_type}, boost_status={self.boost_status})"
+        return f"IntuisRoom(definition={self.definition}, id={self.id}, name={self.name}, mode={self.mode}, target_temperature={self.target_temperature}, temperature={self.temperature}, heating={self.heating}, presence={self.presence}, open_window={self.open_window}, anticipation={self.anticipation}, muller_type={self.muller_type}, boost_status={self.boost_status}, modules={self.modules})"
 
 
 class IntuisData:
@@ -103,6 +110,14 @@ class IntuisData:
         # --- fetch raw data ---
         home = await self._api.async_get_home_status()
         rooms_raw: list[dict[str, Any]] = home.get("rooms", [])
+        modules_raw: list[dict[str, Any]] = home.get("modules", [])
+
+        # --- process modules ---
+        modules: List[IntuisModule] = []
+        for module in modules_raw:
+            mid = module["id"]
+            modules.append(IntuisModule.from_dict(module))
+            _LOGGER.debug("Module %s data: %s", mid, module)
 
         # --- process rooms ---
         data_by_room: dict[str, IntuisRoom] = {}
@@ -110,7 +125,8 @@ class IntuisData:
             rid = room["id"]
             info: IntuisRoom = IntuisRoom.from_dict(
                 self._rooms_definitions.get(rid),
-                room
+                room,
+                modules
             )
 
             # ---- heating-minutes counter ---
@@ -158,6 +174,7 @@ class IntuisData:
             "active_schedule_id": active_id,
             "rooms": data_by_room,
             "schedule": schedule,
+            "modules": modules,
         }
 
         _LOGGER.debug("Returning data: %s", result)
