@@ -11,12 +11,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import IntuisDataUpdateCoordinator
-from .data import IntuisRoom
+from .data import IntuisRoom, IntuisEntity
 from .device import build_device_info
-from .helper import get_basic_utils
+from .helper import get_basic_utils, get_room
 
 
-class _Base(CoordinatorEntity[IntuisDataUpdateCoordinator], BinarySensorEntity):
+class _Base(CoordinatorEntity[IntuisDataUpdateCoordinator], BinarySensorEntity, IntuisEntity):
     def __init__(
             self,
             coordinator: IntuisDataUpdateCoordinator,
@@ -27,7 +27,7 @@ class _Base(CoordinatorEntity[IntuisDataUpdateCoordinator], BinarySensorEntity):
             device_class: BinarySensorDeviceClass,
     ) -> None:
         super().__init__(coordinator)
-        self._room_id = room.id
+        self._coordinator = coordinator
         self._attr_name = name
         self._attr_unique_id = uid
         self._attr_device_class = device_class
@@ -51,7 +51,7 @@ class PresenceSensor(_Base):
 
     @property
     def is_on(self) -> bool:
-        return self.coordinator.data["rooms"][self._room_id]["presence"]
+        return self._get_room().presence
 
 
 class WindowSensor(_Base):
@@ -67,7 +67,7 @@ class WindowSensor(_Base):
 
     @property
     def is_on(self) -> bool:
-        return self.coordinator.data["rooms"][self._room_id]["open_window"]
+        return self._get_room().open_window
 
 
 class AnticipationSensor(_Base):
@@ -88,7 +88,7 @@ class AnticipationSensor(_Base):
 
     @property
     def is_on(self) -> bool:
-        return self.coordinator.data["rooms"][self._room_id]["anticipation"]
+        return self._get_room().anticipation
 
 
 class BoostStatusSensor(_Base):
@@ -109,7 +109,7 @@ class BoostStatusSensor(_Base):
 
     @property
     def is_on(self) -> bool:
-        return self.coordinator.data["rooms"][self._room_id]["boost_status"] != "disabled"
+        return self._get_room().boost_status != "disabled"
 
 
 async def async_setup_entry(
