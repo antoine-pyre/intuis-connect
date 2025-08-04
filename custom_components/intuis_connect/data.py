@@ -152,13 +152,7 @@ class IntuisData:
             data_by_room[rid] = info
 
         # --- pull the active schedule ---
-        schedules_raw: dict[str, Any] = home.get("schedules", {})
-        _LOGGER.debug("Raw schedules data: %s", schedules_raw)
-
-        schedules: list[IntuisSchedule] = []
-        for schedule_id, schedule_data in schedules_raw.items():
-            schedules.append(IntuisSchedule.from_dict(schedule_data))
-
+        schedules = [IntuisSchedule.from_dict(t) for t in home.get("schedules", [])]
 
         # return structured data
         _LOGGER.debug("Coordinator update completed")
@@ -167,6 +161,7 @@ class IntuisData:
             "home_id": self._api.home_id,
             "rooms": data_by_room,
             "modules": modules,
+            schedules: schedules
         }
 
         _LOGGER.debug("Returning data: %s", result)

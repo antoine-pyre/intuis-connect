@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import logging
+
+_LOGGER = logging.getLogger(__name__)
 
 class IntuisScheduleRoom:
     """Class to represent a room in the Intuis Connect system."""
@@ -93,6 +96,7 @@ class IntuisSchedule:
     @staticmethod
     def from_dict(data: dict[str, Any]) -> IntuisSchedule:
         """Create an Intuis schedule from a dictionary."""
+        _LOGGER.debug("Creating IntuisSchedule from data: %s", data)
         timetables = [IntuisTimetable.from_dict(t) for t in data.get("timetables", [])]
         zones = [IntuisZone.from_dict(z) for z in data.get("zones", [])]
         return IntuisSchedule(timetables=timetables, zones=zones)
