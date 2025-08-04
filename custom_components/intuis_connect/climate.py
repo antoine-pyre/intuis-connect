@@ -1,5 +1,4 @@
 """Climate platform for Intuis Connect."""
-import asyncio
 import logging
 
 from homeassistant.components.climate import ClimateEntity, HVACAction, HVACMode, ClimateEntityFeature
@@ -100,62 +99,71 @@ class IntuisConnectClimate(CoordinatorEntity, ClimateEntity):
         temp = kwargs.get("temperature")
         if temp is None:
             return
-        await self._api.async_set_room_state(
-            self._room_id, API_MODE_MANUAL, float(temp)
-        )
         self._attr_target_temperature = temp
         self._attr_hvac_mode = HVACMode.HEAT
         self._attr_preset_mode = None
         self.async_write_ha_state()
+        await self._api.async_set_room_state(
+            self._room_id, API_MODE_MANUAL, float(temp)
+        )
         await self._request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode):
-        if hvac_mode == HVACMode.OFF:
-            await self._api.async_set_room_state(self._room_id, API_MODE_OFF)
-        elif hvac_mode == HVACMode.AUTO:
-            await self._api.async_set_room_state(self._room_id, API_MODE_HOME)
-        elif hvac_mode == HVACMode.HEAT:
-            await self._api.async_set_room_state(
-                self._room_id, API_MODE_MANUAL, float(self.target_temperature or 20.0)
-            )
+        """Set the HVAC mode."""
+
         self._attr_hvac_mode = hvac_mode
         if hvac_mode == HVACMode.AUTO:
             self._attr_preset_mode = PRESET_SCHEDULE
         else:
             self._attr_preset_mode = None
+
         self.async_write_ha_state()
+
+        # Determine API mode and target temperature based on HVAC mode
+        api_mode = None
+        target_temp = None  # Default to 20 if no target temp set
+        if hvac_mode == HVACMode.OFF:
+            api_mode = API_MODE_OFF
+        elif hvac_mode == HVACMode.AUTO:
+            api_mode = API_MODE_HOME
+        elif hvac_mode == HVACMode.HEAT:
+            api_mode = API_MODE_MANUAL
+            target_temp = float(self.target_temperature or 20.0)
+        await self._api.async_set_room_state(self._room_id, api_mode, target_temp)
+
         await self._request_refresh()
 
     async def async_set_preset_mode(self, preset_mode: str):
-        if preset_mode == PRESET_SCHEDULE:
-            await self._api.async_set_room_state(self._room_id, API_MODE_HOME)
-            self._attr_hvac_mode = HVACMode.AUTO
-        elif preset_mode == PRESET_AWAY:
-            await self._api.async_set_room_state(
-                self._room_id,
-                API_MODE_AWAY,
-                DEFAULT_AWAY_TEMP,
-                DEFAULT_AWAY_DURATION,
-            )
-            self._attr_hvac_mode = HVACMode.HEAT
-        elif preset_mode == PRESET_BOOST:
-            await self._api.async_set_room_state(
-                self._room_id,
-                API_MODE_BOOST,
-                DEFAULT_BOOST_TEMP,
-                DEFAULT_BOOST_DURATION,
-            )
-            self._attr_hvac_mode = HVACMode.HEAT
         self._attr_preset_mode = preset_mode
         self.async_write_ha_state()
+
+        api_mode = None
+        temp = None
+        duration = None
+
+        if preset_mode == PRESET_SCHEDULE:
+            api_mode = API_MODE_HOME
+            temp = None  # No specific temperature for schedule mode
+            duration = None
+            self._attr_hvac_mode = HVACMode.AUTO
+        elif preset_mode == PRESET_AWAY:
+            api_mode = API_MODE_AWAY
+            temp = DEFAULT_AWAY_TEMP
+            duration = DEFAULT_AWAY_DURATION
+            self._attr_hvac_mode = HVACMode.HEAT
+        elif preset_mode == PRESET_BOOST:
+            api_mode = API_MODE_BOOST
+            temp = DEFAULT_BOOST_TEMP
+            duration = DEFAULT_BOOST_DURATION
+            self._attr_hvac_mode = HVACMode.HEAT
+        await self._api.async_set_room_state(self._room_id, api_mode, temp, duration)
         await self._request_refresh()
 
     async def _request_refresh(self):
-        """Request a refresh of the coordinator data. Performing twice to ensure the state is updated."""
+        """Request a refresh of the coordinator data."""
         _LOGGER.debug("Requesting refresh for room %s", self._room_id)
         await self.coordinator.async_request_refresh()
-        await asyncio.sleep(RETRY_DELAY)
-        await self.coordinator.async_request_refresh()
+
 
 async def async_setup_entry(hass, entry, async_add_entities):
     d = hass.data[DOMAIN][entry.entry_id]
