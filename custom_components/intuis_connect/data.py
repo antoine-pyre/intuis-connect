@@ -111,7 +111,7 @@ class IntuisData:
         for room in rooms_raw:
             rid = room["id"]
             info: IntuisRoom = IntuisRoom.from_dict(
-                self._rooms_definitions.get(rid, IntuisRoomDefinition.from_dict(room)),
+                self._rooms_definitions.get(rid),
                 room
             )
 
