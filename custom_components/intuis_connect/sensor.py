@@ -51,7 +51,7 @@ class IntuisSensor(CoordinatorEntity, SensorEntity, IntuisEntity):
         self._attr_name = f"{room.name} {label}"
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
-        self._attr_unique_id = f"{home_id}_{room.id}_{metric}"
+        self._attr_unique_id = f"{self._get_id_prefix()}_{metric}"
         # Point to the same device as the thermostat, etc.
         self._attr_device_info = build_device_info(home_id, room.id, room.name)
 
