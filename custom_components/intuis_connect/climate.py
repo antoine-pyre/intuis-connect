@@ -34,8 +34,9 @@ from .const import (
     PRESET_BOOST,
     PRESET_SCHEDULE,
 )
-from .data import IntuisRoom, IntuisEntity
+from .data import IntuisRoom
 from .device import build_device_info
+from .entity import IntuisEntity
 from .helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
