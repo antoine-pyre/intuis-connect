@@ -16,8 +16,8 @@ from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 import voluptuous as vol
 
-from .intuis_connect.const import DOMAIN
-from .intuis_connect.api import IntuisAPI, CannotConnect, InvalidAuth, APIError
+from .const import DOMAIN
+from .api import IntuisAPI, CannotConnect, InvalidAuth, APIError
 
 CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
