@@ -53,14 +53,14 @@ class IntuisZone:
         _LOGGER.debug("Creating IntuisZone from data: %s", data)
         if type is None:
             raise ValueError("Zone type is required")
-        if type == "temp":
-            return IntuisTempZone.from_dict(data, type)
-        if type == "price":
-            return IntuisPriceZone.from_dict(data, type)
+        if type == "therm":
+            return IntuisThermZone.from_dict(data, type)
+        if type == "electricity":
+            return IntuisElectricityZone.from_dict(data, type)
         raise ValueError(f"Unknown zone type: {type}")
 
 
-class IntuisTempZone(IntuisZone):
+class IntuisThermZone(IntuisZone):
     """Class to represent a zone in the Intuis Connect system."""
 
     def __init__(self, id: int, name: str, type: int,
@@ -74,11 +74,11 @@ class IntuisTempZone(IntuisZone):
         self.rooms = rooms
 
     @staticmethod
-    def from_dict(data: dict[str, Any], type: str) -> IntuisTempZone:
+    def from_dict(data: dict[str, Any], type: str) -> IntuisThermZone:
         """Create a zone from a dictionary."""
         rooms_temp = [IntuisRoomTemperature.from_dict(rt) for rt in data.get("rooms_temp", [])]
         rooms = [IntuisScheduleRoom.from_dict(r) for r in data.get("rooms", [])]
-        return IntuisTempZone(
+        return IntuisThermZone(
             id=data["id"],
             name=data["name"],
             type=data["type"],
@@ -87,7 +87,7 @@ class IntuisTempZone(IntuisZone):
         )
 
 
-class IntuisPriceZone(IntuisZone):
+class IntuisElectricityZone(IntuisZone):
     """Class to represent a price zone in the Intuis Connect system."""
 
     def __init__(self, id: int, price_type: str, price: float) -> None:
@@ -97,9 +97,9 @@ class IntuisPriceZone(IntuisZone):
         self.price = price
 
     @staticmethod
-    def from_dict(data: dict[str, Any], type: str) -> IntuisPriceZone:
+    def from_dict(data: dict[str, Any], type: str) -> IntuisElectricityZone:
         """Create a price zone from a dictionary."""
-        return IntuisPriceZone(
+        return IntuisElectricityZone(
             id=data["id"],
             price_type=data["price_type"],
             price=data["price"]
