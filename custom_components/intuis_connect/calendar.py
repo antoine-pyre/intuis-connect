@@ -128,7 +128,7 @@ async def async_setup_entry(
     d = hass.data[DOMAIN][entry.entry_id]
     coordinator: IntuisDataUpdateCoordinator = d["coordinator"]
     api: IntuisAPI = d["api"]
-    home_id = coordinator.data["id"]
+    home_id = d["api"].home_id
 
     entities: list[IntuisScheduleCalendar] = []
     for room_id, room_data in coordinator.data["rooms"].items():
