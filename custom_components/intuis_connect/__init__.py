@@ -1,23 +1,21 @@
 """Setup for Intuis Connect (v1.3.0)."""
 from __future__ import annotations
 
-import logging, datetime, asyncio
+import datetime
+import logging
 from collections import defaultdict
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-import homeassistant.helpers.service
-from homeassistant.helpers import config_validation as cv
-from homeassistant.const import CONF_PLATFORM
-from homeassistant.core import callback
-from homeassistant.helpers import config_validation as cv
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.core import callback
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN
 from .api import IntuisAPI, CannotConnect, InvalidAuth, APIError
+from .const import DOMAIN
 
 CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
@@ -31,9 +29,11 @@ ATTR_ROOM_ID = "room_id"
 
 CLEAR_OVERRIDE_SCHEMA = vol.Schema({vol.Required(ATTR_ROOM_ID): str})
 
+
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     _LOGGER.debug("async_setup")
     return True
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Intuis Connect from a config entry."""
@@ -179,6 +179,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     return True
+
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("Unloading entry %s", entry.entry_id)

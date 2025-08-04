@@ -1,66 +1,85 @@
-
 """Climate platform for Intuis Connect."""
 import logging
-import asyncio
 
 from homeassistant.components.climate import ClimateEntity, HVACAction, HVACMode, ClimateEntityFeature
 from homeassistant.const import UnitOfTemperature
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from .const import DOMAIN, SUPPORTED_PRESETS, PRESET_SCHEDULE, PRESET_AWAY, PRESET_BOOST
+
+from .const import (
+    DOMAIN,
+    PRESET_AWAY,
+    PRESET_BOOST,
+    PRESET_SCHEDULE,
+    DEFAULT_AWAY_TEMP,
+    DEFAULT_AWAY_DURATION,
+    DEFAULT_BOOST_TEMP,
+    DEFAULT_BOOST_DURATION,
+    API_MODE_OFF,
+    API_MODE_HOME,
+    API_MODE_MANUAL,
+    API_MODE_AWAY,
+    API_MODE_BOOST,
+)
 from .device import build_device_info
-
-SUPPORT_FLAGS = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
-
-MAX_ACTION_RETRIES = 3
-RETRY_DELAY = 1  # seconds
+from .helper import get_room_name, get_home, get_room
 
 _LOGGER = logging.getLogger(__name__)
 
-class IntuisClimate(CoordinatorEntity, ClimateEntity):
-    _attr_supported_features = SUPPORT_FLAGS
-    _attr_hvac_modes = [HVACMode.AUTO, HVACMode.HEAT, HVACMode.OFF]
-    _attr_preset_modes = SUPPORTED_PRESETS
-    _attr_min_temp = 7.0
-    _attr_max_temp = 30.0
-    _attr_target_temperature_step = 0.5
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
 
-    def __init__(self, coordinator, api, home_id, room_id, room_name):
+class IntuisConnectClimate(CoordinatorEntity, ClimateEntity):
+    """Climate entity for an Intuis Connect-compatible device."""
+
+    _attr_hvac_modes = [HVACMode.AUTO, HVACMode.HEAT, HVACMode.OFF]
+    _attr_preset_modes = [PRESET_SCHEDULE, PRESET_AWAY, PRESET_BOOST]
+    _attr_supported_features = (
+            ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
+    )
+    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, room_id, api):
         super().__init__(coordinator)
-        self._api = api
-        self._home_id = home_id
+        self._attr_target_temperature = None
+        self._attr_hvac_mode = None
+        self._attr_preset_mode = None
+        self._home_id = get_home(coordinator)
         self._room_id = room_id
-        self._attr_name = room_name
-        self._attr_unique_id = f"{room_id}_climate"
-        self._dev_info = build_device_info(home_id, room_id, room_name)
+        self._attr_name = get_room_name(coordinator, room_id)
+        self._attr_unique_id = f"{self.coordinator.data['id']}_{self._room_id}"
+        self._api = api
+        self._attr_assumed_state = True
 
     @property
     def device_info(self):
-        return self._dev_info
+        return build_device_info(self._home_id, self._room_id, self._attr_name)
 
     @property
     def current_temperature(self):
-        return self.coordinator.data["rooms"][self._room_id]["temperature"]
+        return get_room(self.coordinator, self._room_id)["temperature"]
 
     @property
     def target_temperature(self):
-        return self.coordinator.data["rooms"][self._room_id]["target_temperature"]
+        return get_room(self.coordinator, self._room_id)["target_temperature"]
 
     @property
     def hvac_mode(self):
-        mode = self.coordinator.data["rooms"][self._room_id]["mode"]
-        if mode in ("off", "hg"):
+        """Return hvac operation ie. heat, cool mode."""
+        mode = get_room(self.coordinator, self._room_id)["mode"]
+        if mode == API_MODE_OFF:
             return HVACMode.OFF
-        if mode in ("home", "schedule", "program"):
+        if mode == API_MODE_HOME:
             return HVACMode.AUTO
+        if mode in (API_MODE_MANUAL, API_MODE_AWAY, API_MODE_BOOST):
+            return HVACMode.HEAT
+        _LOGGER.warning("Unhandled HVAC mode: %s", mode)
         return HVACMode.HEAT
 
     @property
     def preset_mode(self):
-        mode = self.coordinator.data["rooms"][self._room_id]["mode"]
-        if mode == "away":
+        mode = get_room(self.coordinator, self._room_id)["mode"]
+        if mode == API_MODE_AWAY:
             return PRESET_AWAY
-        if mode == "boost":
+        if mode == API_MODE_BOOST:
             return PRESET_BOOST
         return PRESET_SCHEDULE if self.hvac_mode == HVACMode.AUTO else None
 
@@ -68,60 +87,69 @@ class IntuisClimate(CoordinatorEntity, ClimateEntity):
     def hvac_action(self):
         if self.hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
-        return HVACAction.HEATING if self.coordinator.data["rooms"][self._room_id]["heating"] else HVACAction.IDLE
+        return (
+            HVACAction.HEATING
+            if get_room(self.coordinator, self._room_id)["heating"]
+            else HVACAction.IDLE
+        )
 
     async def async_set_temperature(self, **kwargs):
         temp = kwargs.get("temperature")
         if temp is None:
             return
-        await self._execute_with_retry(self._api.async_set_room_state, self._room_id, "manual", float(temp))
-        await self._refresh_twice()
+        await self._api.async_set_room_state(
+            self._room_id, API_MODE_MANUAL, float(temp)
+        )
+        self._attr_target_temperature = temp
+        self._attr_hvac_mode = HVACMode.HEAT
+        self._attr_preset_mode = None
+        self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode):
         if hvac_mode == HVACMode.OFF:
-            await self._execute_with_retry(self._api.async_set_room_state, self._room_id, "off")
+            await self._api.async_set_room_state(self._room_id, API_MODE_OFF)
         elif hvac_mode == HVACMode.AUTO:
-            await self._execute_with_retry(self._api.async_set_room_state, self._room_id, "home")
+            await self._api.async_set_room_state(self._room_id, API_MODE_HOME)
         elif hvac_mode == HVACMode.HEAT:
-            await self._execute_with_retry(self._api.async_set_room_state, self._room_id, "manual", float(self.target_temperature or 20.0))
-        await self._refresh_twice()
+            await self._api.async_set_room_state(
+                self._room_id, API_MODE_MANUAL, float(self.target_temperature or 20.0)
+            )
+        self._attr_hvac_mode = hvac_mode
+        if hvac_mode == HVACMode.AUTO:
+            self._attr_preset_mode = PRESET_SCHEDULE
+        else:
+            self._attr_preset_mode = None
+        self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
 
     async def async_set_preset_mode(self, preset_mode: str):
         if preset_mode == PRESET_SCHEDULE:
-            await self._execute_with_retry(self._api.async_set_room_state, self._room_id, "home")
+            await self._api.async_set_room_state(self._room_id, API_MODE_HOME)
+            self._attr_hvac_mode = HVACMode.AUTO
         elif preset_mode == PRESET_AWAY:
-            await self._execute_with_retry(self._api.async_set_room_state, self._room_id, "manual", 16.0, 1440)
+            await self._api.async_set_room_state(
+                self._room_id,
+                API_MODE_AWAY,
+                DEFAULT_AWAY_TEMP,
+                DEFAULT_AWAY_DURATION,
+            )
+            self._attr_hvac_mode = HVACMode.HEAT
         elif preset_mode == PRESET_BOOST:
-            await self._execute_with_retry(self._api.async_set_room_state, self._room_id, "manual", 30.0, 30)
-        await self._refresh_twice()
-
-    @staticmethod
-    async def _execute_with_retry(func, *args, **kwargs):
-        """Helper to retry an API call multiple times."""
-        for attempt in range(1, MAX_ACTION_RETRIES + 1):
-            try:
-                return await func(*args, **kwargs)
-            except Exception as err:
-                _LOGGER.warning(
-                    "Attempt %d/%d to call %s failed: %s",
-                    attempt,
-                    MAX_ACTION_RETRIES,
-                    func.__name__,
-                    err,
-                )
-                if attempt < MAX_ACTION_RETRIES:
-                    await asyncio.sleep(RETRY_DELAY)
-                else:
-                    raise
-        return None
-
-    async def _refresh_twice(self):
-        """Force two consecutive refreshes to ensure state consistency."""
+            await self._api.async_set_room_state(
+                self._room_id,
+                API_MODE_BOOST,
+                DEFAULT_BOOST_TEMP,
+                DEFAULT_BOOST_DURATION,
+            )
+            self._attr_hvac_mode = HVACMode.HEAT
+        self._attr_preset_mode = preset_mode
+        self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
-        await asyncio.sleep(RETRY_DELAY)
-        await self.coordinator.async_request_refresh()
+
 
 async def async_setup_entry(hass, entry, async_add_entities):
     d = hass.data[DOMAIN][entry.entry_id]
-    entities = [IntuisClimate(d["coordinator"], d["api"], d["home_id"], rid, name) for rid, name in d["rooms"].items()]
+    api = d["api"]
+    entities = [IntuisConnectClimate(d["coordinator"], rid, api) for rid in d["rooms"]]
     async_add_entities(entities)
