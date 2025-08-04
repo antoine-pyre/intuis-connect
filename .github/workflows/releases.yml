@@ -26,7 +26,7 @@ jobs:
       - name: Extract version
         id: vars
         run: |
-          FILE_VERSION=$(jq -r '.version' custom_components/intuis_connect/manifest.json)
+          FILE_VERSION=$(jq -r '.version' intuis_connect/manifest.json)
           TAG_VERSION=${GITHUB_REF#refs/tags/v}
           echo "file=$FILE_VERSION"  >> $GITHUB_OUTPUT
           echo "tag=$TAG_VERSION"    >> $GITHUB_OUTPUT
