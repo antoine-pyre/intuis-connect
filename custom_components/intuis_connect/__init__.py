@@ -71,6 +71,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except CannotConnect as err:
         raise ConfigEntryNotReady from err
 
+    home_data = await intuis_api.async_get_homes_data()
+    # build a static map of room_id → room_name
+    rooms = {
+        r["id"]: r.get("name", f"Room {r['id']}")
+        for r in home_data["body"]["homes"][0]["rooms"]
+    }
+
     # ---------- setup coordinator --------------------------------------------------
     intuis_data = IntuisData(intuis_api)
 
@@ -89,7 +96,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "api": intuis_api,
         "coordinator": coordinator,
         "home_id": intuis_api.home_id,
-        "rooms": coordinator.data.get("rooms", {}),
+        "rooms": rooms,
         "modules": coordinator.data["modules"],
     }
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)

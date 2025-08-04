@@ -22,7 +22,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     """Set up Intuis Connect sensors from a config entry."""
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
-    home_id = data["home_id"]
+    home_id = data["api"].home_id
     rooms = data["rooms"]
 
     entities: list[IntuisSensor] = []
