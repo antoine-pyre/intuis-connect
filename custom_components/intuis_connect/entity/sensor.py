@@ -7,10 +7,9 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import UnitOfTemperature, UnitOfEnergy
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .data import IntuisRoom
-from .device import build_device_info
-from .entity import IntuisEntity
-from .helper import get_basic_utils
+from .intuis_entity import IntuisEntity
+from ..intuis_data import IntuisRoom
+from ..helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,8 +49,6 @@ class IntuisSensor(CoordinatorEntity, SensorEntity, IntuisEntity):
         self._metric = metric
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
-        # Point to the same device as the thermostat, etc.
-        self._attr_device_info = build_device_info(home_id, room.id, room.name)
 
     @property
     def native_value(self) -> float | int | None:

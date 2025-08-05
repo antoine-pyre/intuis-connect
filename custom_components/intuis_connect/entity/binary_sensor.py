@@ -10,10 +10,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .data import IntuisRoom
-from .device import build_device_info
-from .entity import IntuisEntity, IntuisDataUpdateCoordinator
-from .helper import get_basic_utils, get_room
+from .intuis_entity import IntuisEntity, IntuisDataUpdateCoordinator
+from .intuis_room import IntuisRoom
+from ..helper import get_basic_utils
 
 
 class _Base(CoordinatorEntity[IntuisDataUpdateCoordinator], BinarySensorEntity, IntuisEntity):
@@ -30,7 +29,6 @@ class _Base(CoordinatorEntity[IntuisDataUpdateCoordinator], BinarySensorEntity, 
         BinarySensorEntity.__init__(self)
         IntuisEntity.__init__(self, coordinator, room, home_id, name, metric)
         self._attr_device_class = device_class
-        self._dev = build_device_info(home_id, room.id, room.name)
 
     @property
     def device_info(self):

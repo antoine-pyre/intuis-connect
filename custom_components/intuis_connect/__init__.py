@@ -20,9 +20,9 @@ from .const import (
     CONF_HOME_ID,
     CONF_REFRESH_TOKEN,
 )
-from .data import IntuisData, IntuisRoomDefinition
-from .entity import IntuisDataUpdateCoordinator
-from .intuis_schedule import IntuisSchedule
+from .entity.intuis_entity import IntuisDataUpdateCoordinator
+from .entity.intuis_schedule import IntuisSchedule
+from .intuis_data import IntuisData, IntuisRoomDefinition
 
 _LOGGER = logging.getLogger(__name__)
 
