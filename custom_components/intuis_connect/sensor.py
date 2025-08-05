@@ -45,13 +45,11 @@ class IntuisSensor(CoordinatorEntity, SensorEntity, IntuisEntity):
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         SensorEntity.__init__(self)
-        IntuisEntity.__init__(self, coordinator, room, home_id)
+        IntuisEntity.__init__(self, coordinator, room, home_id, f"{room.name} {label}", metric)
 
         self._metric = metric
-        self._attr_name = f"{room.name} {label}"
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
-        self._attr_unique_id = f"{self._get_id_prefix()}_{metric}"
         # Point to the same device as the thermostat, etc.
         self._attr_device_info = build_device_info(home_id, room.id, room.name)
 

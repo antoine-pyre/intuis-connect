@@ -35,11 +35,9 @@ class IntuisScheduleCalendar(
         """Initialize the calendar entity."""
         CoordinatorEntity.__init__(self, coordinator)
         CalendarEntity.__init__(self)
-        IntuisEntity.__init__(self, coordinator, room, home_id)
+        IntuisEntity.__init__(self, coordinator, room, home_id, f"{room.name} Schedule", "schedule_calendar")
 
         self._api = api
-        self._attr_name = f"{room.name} Schedule"
-        self._attr_unique_id = f"{self._get_id_prefix()}_calendar"
 
     @property
     def event(self) -> CalendarEvent | None:
