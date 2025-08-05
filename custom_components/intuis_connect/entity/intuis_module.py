@@ -33,14 +33,14 @@ class NMRIntuisModule(IntuisModule):
     """Class to represent a NMR module in the Intuis Connect system."""
 
     def __init__(
-        self,
-        module_id: str,
-        firmware_revision: int,
-        last_seen: int,
-        bridge: str,
-        hardware_version: int | None = None,
-        image_type: int | None = None,
-        manufacturer_id: int | None = None,
+            self,
+            module_id: str,
+            firmware_revision: int,
+            last_seen: int,
+            bridge: str,
+            hardware_version: int | None = None,
+            image_type: int | None = None,
+            manufacturer_id: int | None = None,
     ) -> None:
         """Initialize the NMR module."""
         IntuisModule.__init__(self, module_id, "NMR")
@@ -69,21 +69,21 @@ class NMGIntuisModule(IntuisModule):
     """Class to represent a NMG module in the Intuis Connect system."""
 
     def __init__(
-        self,
-        module_id: str,
-        firmware_revision: int,
-        hardware_version: int,
-        uptime: int,
-        wifi_strength: int,
-        subtype: str,
-        configure: bool,
-        debug_enabled: bool,
-        install_progress: int,
-        open_zigbee: bool,
-        outdoor_temperature: float,
-        router_id: str,
-        therm_setpoint_day_color_type: str,
-        therm_setpoint_default_duration: int,
+            self,
+            module_id: str,
+            firmware_revision: int,
+            hardware_version: int,
+            uptime: int,
+            wifi_strength: int,
+            subtype: str,
+            configure: bool,
+            debug_enabled: bool,
+            install_progress: int,
+            open_zigbee: bool,
+            outdoor_temperature: float,
+            router_id: str,
+            therm_setpoint_day_color_type: str,
+            therm_setpoint_default_duration: int,
     ) -> None:
         """Initialize the NMG module."""
         IntuisModule.__init__(self, module_id, "NMG")
@@ -126,17 +126,17 @@ class NMHIntuisModule(IntuisModule):
     """Class to represent a NMH module in the Intuis Connect system."""
 
     def __init__(
-        self,
-        module_id: str,
-        last_seen: int,
-        bridge: str,
-        firmware_revision_thirdparty: str,
-        muller_type: str,
-        offload: bool,
-        presence_sensor: str,
-        radiator_state: str,
-        reachable: bool,
-        router_id: str,
+            self,
+            module_id: str,
+            last_seen: int,
+            bridge: str,
+            firmware_revision_thirdparty: str,
+            muller_type: str,
+            offload: bool,
+            presence_sensor: str,
+            radiator_state: str,
+            reachable: bool,
+            router_id: str,
     ) -> None:
         """Initialize the NMH module."""
         IntuisModule.__init__(self, module_id, "NMH")

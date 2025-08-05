@@ -16,7 +16,8 @@ _LOGGER = logging.getLogger(__name__)
 class IntuisData:
     """Class to handle data fetching and processing for the Intuis Connect integration."""
 
-    def __init__(self, api: IntuisAPI, rooms_definitions: dict[str, IntuisRoomDefinition], schedules: list[IntuisSchedule]) -> None:
+    def __init__(self, api: IntuisAPI, rooms_definitions: dict[str, IntuisRoomDefinition],
+                 schedules: list[IntuisSchedule]) -> None:
         """Initialize the data handler."""
         self._api = api
         self._energy_cache: dict[str, float] = {}
