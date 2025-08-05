@@ -28,10 +28,7 @@ class _Base(CoordinatorEntity[IntuisDataUpdateCoordinator], BinarySensorEntity, 
     ) -> None:
         CoordinatorEntity.__init__(self, coordinator)
         BinarySensorEntity.__init__(self)
-        IntuisEntity.__init__(self, coordinator, room, home_id)
-        self._coordinator = coordinator
-        self._attr_name = name
-        self._attr_unique_id = f"{self._get_id_prefix()}_{metric}"
+        IntuisEntity.__init__(self, coordinator, room, home_id, name, metric)
         self._attr_device_class = device_class
         self._dev = build_device_info(home_id, room.id, room.name)
 
