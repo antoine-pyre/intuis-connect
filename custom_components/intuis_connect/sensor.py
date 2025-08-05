@@ -8,8 +8,8 @@ from homeassistant.const import UnitOfTemperature, UnitOfEnergy
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .entity.intuis_entity import IntuisEntity
-from .intuis_data import IntuisRoom
 from .helper import get_basic_utils
+from .intuis_data import IntuisRoom
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,11 +56,6 @@ class IntuisSensor(CoordinatorEntity, SensorEntity, IntuisEntity):
         raise NotImplementedError(
             f"Subclasses of IntuisSensor must implement native_value for {self._metric}"
         )
-
-    @property
-    def device_info(self):
-        """Return device registry info."""
-        return self._attr_device_info
 
 
 class IntuisMullerTypeSensor(IntuisSensor):
