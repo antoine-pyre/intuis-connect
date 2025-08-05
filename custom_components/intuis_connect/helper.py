@@ -10,8 +10,8 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 from .api import IntuisAPI, CannotConnect, InvalidAuth
-from .data import IntuisRoom
-from .entity import IntuisDataUpdateCoordinator
+from .entity.intuis_entity import IntuisDataUpdateCoordinator
+from .intuis_data import IntuisRoom
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,16 +60,6 @@ def get_room(coordinator: IntuisDataUpdateCoordinator, room_id: str) -> IntuisRo
         return room
     _LOGGER.warning("Room %s not found in coordinator data", room_id)
     return None
-
-
-def get_room_name(coordinator: IntuisDataUpdateCoordinator, room_id: str) -> str | None:
-    """Get the name of a room by its ID."""
-    room = get_room(coordinator, room_id)
-    if room and "name" in room:
-        return room["name"]
-    _LOGGER.warning("Room %s not found", room_id)
-    return None
-
 
 def get_api(hass: HomeAssistant, entry: ConfigEntry) -> IntuisAPI:
     """Get the Intuis API instance from the Home Assistant instance."""

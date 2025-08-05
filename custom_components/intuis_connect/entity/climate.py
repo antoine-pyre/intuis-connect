@@ -18,25 +18,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .api import IntuisAPI
-from .const import (
-    API_MODE_AWAY,
-    API_MODE_BOOST,
-    API_MODE_HOME,
-    API_MODE_MANUAL,
-    API_MODE_OFF,
-    DEFAULT_AWAY_DURATION,
-    DEFAULT_AWAY_TEMP,
-    DEFAULT_BOOST_DURATION,
-    DEFAULT_BOOST_TEMP,
-    PRESET_AWAY,
-    PRESET_BOOST,
-    PRESET_SCHEDULE, API_MODE_AUTO,
-)
-from .data import IntuisRoom
-from .device import build_device_info
-from .entity import IntuisEntity, IntuisDataUpdateCoordinator
-from .helper import get_basic_utils
+from .intuis_entity import IntuisEntity, IntuisDataUpdateCoordinator
+from .. import IntuisAPI
+from ..const import PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE, API_MODE_OFF, API_MODE_AUTO, API_MODE_MANUAL, \
+    API_MODE_AWAY, API_MODE_BOOST, API_MODE_HOME, DEFAULT_AWAY_TEMP, DEFAULT_AWAY_DURATION, DEFAULT_BOOST_TEMP, \
+    DEFAULT_BOOST_DURATION
+from ..intuis_data import IntuisRoom
+from ..helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,7 +63,7 @@ class IntuisConnectClimate(
     @property
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
-        return build_device_info(self._home_id, self._get_room().id, self._attr_name)
+        return self._attr_device_info
 
     @property
     def current_temperature(self) -> StateType:
