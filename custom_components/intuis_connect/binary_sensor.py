@@ -30,10 +30,6 @@ class _Base(CoordinatorEntity[IntuisDataUpdateCoordinator], BinarySensorEntity, 
         IntuisEntity.__init__(self, coordinator, room, home_id, name, metric)
         self._attr_device_class = device_class
 
-    @property
-    def device_info(self):
-        return self._dev
-
 
 class PresenceSensor(_Base):
     def __init__(
