@@ -12,10 +12,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .intuis_entity import IntuisEntity, IntuisDataUpdateCoordinator
-from .. import IntuisAPI
-from ..helper import get_basic_utils
-from ..intuis_data import IntuisRoom
+from custom_components.intuis_connect import IntuisAPI
+from custom_components.intuis_connect.entity.intuis_entity import IntuisDataUpdateCoordinator, IntuisEntity
+from custom_components.intuis_connect.entity.intuis_room import IntuisRoom
+from custom_components.intuis_connect.helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
 
