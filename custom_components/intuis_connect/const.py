@@ -8,7 +8,7 @@ CONF_REFRESH_TOKEN = "refresh_token"
 CONF_HOME_ID = "home_id"
 
 # Default override / preset settings (editable in Options flow later)
-DEFAULT_MANUAL_DURATION = 120      # minutes
+DEFAULT_MANUAL_DURATION = 120  # minutes
 DEFAULT_AWAY_DURATION = 1440  # minutes
 DEFAULT_BOOST_DURATION = 30  # minutes
 DEFAULT_AWAY_TEMP = 16.0  # °C
@@ -51,8 +51,8 @@ APP_VERSION = "1108100"
 
 # Presets
 PRESET_SCHEDULE = "schedule"
-PRESET_AWAY     = "away"
-PRESET_BOOST    = "boost"
+PRESET_AWAY = "away"
+PRESET_BOOST = "boost"
 SUPPORTED_PRESETS: list[str] = [PRESET_SCHEDULE, PRESET_AWAY, PRESET_BOOST]
 
 # Options

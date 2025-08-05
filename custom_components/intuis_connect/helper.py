@@ -8,8 +8,8 @@ from aiohttp import ClientSession
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
 from .api import IntuisAPI, CannotConnect, InvalidAuth
+from .const import DOMAIN
 from .entity.intuis_entity import IntuisDataUpdateCoordinator
 from .intuis_data import IntuisRoom
 
@@ -60,6 +60,7 @@ def get_room(coordinator: IntuisDataUpdateCoordinator, room_id: str) -> IntuisRo
         return room
     _LOGGER.warning("Room %s not found in coordinator data", room_id)
     return None
+
 
 def get_api(hass: HomeAssistant, entry: ConfigEntry) -> IntuisAPI:
     """Get the Intuis API instance from the Home Assistant instance."""

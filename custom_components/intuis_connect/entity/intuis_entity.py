@@ -9,10 +9,12 @@ from custom_components.intuis_connect.entity.intuis_room import IntuisRoom
 
 IntuisDataUpdateCoordinator = DataUpdateCoordinator[dict[str, Any]]
 
+
 class IntuisEntity(Entity):
     """Base class for Intuis entities."""
 
-    def __init__(self, coordinator: IntuisDataUpdateCoordinator, room: IntuisRoom, home_id: str, name: str, entity_type: str) -> None:
+    def __init__(self, coordinator: IntuisDataUpdateCoordinator, room: IntuisRoom, home_id: str, name: str,
+                 entity_type: str) -> None:
         """Initialize the Intuis entity."""
         Entity.__init__(self)
         self._coordinator = coordinator
