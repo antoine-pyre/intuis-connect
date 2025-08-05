@@ -17,7 +17,7 @@ class IntuisEntity(Entity):
         self._room = room
         self._home_id = home_id
         self._attr_name = name
-        self._attr_unique_id = f"{home_id}_{entity_type}"
+        self._attr_unique_id = f"{self._get_id_prefix()}_{entity_type}"
 
     def _get_room(self) -> IntuisRoom | None:
         """Get the room object by ID."""
