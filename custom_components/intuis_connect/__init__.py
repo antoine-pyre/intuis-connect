@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import datetime
 import logging
-from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
@@ -37,7 +36,6 @@ SERVICE_CLEAR_OVERRIDE = "clear_override"
 ATTR_ROOM_ID = "room_id"
 
 CLEAR_OVERRIDE_SCHEMA = vol.Schema({vol.Required(ATTR_ROOM_ID): str})
-
 
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -74,7 +72,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     home_data = await intuis_api.async_get_homes_data()
     # build a static map of room_id → room_name
-    rooms_definitions : dict[str, IntuisRoomDefinition] = {
+    rooms_definitions: dict[str, IntuisRoomDefinition] = {
         r["id"]: IntuisRoomDefinition.from_dict(r)
         for r in home_data["rooms"]
     }
