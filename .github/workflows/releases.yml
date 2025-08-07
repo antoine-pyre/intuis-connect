@@ -2,78 +2,41 @@ name: Release Intuis Connect
 
 on:
   push:
-    branches:
-      - main
+    # Only run this workflow when a new tag is pushed
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
-  packages: read
 
 jobs:
   release:
-    # Don’t run this workflow if it was triggered by the bump commit
-    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout full repo (tags too)
+      # 1. Checkout full repo (including tags)
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2. Set up Python
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-
-      # 3. Bump patch version
-      - name: Bump patch version
-        id: bump
-        run: |
-          python3 scripts/bump_version.py
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add custom_components/intuis_connect/manifest.json
-          git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }}"
-          git push origin HEAD:main
-
-      # 4. Extract bumped version
-      - name: Extract version
-        id: vars
-        run: |
-          VERSION=$(jq -r .version custom_components/intuis_connect/manifest.json)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      # 5. Build ZIP asset
+      # 2. Build ZIP asset
       - name: Build integration ZIP
         run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "Building intuis_connect_${VERSION}.zip"
           cd custom_components/intuis_connect
-          zip -r ../../intuis_connect_${{ steps.vars.outputs.version }}.zip ./*
+          zip -r ../../intuis_connect_${VERSION}.zip ./*
           cd -
 
-      # 6. Create Git tag if it doesn't exist
-      - name: Create Tag
-        id: tag
-        run: |
-          TAG="v${{ steps.vars.outputs.version }}"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists"
-          else
-            git tag "$TAG"
-            git push origin "$TAG"
-          fi
-
-      # 7. Publish GitHub Release
+      # 3. Publish GitHub Release
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: Intuis Connect ${{ steps.vars.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          name: Intuis Connect ${{ github.ref_name }}
           draft: false
           prerelease: false
-          files: intuis_connect_${{ steps.vars.outputs.version }}.zip
+          files: intuis_connect_${{ github.ref_name }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
