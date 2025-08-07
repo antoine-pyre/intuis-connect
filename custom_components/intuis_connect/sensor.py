@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfTemperature, UnitOfEnergy
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -152,6 +152,10 @@ class IntuisMinutesSensor(IntuisSensor):
             None,
         )
         self._attr_icon = "mdi:timer"
+        # tell HA this is a duration sensor
+        self._attr_device_class = SensorDeviceClass.DURATION
+        # treat it like a measurement (so it will chart properly)
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> int:

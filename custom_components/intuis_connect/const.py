@@ -7,6 +7,8 @@ CONF_PASSWORD = "password"
 CONF_REFRESH_TOKEN = "refresh_token"
 CONF_HOME_ID = "home_id"
 
+DEFAULT_UPDATE_INTERVAL = 2 # minutes
+
 # Default override / preset settings (editable in Options flow later)
 DEFAULT_MANUAL_DURATION = 120  # minutes
 DEFAULT_AWAY_DURATION = 1440  # minutes

@@ -17,7 +17,7 @@ from .api import IntuisAPI, InvalidAuth, CannotConnect
 from .const import (
     DOMAIN,
     CONF_HOME_ID,
-    CONF_REFRESH_TOKEN,
+    CONF_REFRESH_TOKEN, DEFAULT_UPDATE_INTERVAL,
 )
 from .entity.intuis_entity import IntuisDataUpdateCoordinator
 from .entity.intuis_schedule import IntuisSchedule
@@ -91,7 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER,
         name=DOMAIN,
         update_method=intuis_data.async_update,
-        update_interval=datetime.timedelta(minutes=5),
+        update_interval=datetime.timedelta(minutes=DEFAULT_UPDATE_INTERVAL),
     )
     await coordinator.async_config_entry_first_refresh()
 
