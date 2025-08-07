@@ -8,7 +8,7 @@ from typing import Any
 
 import aiohttp
 
-from .const import (
+from ..utils.const import (
     BASE_URLS,
     AUTH_PATH,
     HOMESDATA_PATH,
@@ -27,6 +27,7 @@ from .const import (
     SET_SCHEDULE_PATH,
     DELETE_SCHEDULE_PATH,
     SWITCH_SCHEDULE_PATH,
+    CONFIG_PATH,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,7 +49,10 @@ class IntuisAPI:
     """Minimal client wrapping the Intuis Netatmo endpoints."""
 
     def __init__(
-            self, session: aiohttp.ClientSession, home_id: str | None = None
+            self,
+            session: aiohttp.ClientSession,
+            home_id: str | None = None,
+            debug: bool = False,
     ) -> None:
         """Initialize the API client."""
         self._session = session
@@ -58,6 +62,7 @@ class IntuisAPI:
         self._access_token: str | None = None
         self._refresh_token: str | None = None
         self._expiry: float | None = None
+        self._debug: bool = debug
         _LOGGER.debug("IntuisAPI initialized with home_id=%s", home_id)
 
     @property
@@ -73,19 +78,22 @@ class IntuisAPI:
     # ---------- internal helpers ------------------------------------------------
     async def _ensure_token(self) -> None:
         """Ensure the access token is valid, refreshing it if necessary."""
-        _LOGGER.debug("Ensuring access token is valid")
+        if self._debug:
+            _LOGGER.debug("Ensuring access token is valid")
         if self._access_token is None:
             _LOGGER.error("No access token available, authentication required")
             raise InvalidAuth("No access token – login first")
         if self._expiry and asyncio.get_running_loop().time() > self._expiry - 60:
-            _LOGGER.debug("Access token expired or about to expire, refreshing token")
+            if self._debug:
+                _LOGGER.debug("Access token expired or about to expire, refreshing token")
             await self.async_refresh_access_token()
         else:
             _LOGGER.debug("Access token is valid")
 
     def _save_tokens(self, data: dict[str, Any]) -> None:
         """Save the tokens and expiry time from an auth response."""
-        _LOGGER.debug("Saving tokens, expires in %s seconds", data.get("expires_in"))
+        if self._debug:
+            _LOGGER.debug("Saving tokens, expires in %s seconds", data.get("expires_in"))
         self._access_token = data["access_token"]
         self._refresh_token = data.get("refresh_token")
         self._expiry = asyncio.get_running_loop().time() + data.get("expires_in", 10800)
@@ -99,7 +107,8 @@ class IntuisAPI:
         headers["Authorization"] = f"Bearer {self._access_token}"
 
         url = f"{self._base_url}{path}"
-        _LOGGER.debug("Making API request: %s %s", method, url)
+        if self._debug:
+            _LOGGER.debug("Making API request: %s %s", method, url)
 
         try:
             resp = await self._session.request(
@@ -127,7 +136,8 @@ class IntuisAPI:
     # ---------- auth ------------------------------------------------------------
     async def async_login(self, username: str, password: str) -> str:
         """Log in to the Intuis Connect service."""
-        _LOGGER.debug("Attempting login for user %s", username)
+        if self._debug:
+            _LOGGER.debug("Attempting login for user %s", username)
         payload = {
             "grant_type": "password",
             "username": username,
@@ -140,7 +150,8 @@ class IntuisAPI:
         }
         for base in BASE_URLS:
             try:
-                _LOGGER.debug("Trying authentication endpoint %s", base + AUTH_PATH)
+                if self._debug:
+                    _LOGGER.debug("Trying authentication endpoint %s", base + AUTH_PATH)
                 async with self._session.post(
                         f"{base}{AUTH_PATH}", data=payload, timeout=15
                 ) as resp:
@@ -151,7 +162,8 @@ class IntuisAPI:
                         continue
                     data = await resp.json()
                     if "access_token" in data:
-                        _LOGGER.debug("Login successful on %s", base)
+                        if self._debug:
+                            _LOGGER.debug("Login successful on %s", base)
                         self._base_url = base
                         self._save_tokens(data)
                         break
@@ -165,20 +177,22 @@ class IntuisAPI:
         else:
             _LOGGER.error("Unable to log in on any cluster")
             raise CannotConnect("Unable to log in on any cluster")
-
-        _LOGGER.debug("Retrieving homes data post-login for token validation")
+        if self._debug:
+            _LOGGER.debug("Retrieving homes data post-login for token validation")
         await self.async_get_homes_data()
         if not self.home_id:
             _LOGGER.error("Login completed but no home associated with account")
             raise InvalidAuth("No home associated with account")
-        _LOGGER.debug("Login completed, home_id=%s", self.home_id)
+        if self._debug:
+            _LOGGER.debug("Login completed, home_id=%s", self.home_id)
         return self.home_id
 
     async def async_refresh_access_token(self) -> None:
         """Refresh the access token."""
-        _LOGGER.debug(
-            "Refreshing access token using refresh_token=%s", self._refresh_token
-        )
+        if self._debug:
+            _LOGGER.debug(
+                "Refreshing access token using refresh_token=%s", self._refresh_token
+            )
         if not self._refresh_token:
             _LOGGER.error("No refresh token saved, cannot refresh access token")
             raise InvalidAuth("No refresh token saved")
@@ -223,17 +237,35 @@ class IntuisAPI:
 
     async def async_get_home_status(self) -> dict[str, Any]:
         """Fetch the status of the home."""
-        _LOGGER.debug("Fetching home status for home_id=%s", self.home_id)
+        if self._debug:
+            _LOGGER.debug("Fetching home status for home_id=%s", self.home_id)
         payload = {"home_id": self.home_id}
         async with await self._async_request(
                 "post", HOMESTATUS_PATH, data=payload
         ) as resp:
             result = await resp.json()
-        _LOGGER.debug("Home status response: %s", result)
+        if self._debug:
+            _LOGGER.debug("Home status response: %s", result)
         home = result.get("body", {}).get("home", {})
         if not home:
             _LOGGER.error("Home status response is empty or malformed: %s", result)
             raise APIError("Empty home status response")
+        return home
+
+
+    async def async_get_config(self) -> dict[str, Any]:
+        """Fetch the configuration of the home."""
+        _LOGGER.debug("Fetching home configurations for home_id=%s", self.home_id)
+        payload = {"home_id": self.home_id}
+        async with await self._async_request(
+            "post", CONFIG_PATH, data=payload
+        ) as resp:
+            result = await resp.json()
+        _LOGGER.debug("Home configurations response: %s", result)
+        home = result.get("body", {}).get("home", {})
+        if not home:
+            _LOGGER.error("Home configurations response is empty or malformed: %s", result)
+            raise APIError("Empty home configurations response")
         return home
 
     async def async_set_room_state(
@@ -244,13 +276,14 @@ class IntuisAPI:
             duration: int | None = None,
     ) -> None:
         """Send setstate command for one room."""
-        _LOGGER.debug(
-            "Setting room state for room %s: mode=%s, temp=%s, duration=%s",
-            room_id,
-            mode,
-            temp,
-            duration,
-        )
+        if self._debug:
+            _LOGGER.debug(
+                "Setting room state for room %s: mode=%s, temp=%s, duration=%s",
+                room_id,
+                mode,
+                temp,
+                duration,
+            )
         room_payload: dict[str, Any] = {"id": room_id, "therm_setpoint_mode": mode}
         if mode == "manual":
             if temp is None:
@@ -274,13 +307,15 @@ class IntuisAPI:
             json=payload,
             headers={"Content-Type": "application/json"},
         )
-        _LOGGER.info("Room %s state set to mode=%s, temp=%s", room_id, mode, temp)
+        if self._debug:
+            _LOGGER.debug("Room %s state set to mode=%s, temp=%s", room_id, mode, temp)
 
     async def async_get_home_measure(self, room_id: str, date_iso: str) -> float:
         """Return kWh for given room and date (YYYY-MM-DD) or 0.0 on failure."""
-        _LOGGER.debug(
-            "Fetching home measure for room %s on date %s", room_id, date_iso
-        )
+        if self._debug:
+            _LOGGER.debug(
+                "Fetching home measure for room %s on date %s", room_id, date_iso
+            )
         payload = {
             "home_id": self.home_id,
             "room_id": room_id,

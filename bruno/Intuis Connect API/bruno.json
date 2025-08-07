@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Intuis Connect API",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

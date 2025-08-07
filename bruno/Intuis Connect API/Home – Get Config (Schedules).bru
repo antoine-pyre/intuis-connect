@@ -1,0 +1,28 @@
+meta {
+  name: Home – Get Config (Schedules)
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/syncapi/v1/getconfigs
+  body: formUrlEncoded
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{access_token}}
+  Content-Type: application/x-www-form-urlencoded
+}
+
+body:form-urlencoded {
+  home_id: {{home_id}}
+}
+
+settings {
+  encodeUrl: true
+}
+
+docs {
+  Retrieve configuration details of the home, including defined heating schedules and device config. Use this to find schedule_id values.
+}

@@ -1,0 +1,48 @@
+meta {
+  name: Home – Get Energy Measure
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{base_url}}/api/gethomemeasure
+  body: json
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{access_token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "app_identifier": "app_muller",
+    "home": {
+      "id": "{{home_id}}",
+      "rooms": [
+        {
+          "id": "{{room1_id}}",
+          "bridge": "{{bridge_id}}",
+          "type": "sum_energy_elec$0"
+        },
+        {
+          "id": "{{room2_id}}",
+          "bridge": "{{bridge_id}}",
+          "type": "sum_energy_elec$0"
+        }
+      ]
+    },
+    "scale": "1day",
+    "date_begin": {{start_epoch}},
+    "date_end": {{end_epoch}}
+  }
+}
+
+settings {
+  encodeUrl: true
+}
+
+docs {
+  Get energy consumption measures (e.g., daily kWh) for specified room(s) in a time range. Configure room1_id/room2_id, bridge_id, and date_begin/end.
+}

@@ -10,8 +10,8 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import CannotConnect, InvalidAuth
-from .const import (
+from .intuis_api.api import CannotConnect, InvalidAuth
+from .utils.const import (
     DOMAIN,
     CONF_USERNAME,
     CONF_PASSWORD,
@@ -28,7 +28,7 @@ from .const import (
     DEFAULT_AWAY_TEMP,
     DEFAULT_BOOST_TEMP,
 )
-from .helper import async_validate_api
+from .utils.helper import async_validate_api
 
 _LOGGER = logging.getLogger(__name__)
 
