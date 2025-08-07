@@ -8,12 +8,10 @@
 * **Auto-discovery** of every radiator (grouped by room)  
 * **Climate entity** per room  
   * Schedule / Manual / Frost modes  
-  * Presets : **Boost** and **Away** (durations & temperatures configurable)  
+  * Presets : **Boost** and **Away** (durations & temperatures not configurable, they are set in the Intuis app)
 * **Sensors**  
-  * Temperature, Set-point, Heating Power %  
-  * Presence & Open-window detection  
-* Config & Options flows (no YAML)  
-* HACS-ready updates
+  * Temperature, Set-point
+  * Presence & Open-window detection  (Not really useful, the integration pull the data every N minutes, so it’s not real-time)
 
 ---
 
