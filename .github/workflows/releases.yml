@@ -2,9 +2,9 @@ name: Release Intuis Connect
 
 on:
   push:
-    # Only run this workflow when a new tag is pushed
-    tags:
-      - 'v*'
+    branches:
+      - develop
+      - master
 
 permissions:
   contents: write
@@ -20,23 +20,41 @@ jobs:
         with:
           fetch-depth: 0
 
-      # 2. Build ZIP asset
+      # 2. Extract version from manifest and compute tag
+      - name: Extract version & compute tag
+        id: vars
+        run: |
+          VERSION=$(jq -r .version custom_components/intuis_connect/manifest.json)
+          BRANCH=${GITHUB_REF#refs/heads/}
+          if [[ "$BRANCH" == "develop" ]]; then
+            TAG="v${VERSION}-beta"
+          else
+            TAG="v${VERSION}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      # 3. Create or move the tag to the current commit
+      - name: Create/move tag
+        run: |
+          git tag -f "${{ steps.vars.outputs.tag }}" "$GITHUB_SHA"
+          git push origin "${{ steps.vars.outputs.tag }}" --force
+
+      # 4. Build the ZIP asset
       - name: Build integration ZIP
         run: |
-          VERSION="${GITHUB_REF#refs/tags/}"
-          echo "Building intuis_connect_${VERSION}.zip"
+          TAG=${{ steps.vars.outputs.tag }}
           cd custom_components/intuis_connect
-          zip -r ../../intuis_connect_${VERSION}.zip ./*
+          zip -r ../../intuis_connect_${TAG}.zip ./*
           cd -
 
-      # 3. Publish GitHub Release
+      # 5. Publish GitHub Release
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Intuis Connect ${{ github.ref_name }}
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: Intuis Connect ${{ steps.vars.outputs.tag }}
           draft: false
-          prerelease: false
-          files: intuis_connect_${{ github.ref_name }}.zip
+          prerelease: ${{ github.ref == 'refs/heads/develop' }}
+          files: intuis_connect_${{ steps.vars.outputs.tag }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
