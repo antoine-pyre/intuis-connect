@@ -1,0 +1,45 @@
+meta {
+  name: Auth – Get Token
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/oauth2/token
+  body: formUrlEncoded
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/x-www-form-urlencoded
+}
+
+body:form-urlencoded {
+  grant_type: password
+  username: {{username}}
+  password: {{password}}
+  client_id: {{client_id}}
+  client_secret: {{client_secret}}
+  scope: read_muller write_muller
+  user_prefix: muller
+  app_version: 1108100
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+     var jsonData = res.getBody();
+     if (jsonData.access_token) {
+         bru.setVar("access_token", jsonData.access_token);
+         bru.setVar("refresh_token", jsonData.refresh_token);
+         console.log("Access token set: ", jsonData.access_token);
+     }
+  }
+}
+
+settings {
+  encodeUrl: true
+}
+
+docs {
+  Obtain an OAuth2 access token using Intuis (Netatmo) account credentials. Populates access_token and refresh_token variables.
+}

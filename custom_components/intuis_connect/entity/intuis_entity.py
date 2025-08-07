@@ -4,8 +4,8 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from custom_components.intuis_connect import DOMAIN
-from custom_components.intuis_connect.entity.intuis_room import IntuisRoom
+from ..utils.const import DOMAIN
+from ..entity.intuis_room import IntuisRoom
 
 IntuisDataUpdateCoordinator = DataUpdateCoordinator[dict[str, Any]]
 

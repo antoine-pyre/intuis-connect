@@ -1,0 +1,32 @@
+meta {
+  name: Intuis Connect API
+}
+
+auth {
+  mode: none
+}
+
+vars:pre-request {
+  base_url: {{baseUrl}}
+  username: {{email}}
+  password: {{password}}
+  client_id: {{clientId}}
+  client_secret: {{clientSecret}}
+  access_token: 
+  refresh_token: 
+  home_id: 
+  room_id: 
+  room1_id: 
+  room2_id: 
+  bridge_id: 
+  schedule_id: 
+  home_timezone: Europe/Paris
+  temp_celsius: 20.0
+  end_time: 
+  start_epoch: 
+  end_epoch: 
+}
+
+docs {
+  Collection of Intuis (Muller Intuitiv with Netatmo) API endpoints for home data and device control.
+}

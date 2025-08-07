@@ -19,12 +19,12 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import IntuisAPI
-from .const import PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE, API_MODE_OFF, API_MODE_AUTO, API_MODE_MANUAL, \
+from .entity.intuis_room import IntuisRoom
+from .utils.const import PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE, API_MODE_OFF, API_MODE_AUTO, API_MODE_MANUAL, \
     API_MODE_AWAY, API_MODE_BOOST, API_MODE_HOME, DEFAULT_AWAY_TEMP, DEFAULT_AWAY_DURATION, DEFAULT_BOOST_TEMP, \
     DEFAULT_BOOST_DURATION
 from .entity.intuis_entity import IntuisEntity, IntuisDataUpdateCoordinator
-from .helper import get_basic_utils
-from .intuis_data import IntuisRoom
+from .utils.helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
 

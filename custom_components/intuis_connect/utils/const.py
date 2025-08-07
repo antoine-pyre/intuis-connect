@@ -27,6 +27,7 @@ BASE_URL: str = BASE_URLS[0]  # used for legacy constants
 AUTH_PATH: str = "/oauth2/token"
 HOMESDATA_PATH = "/api/homesdata"
 HOMESTATUS_PATH = "/syncapi/v1/homestatus"
+CONFIG_PATH = "/syncapi/v1/getconfigs"
 SETSTATE_PATH = "/syncapi/v1/setstate"
 HOMEMEASURE_PATH = "/syncapi/v1/homemeasure"
 

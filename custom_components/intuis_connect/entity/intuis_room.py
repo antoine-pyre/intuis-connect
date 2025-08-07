@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from custom_components.intuis_connect.entity.intuis_module import IntuisModule
+from ..entity.intuis_module import IntuisModule
 
 
 class IntuisRoomDefinition:

@@ -13,8 +13,8 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .api import IntuisAPI, InvalidAuth, CannotConnect
-from .const import (
+from .intuis_api.api import IntuisAPI, InvalidAuth, CannotConnect
+from .utils.const import (
     DOMAIN,
     CONF_HOME_ID,
     CONF_REFRESH_TOKEN, DEFAULT_UPDATE_INTERVAL,
