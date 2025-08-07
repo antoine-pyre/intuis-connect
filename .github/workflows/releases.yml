@@ -2,41 +2,74 @@ name: Release Intuis Connect
 
 on:
   push:
-    # Only run this workflow when a new tag is pushed
-    tags:
-      - 'v*'
+    branches:
+      - develop
+      - master
 
 permissions:
   contents: write
 
 jobs:
   release:
+    # don’t run on bot commits
+    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout full repo (including tags)
+      # 1. Checkout full history
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2. Build ZIP asset
+      # 2. Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      # 3. Bump patch version
+      - name: Bump version
+        id: bump
+        run: |
+          python3 scripts/bump_version.py
+          VERSION=$(jq -r .version custom_components/intuis_connect/manifest.json)
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add custom_components/intuis_connect/manifest.json
+          git commit -m "chore: bump version to ${VERSION}"
+          git push origin HEAD:${{ github.ref_name }}
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      # 4. Create tag (beta on develop, full on master)
+      - name: Create Tag
+        id: tag
+        run: |
+          if [[ "${GITHUB_REF#refs/heads/}" == "develop" ]]; then
+            TAG="v${{ steps.bump.outputs.version }}-beta"
+          else
+            TAG="v${{ steps.bump.outputs.version }}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
+      # 5. Build ZIP asset
       - name: Build integration ZIP
         run: |
-          VERSION="${GITHUB_REF#refs/tags/}"
-          echo "Building intuis_connect_${VERSION}.zip"
+          VERSION=${{ steps.tag.outputs.tag }}
           cd custom_components/intuis_connect
           zip -r ../../intuis_connect_${VERSION}.zip ./*
           cd -
 
-      # 3. Publish GitHub Release
+      # 6. Publish GitHub Release
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Intuis Connect ${{ github.ref_name }}
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Intuis Connect ${{ steps.tag.outputs.tag }}
           draft: false
-          prerelease: false
-          files: intuis_connect_${{ github.ref_name }}.zip
+          prerelease: ${{ startsWith(github.ref, 'refs/heads/develop') }}
+          files: intuis_connect_${{ steps.tag.outputs.tag }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
