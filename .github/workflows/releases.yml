@@ -11,65 +11,50 @@ permissions:
 
 jobs:
   release:
-    # don’t run on bot commits
-    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout full history
+      # 1. Checkout full repo (including tags)
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2. Set up Python
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-
-      # 3. Bump patch version
-      - name: Bump version
-        id: bump
+      # 2. Extract version from manifest and compute tag
+      - name: Extract version & compute tag
+        id: vars
         run: |
-          python3 scripts/bump_version.py
           VERSION=$(jq -r .version custom_components/intuis_connect/manifest.json)
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add custom_components/intuis_connect/manifest.json
-          git commit -m "chore: bump version to ${VERSION}"
-          git push origin HEAD:${{ github.ref_name }}
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-
-      # 4. Create tag (beta on develop, full on master)
-      - name: Create Tag
-        id: tag
-        run: |
-          if [[ "${GITHUB_REF#refs/heads/}" == "develop" ]]; then
-            TAG="v${{ steps.bump.outputs.version }}-beta"
+          BRANCH=${GITHUB_REF#refs/heads/}
+          if [[ "$BRANCH" == "develop" ]]; then
+            TAG="v${VERSION}-beta"
           else
-            TAG="v${{ steps.bump.outputs.version }}"
+            TAG="v${VERSION}"
           fi
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          git tag "${TAG}"
-          git push origin "${TAG}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-      # 5. Build ZIP asset
+      # 3. Create or move the tag to the current commit
+      - name: Create/move tag
+        run: |
+          git tag -f "${{ steps.vars.outputs.tag }}" "$GITHUB_SHA"
+          git push origin "${{ steps.vars.outputs.tag }}" --force
+
+      # 4. Build the ZIP asset
       - name: Build integration ZIP
         run: |
-          VERSION=${{ steps.tag.outputs.tag }}
+          TAG=${{ steps.vars.outputs.tag }}
           cd custom_components/intuis_connect
-          zip -r ../../intuis_connect_${VERSION}.zip ./*
+          zip -r ../../intuis_connect_${TAG}.zip ./*
           cd -
 
-      # 6. Publish GitHub Release
+      # 5. Publish GitHub Release
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: Intuis Connect ${{ steps.tag.outputs.tag }}
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: Intuis Connect ${{ steps.vars.outputs.tag }}
           draft: false
-          prerelease: ${{ startsWith(github.ref, 'refs/heads/develop') }}
-          files: intuis_connect_${{ steps.tag.outputs.tag }}.zip
+          prerelease: ${{ github.ref == 'refs/heads/develop' }}
+          files: intuis_connect_${{ steps.vars.outputs.tag }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
