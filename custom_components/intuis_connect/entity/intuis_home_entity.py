@@ -53,13 +53,15 @@ class IntuisHomeEntity(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEnt
     def native_value(self) -> Any:
         """Return the value of the home property."""
         home_data = self._get_home_data()
-        if home_data:
-            value = getattr(home_data, self._property, None)
-            if value is not None:
-                return value
-            else:
-                _LOGGER.warning("Home data not available for property %s, home data: %s", self._property, home_data)
-        return None
+        if not home_data:
+            _LOGGER.warning("Home data not available for home ID %s", self._home_id)
+            return None
+        value = getattr(home_data, self._property, None)
+        if value is not None:
+            return value
+        else:
+            _LOGGER.warning("Home data not available for property %s, home data: %s", self._property, home_data)
+            return None
 
 
 class IntuisHomeCoordinatesSensor(IntuisHomeEntity, SensorEntity):
