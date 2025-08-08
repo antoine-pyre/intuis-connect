@@ -25,8 +25,8 @@ class IntuisHomeEntity(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEnt
             entity_type: str,
             home_property: str,
             icon: str,
-            measurement: bool = False,
             available: bool = False,
+            measurement: bool = False,
     ) -> None:
         """Initialize the home entity."""
         super().__init__(coordinator)
@@ -72,6 +72,27 @@ class IntuisHomeEntity(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEnt
             )
             return None
 
+class IntuisHomeConfigEntity(IntuisHomeEntity):
+    """Base class for Intuis home-level configuration entities."""
+
+    def __init__(
+            self,
+            coordinator: IntuisDataUpdateCoordinator,
+            home_id: str,
+            entity_type: str,
+            home_property: str,
+            icon: str,
+            available: bool = False,
+            measurement: bool = False,
+    ) -> None:
+        """Initialize the home configuration entity."""
+        super().__init__(coordinator, home_id, entity_type, home_property, icon, measurement, available)
+
+    def _get_home(self) -> IntuisHome:
+        """Get the home data from coordinator."""
+        return self.coordinator.data.get("home_config")
+
+
 class IntuisHomeSensorDefinition:
     """Definition of a sensor entity for Intuis home-level data."""
 
@@ -84,23 +105,43 @@ class IntuisHomeSensorDefinition:
         self.available = available
 
 
-entities: list[IntuisHomeSensorDefinition] = [
-    IntuisHomeSensorDefinition("Name", "name", "mdi:home", False, True),
+intuis_home_entities: list[IntuisHomeSensorDefinition] = [
+    IntuisHomeSensorDefinition("Name", "name", "mdi:home", True),
     IntuisHomeSensorDefinition("Country", "country", "mdi:flag"),
     IntuisHomeSensorDefinition("Timezone", "timezone", "mdi:map-clock"),
-    IntuisHomeSensorDefinition("Altitude", "altitude", "mdi:elevation-rise", True),
+    IntuisHomeSensorDefinition("Altitude", "altitude", "mdi:elevation-rise", False, True),
     IntuisHomeSensorDefinition("City", "city", "mdi:city"),
     IntuisHomeSensorDefinition("Currency Code", "currency_code", "mdi:currency-usd"),
     IntuisHomeSensorDefinition("Number of Users", "nb_users", "mdi:account-multiple"),
-    IntuisHomeSensorDefinition("Temperature Control Mode", "temperature_control_mode", "mdi:thermometer", False, True),
-    IntuisHomeSensorDefinition("Thermostat Mode", "therm_mode", "mdi:thermostat", False, True),
+    IntuisHomeSensorDefinition("Temperature Control Mode", "temperature_control_mode", "mdi:thermometer",  True),
+    IntuisHomeSensorDefinition("Thermostat Mode", "therm_mode", "mdi:thermostat", True),
     IntuisHomeSensorDefinition("Thermostat Setpoint Default Duration",
-                               "therm_setpoint_default_duration", "mdi:timer-sand", False, True),
+                               "therm_setpoint_default_duration", "mdi:timer-sand",  True),
     IntuisHomeSensorDefinition("Thermostat Heating Priority",
-                               "therm_heating_priority", "mdi:priority-high", False, True),
-    IntuisHomeSensorDefinition("Contract Power Unit", "contract_power_unit", "mdi:flash", False, True),
+                               "therm_heating_priority", "mdi:priority-high",  True),
+    IntuisHomeSensorDefinition("Contract Power Unit", "contract_power_unit", "mdi:flash", True),
 ]
 
+intuis_home_config_entities: list[IntuisHomeSensorDefinition] = [
+    IntuisHomeSensorDefinition("Absence Detection", "absence_detection", "mdi:account-off",  True),
+    IntuisHomeSensorDefinition("Anticipation", "anticipation", "mdi:clock-fast",  True),
+    IntuisHomeSensorDefinition("Balancing", "balancing", "mdi:balance-scale",  True),
+    IntuisHomeSensorDefinition("Debug Enabled", "debug_enabled", "mdi:bug-check",  True),
+    IntuisHomeSensorDefinition("Offload", "offload", "mdi:power-plug-off", True),
+    IntuisHomeSensorDefinition("Open Window Detection", "open_window", "mdi:window-open-variant", True),
+    IntuisHomeSensorDefinition("Presence Threshold", "presence_threshold", "mdi:eye-check-outline"),
+    IntuisHomeSensorDefinition("Schedule Optimization", "schedule_optimization", "mdi:calendar-check-outline"),
+    IntuisHomeSensorDefinition("Temperature Lowering Mode",
+                               "temp_lowering_mode", "mdi:temperature-celsius"),
+    IntuisHomeSensorDefinition("Thermostat Setpoint Day Color Red EJP Offset",
+                               "therm_setpoint_day_color_red_ejp_offset", "mdi:thermometer-alert"),
+    IntuisHomeSensorDefinition("Thermostat Setpoint Day Color Red EJP Type",
+                               "therm_setpoint_day_color_red_ejp_type", "mdi:thermometer-alert"),
+    IntuisHomeSensorDefinition("Thermostat Setpoint Day Color White Offset",
+                               "therm_setpoint_day_color_white_offset", "mdi:thermometer-alert"),
+    IntuisHomeSensorDefinition("Thermostat Setpoint Day Color White Type",
+                               "therm_setpoint_day_color_white_type", "mdi:thermometer-alert"),
+]
 
 def provide_home_sensors(
         coordinator: IntuisDataUpdateCoordinator,
@@ -109,7 +150,7 @@ def provide_home_sensors(
     """Set up home-level sensor entities."""
 
     result: list[SensorEntity] = []
-    for entity_def in entities:
+    for entity_def in intuis_home_entities:
         result.append(
             IntuisHomeEntity(
                 coordinator,
