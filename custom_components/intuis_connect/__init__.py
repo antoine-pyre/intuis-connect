@@ -72,6 +72,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady from err
 
     intuis_home = await intuis_api.async_get_homes_data()
+    _LOGGER.debug("Intuis home: %s", intuis_home)
 
     # ---------- setup coordinator --------------------------------------------------
     intuis_data = IntuisData(intuis_api, intuis_home)
