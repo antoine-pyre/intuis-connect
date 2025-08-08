@@ -86,7 +86,7 @@ class IntuisHomeConfigEntity(IntuisHomeEntity):
             measurement: bool = False,
     ) -> None:
         """Initialize the home configuration entity."""
-        super().__init__(coordinator, home_id, entity_type, home_property, icon, measurement, available)
+        super().__init__(coordinator, home_id, entity_type, home_property, icon, available, measurement)
 
     def _get_home(self) -> IntuisHome:
         """Get the home data from coordinator."""
@@ -96,7 +96,7 @@ class IntuisHomeConfigEntity(IntuisHomeEntity):
 class IntuisHomeSensorDefinition:
     """Definition of a sensor entity for Intuis home-level data."""
 
-    def __init__(self, entity_type: str, home_property: str, icon: str, measurement: bool = False, available: bool = False) -> None:
+    def __init__(self, entity_type: str, home_property: str, icon: str, available: bool = False, measurement: bool = False, ) -> None:
         """Initialize the sensor definition."""
         self.entity_type = entity_type
         self.home_property = home_property
@@ -158,8 +158,8 @@ def provide_home_sensors(
                 entity_def.entity_type,
                 entity_def.home_property,
                 entity_def.icon,
-                entity_def.measurement,
-                entity_def.available
+                entity_def.available,
+                entity_def.measurement
             )
         )
     for entity_def in intuis_home_config_entities:
@@ -170,8 +170,8 @@ def provide_home_sensors(
                 entity_def.entity_type,
                 entity_def.home_property,
                 entity_def.icon,
-                entity_def.measurement,
-                entity_def.available
+                entity_def.available,
+                entity_def.measurement
             )
         )
     return result
