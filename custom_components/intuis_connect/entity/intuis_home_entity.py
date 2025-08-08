@@ -162,4 +162,16 @@ def provide_home_sensors(
                 entity_def.available
             )
         )
+    for entity_def in intuis_home_config_entities:
+        result.append(
+            IntuisHomeConfigEntity(
+                coordinator,
+                home_id,
+                entity_def.entity_type,
+                entity_def.home_property,
+                entity_def.icon,
+                entity_def.measurement,
+                entity_def.available
+            )
+        )
     return result
