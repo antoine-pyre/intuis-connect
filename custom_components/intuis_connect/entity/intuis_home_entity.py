@@ -55,15 +55,21 @@ class IntuisHomeEntity(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEnt
         """Return the value of the home property."""
         home_data = self._get_home()
         if not home_data:
-            _LOGGER.warning("Home config not available for home ID %s", self._home_id)
-            return None
-        value = getattr(home_data, self._property, None)
-        if value is not None:
-            return value
-        else:
-            _LOGGER.warning("Home config not available for property %s, home data: %s", self._property, home_data)
+            _LOGGER.warning("Home data not available for home ID %s", self._home_id)
             return None
 
+        try:
+            # Use operator.attrgetter for potentially nested attributes
+            from operator import attrgetter
+            getter = attrgetter(self._property)
+            return getter(home_data)
+        except AttributeError as e:
+            _LOGGER.error(
+                "Failed to get property '%s' from home_data: %s",
+                self._property,
+                str(e)
+            )
+            return None
 
 class IntuisHomeSensorDefinition:
     """Definition of a sensor entity for Intuis home-level data."""
