@@ -48,7 +48,7 @@ class IntuisHomeEntity(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEnt
 
     def _get_home(self) -> IntuisHome:
         """Get the home data from coordinator."""
-        return self.coordinator.data.get("home_config")
+        return self.coordinator.data.get("intuis_home")
 
     @property
     def native_value(self) -> Any:
