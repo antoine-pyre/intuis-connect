@@ -32,7 +32,8 @@ class IntuisEntity(Entity):
     def _get_id_prefix(self):
         return f"intuis_{self._home_id}_{self._room.id}"
 
-    def _build_device_info(self, home_id: str, room_id: str, room_name: str) -> DeviceInfo:
+    @staticmethod
+    def _build_device_info(home_id: str, room_id: str, room_name: str) -> DeviceInfo:
         """Return a consistent DeviceInfo for all entities of one room."""
         return DeviceInfo(
             identifiers={(DOMAIN, f"{home_id}_{room_id}")},
