@@ -9,8 +9,8 @@ from typing import List, Optional, Tuple, Dict, Any
 
 from pydantic import Field
 
-from custom_components.intuis_connect.entity.intuis_room import IntuisRoomDefinition
-from custom_components.intuis_connect.entity.intuis_schedule import IntuisSchedule
+from ..entity.intuis_room import IntuisRoomDefinition
+from ..entity.intuis_schedule import IntuisSchedule
 
 
 class Capability:
