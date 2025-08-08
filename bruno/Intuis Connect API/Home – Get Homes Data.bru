@@ -20,7 +20,7 @@ headers {
 
 script:post-response {
   if (res.getStatus() === 200) {
-     var jsonData = res.getBody();
+     var jsonData = res.getBody().body;
      if (jsonData.homes) {
          bru.setVar("home_id", jsonData.homes[0].id);
          console.log("home id refreshed: ", jsonData.homes[0].id);
