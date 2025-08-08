@@ -47,7 +47,7 @@ class IntuisHomeEntity(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEnt
 
     def _get_home_data(self) -> IntuisHome:
         """Get the home data from coordinator."""
-        return self.coordinator.data.get("home")
+        return self.coordinator.data.get("home_config")
 
     @property
     def native_value(self) -> Any:
@@ -62,33 +62,6 @@ class IntuisHomeEntity(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEnt
         else:
             _LOGGER.warning("Home data not available for property %s, home data: %s", self._property, home_data)
             return None
-
-
-class IntuisHomeCoordinatesSensor(IntuisHomeEntity, SensorEntity):
-    """Sensor for home coordinates."""
-
-    def __init__(
-            self,
-            coordinator: IntuisDataUpdateCoordinator,
-            home_id: str,
-            coordinate: str,  # "latitude" or "longitude"
-    ) -> None:
-        """Initialize the coordinates sensor."""
-        SensorEntity.__init__(coordinator)
-        IntuisHomeEntity.__init__(
-            self, coordinator, home_id, coordinate, coordinate.capitalize(),
-            coordinate, "mdi:crosshairs-gps", True
-        )
-        self._coordinate = coordinate
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the coordinate value."""
-        coordinates = self._get_home_data().coordinates
-        if coordinates and isinstance(coordinates, list) and len(coordinates) >= 2:
-            return coordinates[0] if self._coordinate == "latitude" else coordinates[1]
-        return None
-
 
 class IntuisHomeFeatureSensor(IntuisHomeEntity, SensorEntity):
     """Generic sensor for boolean home features."""
@@ -107,7 +80,7 @@ class IntuisHomeFeatureSensor(IntuisHomeEntity, SensorEntity):
         SensorEntity.__init__(coordinator)
         IntuisHomeEntity.__init__(
             self, coordinator, home_id, entity_type, name,
-            home_property, icon
+            home_property, icon, measurement
         )
 
     @property
