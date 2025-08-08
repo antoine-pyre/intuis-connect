@@ -22,7 +22,7 @@ from .utils.const import (
 )
 from .entity.intuis_entity import IntuisDataUpdateCoordinator
 from .entity.intuis_schedule import IntuisSchedule
-from .intuis_data import IntuisData, IntuisRoomDefinition
+from .intuis_data import IntuisData
 
 _LOGGER = logging.getLogger(__name__)
 
