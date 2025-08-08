@@ -8,6 +8,7 @@ from typing import Any
 
 import aiohttp
 
+from ..entity.intuis_home import IntuisHome
 from ..utils.const import (
     BASE_URLS,
     AUTH_PATH,
@@ -217,7 +218,7 @@ class IntuisAPI:
             self._save_tokens(data)
 
     # ---------- data endpoints ---------------------------------------------------
-    async def async_get_homes_data(self) -> dict[str, Any]:
+    async def async_get_homes_data(self) -> IntuisHome:
         """Fetch homes data from the API."""
         _LOGGER.debug("Fetching homes data from %s", self._base_url + HOMESDATA_PATH)
         async with await self._async_request("get", HOMESDATA_PATH) as resp:
@@ -233,7 +234,7 @@ class IntuisAPI:
         _LOGGER.debug(
             "Home id set to %s with timezone %s", self.home_id, self.home_timezone
         )
-        return home
+        return IntuisHome.from_api(home)
 
     async def async_get_home_status(self) -> dict[str, Any]:
         """Fetch the status of the home."""

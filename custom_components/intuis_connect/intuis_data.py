@@ -5,11 +5,10 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from .entity.intuis_home import IntuisHome
+from .entity.intuis_home_config import IntuisHomeConfig
 from .intuis_api.api import IntuisAPI
 from .intuis_api.mapper import extract_modules, extract_rooms
-from .entity.intuis_home_config import IntuisHomeConfig
-from .entity.intuis_room import IntuisRoomDefinition
-from .entity.intuis_schedule import IntuisSchedule
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,14 +16,12 @@ _LOGGER = logging.getLogger(__name__)
 class IntuisData:
     """Class to handle data fetching and processing for the Intuis Connect integration."""
 
-    def __init__(self, api: IntuisAPI, rooms_definitions: dict[str, IntuisRoomDefinition],
-                 schedules: list[IntuisSchedule]) -> None:
+    def __init__(self, api: IntuisAPI, intuis_home: IntuisHome) -> None:
         """Initialize the data handler."""
         self._api = api
         self._energy_cache: dict[str, float] = {}
         self._minutes_counter: dict[str, int] = {}
-        self._rooms_definitions = rooms_definitions
-        self._schedules = schedules
+        self._intuis_home = intuis_home
         self._last_update_timestamp: datetime | None = None
         self._last_reset_date = datetime.now().date()
 
@@ -42,7 +39,8 @@ class IntuisData:
 
         home = await self._api.async_get_home_status()
         modules = extract_modules(home)
-        data_by_room = extract_rooms(home, modules, self._minutes_counter, self._rooms_definitions, self._last_update_timestamp)
+        data_by_room = extract_rooms(home, modules, self._minutes_counter, self._intuis_home.rooms,
+                                     self._last_update_timestamp)
 
         config = IntuisHomeConfig.from_dict(await self._api.async_get_config())
 
@@ -51,12 +49,13 @@ class IntuisData:
         # return structured data
         _LOGGER.debug("Coordinator update completed")
         result = {
-            "id": self._api.home_id,
-            "home_id": self._api.home_id,
+            "id": self._intuis_home.id,
+            "home_id": self._intuis_home.id,
             "home_config": config,
             "rooms": data_by_room,
             "modules": modules,
-            "schedules": self._schedules,
+            "intuis_home": self._intuis_home,
+            "schedules": self._intuis_home.schedules,
         }
 
         _LOGGER.debug("Returning data: %s", result)

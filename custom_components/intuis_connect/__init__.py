@@ -13,6 +13,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from .entity.intuis_home import IntuisHome
 from .intuis_api.api import IntuisAPI, InvalidAuth, CannotConnect
 from .utils.const import (
     DOMAIN,
@@ -70,21 +71,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except CannotConnect as err:
         raise ConfigEntryNotReady from err
 
-    home_data = await intuis_api.async_get_homes_data()
-    # build a static map of room_id → room_name
-    rooms_definitions: dict[str, IntuisRoomDefinition] = {
-        r["id"]: IntuisRoomDefinition.from_dict(r)
-        for r in home_data["rooms"]
-    }
-    _LOGGER.debug("Rooms definitions: %s", rooms_definitions)
-
-    # --- pull the active schedule ---
-    _LOGGER.debug("Fetching active schedules")
-    _LOGGER.debug("schedules: %s", home_data.get("schedules", []))
-    schedules = [IntuisSchedule.from_dict(t) for t in home_data.get("schedules", [])]
+    intuis_home = await intuis_api.async_get_homes_data()
 
     # ---------- setup coordinator --------------------------------------------------
-    intuis_data = IntuisData(intuis_api, rooms_definitions, schedules)
+    intuis_data = IntuisData(intuis_api, intuis_home)
 
     coordinator: IntuisDataUpdateCoordinator = DataUpdateCoordinator(
         hass,
@@ -100,8 +90,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = {
         "api": intuis_api,
         "coordinator": coordinator,
-        "home_id": intuis_api.home_id,
-        "rooms_definitions": rooms_definitions,
+        "intuis_home": intuis_home
     }
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)
 
