@@ -8,6 +8,7 @@ from homeassistant.const import UnitOfTemperature, UnitOfEnergy
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .entity.intuis_entity import IntuisEntity
+from .entity.intuis_home_entity import provide_home_sensors
 from .entity.intuis_room import IntuisRoom
 from .utils.helper import get_basic_utils
 
@@ -25,6 +26,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
         entities.append(IntuisMullerTypeSensor(coordinator, home_id, rooms.get(room_id)))
         # entities.append(IntuisEnergySensor(coordinator, home_id, rooms.get(room_id)))
         entities.append(IntuisMinutesSensor(coordinator, home_id, rooms.get(room_id)))
+
+    entities += provide_home_sensors(coordinator, home_id)
     async_add_entities(entities, update_before_add=True)
 
 
