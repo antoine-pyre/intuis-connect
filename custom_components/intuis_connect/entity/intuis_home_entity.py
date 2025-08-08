@@ -43,6 +43,7 @@ class IntuisHomeEntity(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEnt
         self._attr_icon = icon
         self._property = home_property
         self._attr_available = available
+        self._attr_entity_registry_enabled_default = False
         if measurement:
             self._attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -91,7 +92,6 @@ entities: list[IntuisHomeSensorDefinition] = [
     IntuisHomeSensorDefinition("City", "city", "mdi:city"),
     IntuisHomeSensorDefinition("Currency Code", "currency_code", "mdi:currency-usd"),
     IntuisHomeSensorDefinition("Number of Users", "nb_users", "mdi:account-multiple"),
-    IntuisHomeSensorDefinition("Capabilities", "capabilities", "mdi:settings-helper"),
     IntuisHomeSensorDefinition("Temperature Control Mode", "temperature_control_mode", "mdi:thermometer", False, True),
     IntuisHomeSensorDefinition("Thermostat Mode", "therm_mode", "mdi:thermostat", False, True),
     IntuisHomeSensorDefinition("Thermostat Setpoint Default Duration",
