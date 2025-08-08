@@ -5,9 +5,7 @@ Author: Your Name • Licence: MIT
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple, Dict, Any
-
-from pydantic import Field
+from typing import List, Tuple, Dict, Any
 
 from ..entity.intuis_room import IntuisRoomDefinition
 from ..entity.intuis_schedule import IntuisSchedule
@@ -26,12 +24,22 @@ class IntuisHome:
     Use `IntuisHome.from_api(body["homes"][0])` to create an instance.
     """
 
-    def __init__(self, id: str, name: str, coordinates: Tuple[float, float], country: str, timezone: str,
-                 altitude: Optional[float] = None, city: Optional[str] = None, currency_code: Optional[str] = None,
-                 nb_users: Optional[int] = None, capabilities: Optional[List[Capability]] = None,
-                 temperature_control_mode: Optional[str] = None, therm_mode: Optional[str] = None,
-                 therm_setpoint_default_duration: Optional[int] = None, therm_heating_priority: Optional[str] = None,
-                 anticipation: Optional[bool] = None,
+    def __init__(self,
+                 id: str,
+                 name: str,
+                 coordinates: Tuple[float, float],
+                 country: str,
+                 timezone: str,
+                 altitude: float = None,
+                 city: str = None,
+                 currency_code: str = None,
+                 nb_users: int = None,
+                 capabilities: list[Capability] = None,
+                 temperature_control_mode: str = None,
+                 therm_mode: str = None,
+                 therm_setpoint_default_duration: int = None,
+                 therm_heating_priority: str = None,
+                 anticipation: bool = None,
                  rooms: Dict[str, IntuisRoomDefinition] = None,
                  contract_power_unit: str = None,
                  place_improved: bool = None,
@@ -39,14 +47,6 @@ class IntuisHome:
                  therm_absence_location: bool = None,
                  therm_absense_autoway: bool = None,
                  schedules: List[IntuisSchedule] = None):
-        """Initialize the IntuisHome object.
-        :param contract_power_unit:
-        :param place_improved:
-        :param trust_location:
-        :param therm_absence_location:
-        :param therm_absense_autoway:
-        :param schedules:
-        """
         self.id = id
         self.name = name
         self.coordinates = coordinates
