@@ -6,7 +6,6 @@ from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .intuis_home import IntuisHome
@@ -16,7 +15,7 @@ from ..utils.const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-class IntuisHomeEntity(CoordinatorEntity[IntuisDataUpdateCoordinator], Entity):
+class IntuisHomeEntity(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEntity):
     """Base class for Intuis home-level entities."""
 
     def __init__(
@@ -92,14 +91,18 @@ class IntuisHomeFeatureSensor(IntuisHomeEntity, SensorEntity):
             self,
             coordinator: IntuisDataUpdateCoordinator,
             home_id: str,
-            feature_key: str,
-            feature_name: str,
+            entity_type: str,
+            name: str,
+            home_property: str,
             icon: str,
+            measurement: bool = False
     ) -> None:
         """Initialize the feature sensor."""
-        super().__init__(coordinator, home_id, feature_key, feature_name)
-        self._feature_key = feature_key
-        self._attr_icon = icon
+        SensorEntity.__init__(coordinator)
+        IntuisHomeEntity.__init__(
+            self, coordinator, home_id, entity_type, name,
+            home_property, icon
+        )
 
     @property
     def native_value(self) -> str | None:
@@ -109,7 +112,7 @@ class IntuisHomeFeatureSensor(IntuisHomeEntity, SensorEntity):
             value = getattr(home_data, self._property, None)
             return "Enabled" if value else "Disabled"
         else:
-            _LOGGER.warning("Home data not available for feature %s", self._feature_key)
+            _LOGGER.warning("Home data not available for property %s", self._property)
             return None
 
 
@@ -119,19 +122,22 @@ def provide_home_sensors(
 ) -> list[SensorEntity]:
     """Set up home-level sensor entities."""
     return [
-        IntuisHomeEntity(coordinator, home_id, "timezone", "Timezone", "timezone", "mdi:map-clock"),
-        IntuisHomeEntity(coordinator, home_id, "country", "Country", "country", "mdi:flag"),
         IntuisHomeEntity(coordinator, home_id, "name", "Name", "name", "mdi:home"),
-        IntuisHomeCoordinatesSensor(coordinator, home_id, "latitude"),
-        IntuisHomeCoordinatesSensor(coordinator, home_id, "longitude"),
+        IntuisHomeEntity(coordinator, home_id, "country", "Country", "country", "mdi:flag"),
+        IntuisHomeEntity(coordinator, home_id, "timezone", "Timezone", "timezone", "mdi:map-clock"),
         IntuisHomeEntity(coordinator, home_id, "altitude", "Altitude", "altitude", "mdi:elevation-rise", True),
+        IntuisHomeEntity(coordinator, home_id, "city", "City", "city", "mdi:city"),
+        IntuisHomeEntity(coordinator, home_id, "currency_code", "Currency Code", "currency_code", "mdi:currency-usd"),
+        IntuisHomeEntity(coordinator, home_id, "nb_users", "Number of Users", "nb_users", "mdi:account-multiple"),
+        IntuisHomeEntity(coordinator, home_id, "capabilities", "Capabilities", "capabilities", "mdi:settings-helper"),
+        IntuisHomeEntity(coordinator, home_id, "temperature_control_mode", "Temperature Control Mode",
+                         "temperature_control_mode", "mdi:thermometer"),
         IntuisHomeEntity(coordinator, home_id, "therm_mode", "Thermostat Mode", "therm_mode", "mdi:thermostat"),
-
-        # Feature sensors
-        IntuisHomeFeatureSensor(coordinator, home_id, "presence_settings_experiment", "Presence Experiment",
-                                "mdi:motion-sensor"),
-        IntuisHomeFeatureSensor(coordinator, home_id, "smart_room_enabled", "Smart Room", "mdi:brain"),
-        IntuisHomeFeatureSensor(coordinator, home_id, "safety", "Safety Mode", "mdi:shield-check"),
-        IntuisHomeFeatureSensor(coordinator, home_id, "frost_protection_enabled", "Frost Protection",
-                                "mdi:snowflake-alert"),
+        IntuisHomeEntity(coordinator, home_id, "therm_setpoint_default_duration",
+                         "Thermostat Setpoint Default Duration", "therm_setpoint_default_duration",
+                         "mdi:timer-sand"),
+        IntuisHomeEntity(coordinator, home_id, "therm_heating_priority", "Thermostat Heating Priority",
+                         "therm_heating_priority", "mdi:priority-high"),
+        IntuisHomeEntity(coordinator, home_id, "contract_power_unit", "Contract Power Unit", "contract_power_unit",
+                         "mdi:flash"),
     ]
