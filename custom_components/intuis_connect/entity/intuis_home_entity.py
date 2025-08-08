@@ -54,7 +54,11 @@ class IntuisHomeEntity(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEnt
         """Return the value of the home property."""
         home_data = self._get_home_data()
         if home_data:
-            return getattr(home_data, self._property, None)
+            value = getattr(home_data, self._property, None)
+            if value is not None:
+                return value
+            else:
+                _LOGGER.warning("Home data not available for property %s, home data: %s", self._property, home_data)
         return None
 
 
