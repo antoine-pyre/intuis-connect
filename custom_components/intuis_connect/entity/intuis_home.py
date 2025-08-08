@@ -26,29 +26,13 @@ class IntuisHome:
     Use `IntuisHome.from_api(body["homes"][0])` to create an instance.
     """
 
-    id: str = Field(alias="id")
-    name: str
-    altitude: Optional[float] = None
-    coordinates: Tuple[float, float]
-    country: str
-    timezone: str
-    city: Optional[str] = None
-    currency_code: Optional[str] = None
-
-    nb_users: Optional[int] = None
-    capabilities: List[Capability] = Field(default_factory=list)
-    temperature_control_mode: Optional[str] = None
-    therm_mode: Optional[str] = None
-    therm_setpoint_default_duration: Optional[int] = None
-    therm_heating_priority: Optional[str] = None
-    anticipation: Optional[bool] = None
-
     def __init__(self, id: str, name: str, coordinates: Tuple[float, float], country: str, timezone: str,
                  altitude: Optional[float] = None, city: Optional[str] = None, currency_code: Optional[str] = None,
                  nb_users: Optional[int] = None, capabilities: Optional[List[Capability]] = None,
                  temperature_control_mode: Optional[str] = None, therm_mode: Optional[str] = None,
                  therm_setpoint_default_duration: Optional[int] = None, therm_heating_priority: Optional[str] = None,
-                 anticipation: Optional[bool] = None, rooms: Dict[str, IntuisRoomDefinition] = None,
+                 anticipation: Optional[bool] = None,
+                 rooms: Dict[str, IntuisRoomDefinition] = None,
                  contract_power_unit: str = None,
                  place_improved: bool = None,
                  trust_location: bool = None,
@@ -128,6 +112,6 @@ class IntuisHome:
             trust_location=raw_home.get("trust_location"),
             therm_absence_location=raw_home.get("therm_absence_location"),
             therm_absense_autoway=raw_home.get("therm_absense_autoway"),
-            rooms=list(rooms_definitions.values()),
+            rooms=rooms_definitions,
             schedules=schedules
         )
