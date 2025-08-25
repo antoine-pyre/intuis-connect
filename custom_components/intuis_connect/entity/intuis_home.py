@@ -112,6 +112,12 @@ class IntuisHome:
             trust_location=raw_home.get("trust_location"),
             therm_absence_location=raw_home.get("therm_absence_location"),
             therm_absense_autoway=raw_home.get("therm_absense_autoway"),
+            therm_setpoint_default_duration=raw_home.get("therm_setpoint_default_duration"),
+            therm_heating_priority=raw_home.get("therm_heating_priority"),
+            therm_mode=raw_home.get("therm_mode"),
+            anticipation=raw_home.get("anticipation"),
+            nb_users=raw_home.get("nb_users"),
+            temperature_control_mode=raw_home.get("temperature_control_mode"),
             rooms=rooms_definitions,
             schedules=schedules
         )
