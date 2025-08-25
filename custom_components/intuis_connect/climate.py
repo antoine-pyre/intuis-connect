@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from homeassistant.components.climate import (
@@ -17,12 +18,13 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.event import async_call_later
 
 from . import IntuisAPI
 from .entity.intuis_room import IntuisRoom
 from .utils.const import PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE, API_MODE_OFF, API_MODE_AUTO, API_MODE_MANUAL, \
     API_MODE_AWAY, API_MODE_BOOST, API_MODE_HOME, DEFAULT_AWAY_TEMP, DEFAULT_AWAY_DURATION, DEFAULT_BOOST_TEMP, \
-    DEFAULT_BOOST_DURATION
+    DEFAULT_BOOST_DURATION, DEFAULT_MANUAL_DURATION, DOMAIN
 from .entity.intuis_entity import IntuisEntity, IntuisDataUpdateCoordinator
 from .utils.helper import get_basic_utils
 
@@ -48,6 +50,7 @@ class IntuisConnectClimate(
             home_id: str,
             room: IntuisRoom,
             api: IntuisAPI,
+            entry_id: str,
     ) -> None:
         """Initialize the climate entity."""
         CoordinatorEntity.__init__(self, coordinator)
@@ -55,10 +58,22 @@ class IntuisConnectClimate(
         IntuisEntity.__init__(self, coordinator, room, home_id, f"{room.name} Climate", "climate")
         self._home_id = home_id
         self._api = api
+        self._entry_id = entry_id
         self._attr_assumed_state = True
         self._attr_hvac_mode: HVACMode | None = None
         self._attr_preset_mode: str | None = None
         self._attr_target_temperature: float | None = None
+
+    def _get_overrides(self) -> dict[str, dict]:
+        data = self.hass.data.get(DOMAIN, {}).get(self._entry_id, {})
+        return data.setdefault("overrides", {})
+
+    def _schedule_end_refresh(self, end_ts: int) -> None:
+        # Schedule a refresh slightly after end time
+        delay = max(0, end_ts - int(time.time()) + 1)
+        def _cb(_now):
+            self.hass.async_create_task(self.coordinator.async_request_refresh())
+        async_call_later(self.hass, delay, _cb)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -120,9 +135,19 @@ class IntuisConnectClimate(
         temp = kwargs.get("temperature")
         if temp is None:
             return
+        room_id = self._get_room().id
         await self._api.async_set_room_state(
-            self._get_room().id, API_MODE_MANUAL, float(temp)
+            room_id, API_MODE_MANUAL, float(temp)
         )
+        end_ts = int(time.time()) + DEFAULT_MANUAL_DURATION * 60
+        overrides = self._get_overrides()
+        overrides[room_id] = {
+            "mode": API_MODE_MANUAL,
+            "temp": float(temp),
+            "end": end_ts,
+            "sticky": True,
+        }
+        self._schedule_end_refresh(end_ts)
         self._attr_target_temperature = temp
         self._attr_hvac_mode = HVACMode.HEAT
         self._attr_preset_mode = None
@@ -131,14 +156,27 @@ class IntuisConnectClimate(
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new hvac mode."""
+        room_id = self._get_room().id
+        overrides = self._get_overrides()
         if hvac_mode == HVACMode.OFF:
-            await self._api.async_set_room_state(self._get_room().id, API_MODE_OFF)
+            await self._api.async_set_room_state(room_id, API_MODE_OFF)
+            overrides.pop(room_id, None)
         elif hvac_mode == HVACMode.AUTO:
-            await self._api.async_set_room_state(self._get_room().id, API_MODE_HOME)
+            await self._api.async_set_room_state(room_id, API_MODE_HOME)
+            overrides.pop(room_id, None)
         elif hvac_mode == HVACMode.HEAT:
+            temp = float(self.target_temperature or 20.0)
             await self._api.async_set_room_state(
-                self._get_room().id, API_MODE_MANUAL, float(self.target_temperature or 20.0)
+                room_id, API_MODE_MANUAL, temp
             )
+            end_ts = int(time.time()) + DEFAULT_MANUAL_DURATION * 60
+            overrides[room_id] = {
+                "mode": API_MODE_MANUAL,
+                "temp": temp,
+                "end": end_ts,
+                "sticky": True,
+            }
+            self._schedule_end_refresh(end_ts)
         self._attr_hvac_mode = hvac_mode
         if hvac_mode == HVACMode.AUTO:
             self._attr_preset_mode = PRESET_SCHEDULE
@@ -149,25 +187,44 @@ class IntuisConnectClimate(
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new preset mode."""
+        room_id = self._get_room().id
+        overrides = self._get_overrides()
         if preset_mode == PRESET_SCHEDULE:
-            await self._api.async_set_room_state(self._get_room().id, API_MODE_HOME)
+            await self._api.async_set_room_state(room_id, API_MODE_HOME)
             self._attr_hvac_mode = HVACMode.AUTO
+            overrides.pop(room_id, None)
         elif preset_mode == PRESET_AWAY:
             await self._api.async_set_room_state(
-                self._get_room().id,
+                room_id,
                 API_MODE_AWAY,
                 DEFAULT_AWAY_TEMP,
                 DEFAULT_AWAY_DURATION,
             )
             self._attr_hvac_mode = HVACMode.HEAT
+            end_ts = int(time.time()) + DEFAULT_AWAY_DURATION * 60
+            overrides[room_id] = {
+                "mode": API_MODE_AWAY,
+                "temp": float(DEFAULT_AWAY_TEMP),
+                "end": end_ts,
+                "sticky": True,
+            }
+            self._schedule_end_refresh(end_ts)
         elif preset_mode == PRESET_BOOST:
             await self._api.async_set_room_state(
-                self._get_room().id,
+                room_id,
                 API_MODE_BOOST,
                 DEFAULT_BOOST_TEMP,
                 DEFAULT_BOOST_DURATION,
             )
             self._attr_hvac_mode = HVACMode.HEAT
+            end_ts = int(time.time()) + DEFAULT_BOOST_DURATION * 60
+            overrides[room_id] = {
+                "mode": API_MODE_BOOST,
+                "temp": float(DEFAULT_BOOST_TEMP),
+                "end": end_ts,
+                "sticky": True,
+            }
+            self._schedule_end_refresh(end_ts)
         self._attr_preset_mode = preset_mode
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
@@ -182,6 +239,6 @@ async def async_setup_entry(
     entities = []
     for room_id in rooms:
         entities.append(
-            IntuisConnectClimate(coordinator, home_id, rooms.get(room_id), api)
+            IntuisConnectClimate(coordinator, home_id, rooms.get(room_id), api, entry.entry_id)
         )
     async_add_entities(entities, update_before_add=True)

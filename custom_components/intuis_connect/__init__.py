@@ -74,8 +74,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     intuis_home = await intuis_api.async_get_homes_data()
     _LOGGER.debug("Intuis home: %s", intuis_home.__str__())
 
+    # ---------- shared overrides (sticky intents) ----------------------------------
+    overrides: dict[str, dict] = {}
+
     # ---------- setup coordinator --------------------------------------------------
-    intuis_data = IntuisData(intuis_api, intuis_home)
+    intuis_data = IntuisData(intuis_api, intuis_home, overrides)
 
     coordinator: IntuisDataUpdateCoordinator = DataUpdateCoordinator(
         hass,
@@ -91,7 +94,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = {
         "api": intuis_api,
         "coordinator": coordinator,
-        "intuis_home": intuis_home
+        "intuis_home": intuis_home,
+        "overrides": overrides,
     }
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)
 

@@ -44,7 +44,7 @@ class IntuisRoom:
 
     def __init__(self, definition: IntuisRoomDefinition, id: str, name: str, mode: str, target_temperature: float,
                  temperature: float, presence: bool, open_window: bool, anticipation: bool,
-                 muller_type: str, boost_status: str, modules: list[IntuisModule]) -> None:
+                 muller_type: str, boost_status: str, modules: list[IntuisModule], therm_setpoint_end_time: int) -> None:
         """Initialize the room with its definition."""
         self.definition = definition
         self.id = id
@@ -58,6 +58,7 @@ class IntuisRoom:
         self.muller_type = muller_type
         self.boost_status = boost_status
         self.modules = modules
+        self.therm_setpoint_end_time = therm_setpoint_end_time
 
     @staticmethod
     def from_dict(definition: IntuisRoomDefinition, data: dict[str, Any], modules: list[IntuisModule]) -> IntuisRoom:
@@ -78,6 +79,7 @@ class IntuisRoom:
             anticipation=data.get("anticipation", False),
             muller_type=data.get("muller_type", ""),
             boost_status=data.get("boost_status", "disabled"),
+            therm_setpoint_end_time=data.get("therm_setpoint_end_time", 0),
             modules=filtered_modules
         )
 
