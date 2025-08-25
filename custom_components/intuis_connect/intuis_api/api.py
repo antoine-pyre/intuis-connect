@@ -102,7 +102,13 @@ class IntuisAPI:
     async def _async_request(
             self, method: str, path: str, retry: bool = True, **kwargs: Any
     ) -> aiohttp.ClientResponse:
-        """Make a request and handle token refresh."""
+        """Make a request and handle token refresh with limited retries and timeouts.
+
+        Retries:
+        - Network-level errors (CannotConnect/TimeoutError): up to 3 attempts with backoff
+        - HTTP 5xx and 429: up to 3 attempts with backoff
+        - HTTP 401: single token refresh then one retry (existing behavior)
+        """
         await self._ensure_token()
         headers = kwargs.pop("headers", {})
         headers["Authorization"] = f"Bearer {self._access_token}"
@@ -111,28 +117,76 @@ class IntuisAPI:
         if self._debug:
             _LOGGER.debug("Making API request: %s %s", method, url)
 
-        try:
-            resp = await self._session.request(
-                method, url, headers=headers, timeout=10, **kwargs
-            )
+        # Default timeout if not provided
+        timeout = kwargs.pop("timeout", 20)
 
-            if resp.status == 401 and retry:
-                _LOGGER.warning(
-                    "Request unauthorized (401), refreshing token and retrying."
+        attempts = 3
+        delay = 1.5
+        last_exc: Exception | None = None
+
+        for attempt in range(1, attempts + 1):
+            try:
+                resp = await self._session.request(
+                    method, url, headers=headers, timeout=timeout, **kwargs
                 )
-                await self.async_refresh_access_token()
-                # Call self again, but without retry to avoid infinite loop
-                return await self._async_request(method, path, retry=False, **kwargs)
 
-            resp.raise_for_status()
-            return resp
+                # Handle token refresh on 401 once (without counting towards attempts)
+                if resp.status == 401 and retry:
+                    _LOGGER.warning(
+                        "Request unauthorized (401), refreshing token and retrying."
+                    )
+                    await self.async_refresh_access_token()
+                    return await self._async_request(method, path, retry=False, **kwargs)
 
-        except aiohttp.ClientResponseError as e:
-            _LOGGER.error("API request failed for %s: %s", path, e)
-            raise APIError(f"Request failed for {path}: {e.status}") from e
-        except aiohttp.ClientError as e:
-            _LOGGER.error("Cannot connect to API for %s: %s", path, e)
-            raise CannotConnect(f"Cannot connect for {path}") from e
+                # Retry on rate limiting and server errors
+                if resp.status in (429,) or 500 <= resp.status < 600:
+                    if attempt < attempts:
+                        _LOGGER.warning(
+                            "Server responded %s for %s %s (attempt %s/%s). Retrying in %.1fs",
+                            resp.status,
+                            method,
+                            path,
+                            attempt,
+                            attempts,
+                            delay,
+                        )
+                        try:
+                            await resp.release()
+                        finally:
+                            await asyncio.sleep(delay)
+                            delay *= 2
+                        continue
+                    # No more attempts
+                    resp.raise_for_status()
+
+                resp.raise_for_status()
+                return resp
+
+            except aiohttp.ClientResponseError as e:
+                # Non-retriable client errors (4xx other than 429/401)
+                _LOGGER.error("API request failed for %s: %s", path, e)
+                raise APIError(f"Request failed for {path}: {e.status}") from e
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                last_exc = e
+                if attempt < attempts:
+                    _LOGGER.warning(
+                        "Network error on %s %s (attempt %s/%s): %s. Retrying in %.1fs",
+                        method,
+                        path,
+                        attempt,
+                        attempts,
+                        repr(e),
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                    continue
+                _LOGGER.error("Cannot connect to API for %s after %s attempts: %s", path, attempts, e)
+                raise CannotConnect(f"Cannot connect for {path}") from e
+
+        # Should not reach here
+        assert last_exc is not None
+        raise CannotConnect(f"Cannot connect for {path}") from last_exc
 
     # ---------- auth ------------------------------------------------------------
     async def async_login(self, username: str, password: str) -> str:
@@ -154,7 +208,7 @@ class IntuisAPI:
                 if self._debug:
                     _LOGGER.debug("Trying authentication endpoint %s", base + AUTH_PATH)
                 async with self._session.post(
-                        f"{base}{AUTH_PATH}", data=payload, timeout=15
+                        f"{base}{AUTH_PATH}", data=payload, timeout=20
                 ) as resp:
                     if resp.status != 200:
                         _LOGGER.warning(
@@ -172,7 +226,7 @@ class IntuisAPI:
                         _LOGGER.warning(
                             "Login response on %s did not contain access_token", base
                         )
-            except aiohttp.ClientError as e:
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 _LOGGER.warning("Client error during login on %s: %s", base, e)
                 continue
         else:
