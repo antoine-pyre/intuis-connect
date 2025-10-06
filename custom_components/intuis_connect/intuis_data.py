@@ -108,7 +108,7 @@ class IntuisData:
                             if entry is not None:
                                 new_options = dict(entry.options) if entry.options is not None else {}
                                 new_options["overrides"] = self._overrides
-                                self._hass.config_entries.async_update_entry(entry, options=new_options)
+                                await self._hass.config_entries.async_update_entry(entry, options=new_options)
                     except Exception:  # best-effort persistence
                         _LOGGER.debug("Failed to persist overrides after re-applying for entry %s", self._entry_id, exc_info=True)
 
