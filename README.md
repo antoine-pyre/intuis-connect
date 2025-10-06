@@ -29,7 +29,7 @@ More information [here](https://hacs.xyz/).
    2. Click **⋮ Custom repositories** (upper right)  
    3. URL :  
       ```
-      https://github.com/antoine-pyre/homeassistant-intuis_connect
+      https://github.com/antoine-pyre/intuis-connect
       ```  
       Category : **Integration** → **Add**
 
