@@ -25,7 +25,8 @@ _LOGGER = logging.getLogger(__name__)
 class IntuisData:
     """Class to handle data fetching and processing for the Intuis Connect integration."""
 
-    def __init__(self, api: IntuisAPI, intuis_home: IntuisHome, overrides: dict[str, dict] | None = None) -> None:
+    def __init__(self, api: IntuisAPI, intuis_home: IntuisHome, overrides: dict[str, dict] | None = None,
+                 hass=None, entry_id: str | None = None) -> None:
         """Initialize the data handler."""
         self._api = api
         self._energy_cache: dict[str, float] = {}
@@ -35,6 +36,9 @@ class IntuisData:
         self._last_reset_date = datetime.now().date()
         # sticky overrides: { room_id: { mode, temp, end, sticky } }
         self._overrides: dict[str, dict] = overrides or {}
+        # optionally persist overrides back to config entry if provided
+        self._hass = hass
+        self._entry_id = entry_id
 
     async def async_update(self) -> dict[str, Any]:
         """Fetch and process data from the API."""
@@ -95,7 +99,18 @@ class IntuisData:
                         duration_min,
                     )
                     # Extend local end timestamp
-                    self._overrides[room_id]["end"] = int(time.time()) + duration_min * 60
+                    new_end = int(time.time()) + duration_min * 60
+                    self._overrides[room_id]["end"] = new_end
+                    # Persist the updated overrides back to the config entry options if possible
+                    try:
+                        if self._hass and self._entry_id:
+                            entry = self._hass.config_entries.async_get_entry(self._entry_id)
+                            if entry is not None:
+                                new_options = dict(entry.options) if entry.options is not None else {}
+                                new_options["overrides"] = self._overrides
+                                await self._hass.config_entries.async_update_entry(entry, options=new_options)
+                    except Exception:  # best-effort persistence
+                        _LOGGER.debug("Failed to persist overrides after re-applying for entry %s", self._entry_id, exc_info=True)
 
         config = IntuisHomeConfig.from_dict(await self._api.async_get_config())
 

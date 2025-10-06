@@ -1,8 +1,6 @@
 """Climate platform for Intuis Connect."""
 from __future__ import annotations
 
-import logging
-import time
 from typing import Any
 
 from homeassistant.components.climate import (
@@ -12,8 +10,8 @@ from homeassistant.components.climate import (
     HVACMode,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.const import UnitOfTemperature
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
@@ -27,6 +25,9 @@ from .utils.const import PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE, API_MODE_OF
     DEFAULT_BOOST_DURATION, DEFAULT_MANUAL_DURATION, DOMAIN
 from .entity.intuis_entity import IntuisEntity, IntuisDataUpdateCoordinator
 from .utils.helper import get_basic_utils
+
+import logging
+import time
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,12 +69,49 @@ class IntuisConnectClimate(
         data = self.hass.data.get(DOMAIN, {}).get(self._entry_id, {})
         return data.setdefault("overrides", {})
 
+    async def _persist_overrides(self, overrides: dict[str, dict]) -> None:
+        """Persist overrides into the config entry options (best-effort)."""
+        try:
+            entry = self.hass.config_entries.async_get_entry(self._entry_id)
+            if entry is not None:
+                new_options = dict(entry.options) if entry.options is not None else {}
+                new_options["overrides"] = overrides
+                await self.hass.config_entries.async_update_entry(entry, options=new_options)
+        except Exception:
+            _LOGGER.debug("Failed to persist overrides for entry %s", self._entry_id, exc_info=True)
+
     def _schedule_end_refresh(self, end_ts: int) -> None:
         # Schedule a refresh slightly after end time
         delay = max(0, end_ts - int(time.time()) + 1)
-        def _cb(_now):
-            self.hass.async_create_task(self.coordinator.async_request_refresh())
-        async_call_later(self.hass, delay, _cb)
+        # Use a lambda to satisfy expected callback signature: (_now) -> None
+        async_call_later(
+            self.hass, delay, lambda _now: self.hass.async_create_task(self.coordinator.async_request_refresh())
+        )
+
+    async def async_added_to_hass(self) -> None:
+        """Entity was added to hass - restore scheduling for existing overrides."""
+        await super().async_added_to_hass()
+        overrides = self._get_overrides()
+        room_id = self._get_room().id if self._get_room() else None
+        if not room_id:
+            return
+        override = overrides.get(room_id)
+        if not override:
+            return
+        try:
+            end_ts = int(override.get("end", 0))
+        except (TypeError, ValueError):
+            end_ts = 0
+        if end_ts and end_ts > int(time.time()):
+            self._schedule_end_refresh(end_ts)
+            # If override exists, reflect it in assumed state so UI shows the manual temp
+            if override.get("mode") == API_MODE_MANUAL and override.get("temp") is not None:
+                try:
+                    self._attr_target_temperature = float(override.get("temp"))
+                    self._attr_hvac_mode = HVACMode.HEAT
+                    self._attr_preset_mode = None
+                except Exception:
+                    pass
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -147,6 +185,7 @@ class IntuisConnectClimate(
             "end": end_ts,
             "sticky": True,
         }
+        await self._persist_overrides(overrides)
         self._schedule_end_refresh(end_ts)
         self._attr_target_temperature = temp
         self._attr_hvac_mode = HVACMode.HEAT
@@ -161,9 +200,11 @@ class IntuisConnectClimate(
         if hvac_mode == HVACMode.OFF:
             await self._api.async_set_room_state(room_id, API_MODE_OFF)
             overrides.pop(room_id, None)
+            await self._persist_overrides(overrides)
         elif hvac_mode == HVACMode.AUTO:
             await self._api.async_set_room_state(room_id, API_MODE_HOME)
             overrides.pop(room_id, None)
+            await self._persist_overrides(overrides)
         elif hvac_mode == HVACMode.HEAT:
             temp = float(self.target_temperature or 20.0)
             await self._api.async_set_room_state(
@@ -176,6 +217,7 @@ class IntuisConnectClimate(
                 "end": end_ts,
                 "sticky": True,
             }
+            await self._persist_overrides(overrides)
             self._schedule_end_refresh(end_ts)
         self._attr_hvac_mode = hvac_mode
         if hvac_mode == HVACMode.AUTO:
@@ -193,6 +235,7 @@ class IntuisConnectClimate(
             await self._api.async_set_room_state(room_id, API_MODE_HOME)
             self._attr_hvac_mode = HVACMode.AUTO
             overrides.pop(room_id, None)
+            await self._persist_overrides(overrides)
         elif preset_mode == PRESET_AWAY:
             await self._api.async_set_room_state(
                 room_id,
@@ -208,6 +251,7 @@ class IntuisConnectClimate(
                 "end": end_ts,
                 "sticky": True,
             }
+            await self._persist_overrides(overrides)
             self._schedule_end_refresh(end_ts)
         elif preset_mode == PRESET_BOOST:
             await self._api.async_set_room_state(
@@ -224,6 +268,7 @@ class IntuisConnectClimate(
                 "end": end_ts,
                 "sticky": True,
             }
+            await self._persist_overrides(overrides)
             self._schedule_end_refresh(end_ts)
         self._attr_preset_mode = preset_mode
         self.async_write_ha_state()
