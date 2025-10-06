@@ -77,14 +77,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # ---------- shared overrides (sticky intents) ----------------------------------
     overrides: dict[str, dict] = {}
 
-    # Load persisted overrides from config entry options so sticky overrides survive restarts
-    persisted = entry.options.get("overrides") if entry and entry.options is not None else None
-    if isinstance(persisted, dict):
-        _LOGGER.debug("Loading persisted overrides for entry %s: %s", entry.entry_id, persisted)
-        overrides.update(persisted)
-
     # ---------- setup coordinator --------------------------------------------------
-    intuis_data = IntuisData(intuis_api, intuis_home, overrides, hass=hass, entry_id=entry.entry_id)
+    intuis_data = IntuisData(intuis_api, intuis_home, overrides)
 
     coordinator: IntuisDataUpdateCoordinator = DataUpdateCoordinator(
         hass,
