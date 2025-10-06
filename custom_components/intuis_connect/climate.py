@@ -88,8 +88,6 @@ class IntuisConnectClimate(
     @property
     def target_temperature(self) -> StateType:
         """Return the target temperature."""
-        if self._attr_target_temperature is not None:
-            return self._attr_target_temperature
         return self._get_room().target_temperature
 
     @property
@@ -102,7 +100,7 @@ class IntuisConnectClimate(
             return HVACMode.OFF
         if mode == API_MODE_AUTO:
             return HVACMode.AUTO
-        if mode in (API_MODE_MANUAL, API_MODE_AWAY, API_MODE_BOOST):
+        if mode in (API_MODE_MANUAL, API_MODE_AWAY, API_MODE_BOOST, API_MODE_HOME):
             return HVACMode.HEAT
         _LOGGER.warning("Unhandled HVAC mode: %s", mode)
         return HVACMode.HEAT
