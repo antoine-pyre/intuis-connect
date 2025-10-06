@@ -76,7 +76,7 @@ class IntuisConnectClimate(
             if entry is not None:
                 new_options = dict(entry.options) if entry.options is not None else {}
                 new_options["overrides"] = overrides
-                await self.hass.config_entries.async_update_entry(entry, options=new_options)
+                self.hass.config_entries.async_update_entry(entry, options=new_options)
         except Exception:
             _LOGGER.debug("Failed to persist overrides for entry %s", self._entry_id, exc_info=True)
 
