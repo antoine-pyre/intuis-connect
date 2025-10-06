@@ -10,7 +10,7 @@ CONF_HOME_ID = "home_id"
 DEFAULT_UPDATE_INTERVAL = 2 # minutes
 
 # Default override / preset settings (editable in Options flow later)
-DEFAULT_MANUAL_DURATION = 1  # minutes
+DEFAULT_MANUAL_DURATION = 5  # minutes
 DEFAULT_AWAY_DURATION = 1440  # minutes
 DEFAULT_BOOST_DURATION = 30  # minutes
 DEFAULT_AWAY_TEMP = 16.0  # °C
