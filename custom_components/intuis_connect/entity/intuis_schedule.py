@@ -19,7 +19,7 @@ class IntuisScheduleRoom:
         """Create a room from a dictionary."""
         return IntuisScheduleRoom(
             id=data["id"],
-            therm_setpoint_temperature=data["therm_setpoint_temperature"]
+            therm_setpoint_temperature=data.get("therm_setpoint_temperature", 1)
         )
 
 
@@ -36,7 +36,7 @@ class IntuisRoomTemperature:
         """Create a room temperature from a dictionary."""
         return IntuisRoomTemperature(
             room_id=data["room_id"],
-            temp=data["temp"]
+            temp=data.get("temp", 1)
         )
 
 
