@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 import time
 
@@ -138,6 +138,9 @@ class IntuisData:
 
         config = IntuisHomeConfig.from_dict(await self._api.async_get_config())
 
+        # Fetch energy data (daily kWh per room)
+        await self._fetch_energy_data(data_by_room, now)
+
         self._last_update_timestamp = now
 
         # return structured data
@@ -154,3 +157,55 @@ class IntuisData:
 
         _LOGGER.debug("Returning data: %s", result)
         return result
+
+    async def _fetch_energy_data(
+        self, data_by_room: dict[str, Any], now: datetime
+    ) -> None:
+        """Fetch energy consumption data for all rooms."""
+        # Only fetch after 2 AM to ensure previous day's data is available
+        if now.hour < 2:
+            _LOGGER.debug("Skipping energy fetch before 2 AM")
+            return
+
+        today_iso = now.date().isoformat()
+
+        # Check if we already have cached data for today
+        if self._energy_cache.get("_date") == today_iso:
+            # Use cached data
+            for room_id, room in data_by_room.items():
+                room.energy = self._energy_cache.get(room_id, 0.0)
+            return
+
+        # Build list of rooms with bridge_ids for the API call
+        rooms_for_api: list[dict[str, str]] = []
+        for room_id, room in data_by_room.items():
+            if room.bridge_id:
+                rooms_for_api.append({"id": room_id, "bridge": room.bridge_id})
+            else:
+                _LOGGER.debug("Room %s has no bridge_id, skipping energy fetch", room_id)
+
+        if not rooms_for_api:
+            _LOGGER.debug("No rooms with bridge_id found, skipping energy fetch")
+            return
+
+        # Calculate epoch timestamps for today (midnight to midnight)
+        today_start = datetime.combine(now.date(), datetime.min.time(), tzinfo=timezone.utc)
+        today_end = datetime.combine(now.date(), datetime.max.time(), tzinfo=timezone.utc)
+        date_begin = int(today_start.timestamp())
+        date_end = int(today_end.timestamp())
+
+        _LOGGER.debug("Fetching energy data for %d rooms", len(rooms_for_api))
+
+        energy_data = await self._api.async_get_energy_measures(
+            rooms_for_api, date_begin, date_end
+        )
+
+        # Cache the results and populate room.energy
+        self._energy_cache.clear()
+        self._energy_cache["_date"] = today_iso
+        for room_id, room in data_by_room.items():
+            kwh = energy_data.get(room_id, 0.0)
+            self._energy_cache[room_id] = kwh
+            room.energy = kwh
+
+        _LOGGER.debug("Energy data cached for %s: %s", today_iso, energy_data)

@@ -29,7 +29,7 @@ HOMESDATA_PATH = "/api/homesdata"
 HOMESTATUS_PATH = "/syncapi/v1/homestatus"
 CONFIG_PATH = "/syncapi/v1/getconfigs"
 SETSTATE_PATH = "/syncapi/v1/setstate"
-HOMEMEASURE_PATH = "/syncapi/v1/homemeasure"
+HOMEMEASURE_PATH = "/api/gethomemeasure"
 
 ENERGY_BASE = "https://connect.intuis.net/api"
 GET_SCHEDULE_PATH = "/gethomeschedule"

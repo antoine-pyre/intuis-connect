@@ -25,7 +25,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         entities.append(IntuisTemperatureSensor(coordinator, home_id, rooms.get(room_id)))
         entities.append(IntuisTargetTemperatureSensor(coordinator, home_id, rooms.get(room_id)))
         entities.append(IntuisMullerTypeSensor(coordinator, home_id, rooms.get(room_id)))
-        # entities.append(IntuisEnergySensor(coordinator, home_id, rooms.get(room_id)))
+        entities.append(IntuisEnergySensor(coordinator, home_id, rooms.get(room_id)))
         entities.append(IntuisMinutesSensor(coordinator, home_id, rooms.get(room_id)))
         entities.append(IntuisSetpointEndTimeSensor(coordinator, home_id, rooms.get(room_id)))
 
@@ -173,7 +173,7 @@ class IntuisMinutesSensor(IntuisSensor):
 
 
 class IntuisEnergySensor(IntuisSensor):
-    """Specialized sensor for energy data."""
+    """Specialized sensor for daily energy consumption data."""
 
     def __init__(self, coordinator, home_id: str, room: IntuisRoom) -> None:
         """Initialize the energy sensor."""
@@ -184,15 +184,19 @@ class IntuisEnergySensor(IntuisSensor):
             "energy",
             "Energy Today",
             UnitOfEnergy.KILO_WATT_HOUR,
-            "energy",
+            SensorDeviceClass.ENERGY,
         )
         self._attr_icon = "mdi:flash"
+        # Use TOTAL for daily values that reset at midnight
+        self._attr_state_class = SensorStateClass.TOTAL
 
     @property
     def native_value(self) -> float:
         """Return the current energy value."""
-        # Ensure we handle None values gracefully
-        energy = self._room.energy
+        room = self._get_room()
+        if room is None:
+            return 0.0
+        energy = room.energy
         if energy is None:
             return 0.0
         return energy
