@@ -1,0 +1,49 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connexion à Intuis (Netatmo)",
+        "data": {
+          "username": "Email",
+          "password": "Mot de passe"
+        }
+      },
+      "options": {
+        "title": "Comportement des consignes",
+        "description": "Le système Intuis limite les consignes manuelles de température à 12 heures maximum. Activez le mode illimité pour que Home Assistant réapplique automatiquement vos consignes avant leur expiration, maintenant la température souhaitée jusqu'à ce que vous la changiez.",
+        "data": {
+          "indefinite_mode": "Activer le mode consigne illimitée"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Réauthentification du compte Intuis",
+        "description": "Les identifiants ont expiré pour {username}. Entrez le nouveau mot de passe."
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de se connecter au service Intuis.",
+      "invalid_auth": "Email ou mot de passe invalide.",
+      "unknown": "Erreur inattendue."
+    },
+    "abort": {
+      "reauth_successful": "Réauthentification réussie."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "indefinite_mode": "Activer le mode consigne illimitée",
+          "manual_duration": "Durée de la consigne manuelle (minutes)",
+          "away_duration": "Durée du mode absence (minutes)",
+          "boost_duration": "Durée du mode boost (minutes)",
+          "away_temp": "Température du mode absence (°C)",
+          "boost_temp": "Température du mode boost (°C)"
+        },
+        "data_description": {
+          "indefinite_mode": "Lorsqu'il est activé, Home Assistant réapplique automatiquement les consignes manuelles avant leur expiration, contournant la limite de 12 heures d'Intuis."
+        }
+      }
+    }
+  }
+}

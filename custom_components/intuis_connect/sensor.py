@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfTemperature, UnitOfEnergy
@@ -26,6 +27,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         entities.append(IntuisMullerTypeSensor(coordinator, home_id, rooms.get(room_id)))
         # entities.append(IntuisEnergySensor(coordinator, home_id, rooms.get(room_id)))
         entities.append(IntuisMinutesSensor(coordinator, home_id, rooms.get(room_id)))
+        entities.append(IntuisSetpointEndTimeSensor(coordinator, home_id, rooms.get(room_id)))
 
     entities += provide_home_sensors(coordinator, home_id)
     async_add_entities(entities, update_before_add=True)
@@ -194,3 +196,31 @@ class IntuisEnergySensor(IntuisSensor):
         if energy is None:
             return 0.0
         return energy
+
+
+class IntuisSetpointEndTimeSensor(IntuisSensor):
+    """Sensor showing when the current temperature override will expire."""
+
+    def __init__(self, coordinator, home_id: str, room: IntuisRoom) -> None:
+        """Initialize the setpoint end time sensor."""
+        super().__init__(
+            coordinator,
+            home_id,
+            room,
+            "setpoint_end_time",
+            "Override Expires",
+            unit=None,
+            device_class=SensorDeviceClass.TIMESTAMP,
+        )
+        self._attr_icon = "mdi:timer-sand"
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the end time of the current override as a datetime."""
+        end_ts = self._get_room().therm_setpoint_end_time
+        if not end_ts or end_ts == 0:
+            return None
+        try:
+            return datetime.fromtimestamp(end_ts, tz=timezone.utc)
+        except (ValueError, OSError):
+            return None

@@ -64,6 +64,8 @@ CONF_AWAY_DURATION = "away_duration"
 CONF_BOOST_DURATION = "boost_duration"
 CONF_AWAY_TEMP = "away_temp"
 CONF_BOOST_TEMP = "boost_temp"
+CONF_INDEFINITE_MODE = "indefinite_mode"
+DEFAULT_INDEFINITE_MODE = False
 
 # API modes
 API_MODE_OFF = "off"

@@ -17,7 +17,15 @@ from .utils.const import (
     DEFAULT_MANUAL_DURATION,
     DEFAULT_AWAY_DURATION,
     DEFAULT_BOOST_DURATION,
+    CONF_INDEFINITE_MODE,
+    CONF_MANUAL_DURATION,
+    CONF_AWAY_DURATION,
+    CONF_BOOST_DURATION,
+    DEFAULT_INDEFINITE_MODE,
 )
+
+# Re-apply override this many seconds before it expires (when indefinite mode is on)
+INDEFINITE_REAPPLY_BUFFER = 300  # 5 minutes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,7 +33,13 @@ _LOGGER = logging.getLogger(__name__)
 class IntuisData:
     """Class to handle data fetching and processing for the Intuis Connect integration."""
 
-    def __init__(self, api: IntuisAPI, intuis_home: IntuisHome, overrides: dict[str, dict] | None = None) -> None:
+    def __init__(
+        self,
+        api: IntuisAPI,
+        intuis_home: IntuisHome,
+        overrides: dict[str, dict] | None = None,
+        get_options: callable = None,
+    ) -> None:
         """Initialize the data handler."""
         self._api = api
         self._energy_cache: dict[str, float] = {}
@@ -35,6 +49,8 @@ class IntuisData:
         self._last_reset_date = datetime.now().date()
         # sticky overrides: { room_id: { mode, temp, end, sticky } }
         self._overrides: dict[str, dict] = overrides or {}
+        # Callback to get current options from config entry
+        self._get_options = get_options or (lambda: {})
 
     async def async_update(self) -> dict[str, Any]:
         """Fetch and process data from the API."""
@@ -53,7 +69,12 @@ class IntuisData:
         data_by_room = extract_rooms(home, modules, self._minutes_counter, self._intuis_home.rooms,
                                      self._last_update_timestamp)
 
+        # Get current options
+        options = self._get_options()
+        indefinite_mode = options.get(CONF_INDEFINITE_MODE, DEFAULT_INDEFINITE_MODE)
+
         # Apply sticky overrides if backend reverted at or after end time
+        # OR if indefinite mode is enabled and we're approaching expiry
         now_ts = int(time.time())
         for room_id, room in data_by_room.items():
             override = self._overrides.get(room_id)
@@ -63,39 +84,57 @@ class IntuisData:
                 end_ts = int(override.get("end", 0))
             except (TypeError, ValueError):
                 end_ts = 0
-            if end_ts and now_ts >= end_ts - 2:  # small slack
-                desired_mode: str = override.get("mode")
-                desired_temp = override.get("temp")
-                # Check if backend reverted (mode/temp mismatch)
+
+            desired_mode: str = override.get("mode")
+            desired_temp = override.get("temp")
+
+            # Get configured duration for this mode
+            duration_min = options.get(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION)
+            if desired_mode == API_MODE_AWAY:
+                duration_min = options.get(CONF_AWAY_DURATION, DEFAULT_AWAY_DURATION)
+            elif desired_mode == API_MODE_BOOST:
+                duration_min = options.get(CONF_BOOST_DURATION, DEFAULT_BOOST_DURATION)
+
+            # Check if we should re-apply the override
+            should_reapply = False
+            reason = ""
+
+            if indefinite_mode and end_ts:
+                # In indefinite mode: re-apply before expiry (5 min buffer)
+                if now_ts >= end_ts - INDEFINITE_REAPPLY_BUFFER:
+                    should_reapply = True
+                    reason = "indefinite mode - approaching expiry"
+            elif end_ts and now_ts >= end_ts - 2:
+                # Normal mode: check if backend reverted after expiry
                 mismatch = False
                 if desired_mode and room.mode != desired_mode:
                     mismatch = True
                 if desired_temp is not None:
                     try:
                         mismatch = mismatch or abs(float(room.target_temperature) - float(desired_temp)) > 0.1
-                    except Exception:  # safety
+                    except Exception:
                         mismatch = True
                 if mismatch:
-                    duration_min = DEFAULT_MANUAL_DURATION
-                    if desired_mode == API_MODE_AWAY:
-                        duration_min = DEFAULT_AWAY_DURATION
-                    elif desired_mode == API_MODE_BOOST:
-                        duration_min = DEFAULT_BOOST_DURATION
-                    # Re-apply intended override
-                    _LOGGER.info(
-                        "Re-applying sticky override for room %s: mode=%s temp=%s",
-                        room_id,
-                        desired_mode,
-                        desired_temp,
-                    )
-                    await self._api.async_set_room_state(
-                        room_id,
-                        desired_mode,
-                        float(desired_temp) if desired_temp is not None else None,
-                        duration_min,
-                    )
-                    # Extend local end timestamp
-                    self._overrides[room_id]["end"] = int(time.time()) + duration_min * 60
+                    should_reapply = True
+                    reason = "backend reverted after expiry"
+
+            if should_reapply:
+                _LOGGER.info(
+                    "Re-applying override for room %s (%s): mode=%s temp=%s duration=%d min",
+                    room_id,
+                    reason,
+                    desired_mode,
+                    desired_temp,
+                    duration_min,
+                )
+                await self._api.async_set_room_state(
+                    room_id,
+                    desired_mode,
+                    float(desired_temp) if desired_temp is not None else None,
+                    duration_min,
+                )
+                # Extend local end timestamp
+                self._overrides[room_id]["end"] = int(time.time()) + duration_min * 60
 
         config = IntuisHomeConfig.from_dict(await self._api.async_get_config())
 

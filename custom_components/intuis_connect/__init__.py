@@ -78,7 +78,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     overrides: dict[str, dict] = {}
 
     # ---------- setup coordinator --------------------------------------------------
-    intuis_data = IntuisData(intuis_api, intuis_home, overrides)
+    # Callback to get current options from config entry
+    def get_options() -> dict:
+        return dict(entry.options)
+
+    intuis_data = IntuisData(intuis_api, intuis_home, overrides, get_options)
 
     coordinator: IntuisDataUpdateCoordinator = DataUpdateCoordinator(
         hass,
