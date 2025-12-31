@@ -22,9 +22,12 @@ from homeassistant.helpers.event import async_call_later
 
 from . import IntuisAPI
 from .entity.intuis_room import IntuisRoom
-from .utils.const import PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE, API_MODE_OFF, API_MODE_AUTO, API_MODE_MANUAL, \
-    API_MODE_AWAY, API_MODE_BOOST, API_MODE_HOME, DEFAULT_AWAY_TEMP, DEFAULT_AWAY_DURATION, DEFAULT_BOOST_TEMP, \
-    DEFAULT_BOOST_DURATION, DEFAULT_MANUAL_DURATION, DOMAIN
+from .utils.const import (
+    PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE, API_MODE_OFF, API_MODE_AUTO, API_MODE_MANUAL,
+    API_MODE_AWAY, API_MODE_BOOST, API_MODE_HOME, DEFAULT_AWAY_TEMP, DEFAULT_AWAY_DURATION, DEFAULT_BOOST_TEMP,
+    DEFAULT_BOOST_DURATION, DEFAULT_MANUAL_DURATION, DOMAIN, CONF_MANUAL_DURATION, CONF_AWAY_DURATION,
+    CONF_BOOST_DURATION, CONF_AWAY_TEMP, CONF_BOOST_TEMP,
+)
 from .entity.intuis_entity import IntuisEntity, IntuisDataUpdateCoordinator
 from .utils.helper import get_basic_utils
 
@@ -67,6 +70,13 @@ class IntuisConnectClimate(
     def _get_overrides(self) -> dict[str, dict]:
         data = self.hass.data.get(DOMAIN, {}).get(self._entry_id, {})
         return data.setdefault("overrides", {})
+
+    def _get_option(self, key: str, default: Any) -> Any:
+        """Get an option value from the config entry."""
+        entry = self.hass.config_entries.async_get_entry(self._entry_id)
+        if entry:
+            return entry.options.get(key, default)
+        return default
 
     def _schedule_end_refresh(self, end_ts: int) -> None:
         # Schedule a refresh slightly after end time
@@ -134,10 +144,11 @@ class IntuisConnectClimate(
         if temp is None:
             return
         room_id = self._get_room().id
+        manual_duration = self._get_option(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION)
         await self._api.async_set_room_state(
-            room_id, API_MODE_MANUAL, float(temp)
+            room_id, API_MODE_MANUAL, float(temp), manual_duration
         )
-        end_ts = int(time.time()) + DEFAULT_MANUAL_DURATION * 60
+        end_ts = int(time.time()) + manual_duration * 60
         overrides = self._get_overrides()
         overrides[room_id] = {
             "mode": API_MODE_MANUAL,
@@ -166,10 +177,11 @@ class IntuisConnectClimate(
             self._attr_preset_mode = PRESET_SCHEDULE
         elif hvac_mode == HVACMode.HEAT:
             temp = float(self.target_temperature or 20.0)
+            manual_duration = self._get_option(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION)
             await self._api.async_set_room_state(
-                room_id, API_MODE_MANUAL, temp
+                room_id, API_MODE_MANUAL, temp, manual_duration
             )
-            end_ts = int(time.time()) + DEFAULT_MANUAL_DURATION * 60
+            end_ts = int(time.time()) + manual_duration * 60
             overrides[room_id] = {
                 "mode": API_MODE_MANUAL,
                 "temp": temp,
@@ -190,33 +202,37 @@ class IntuisConnectClimate(
             self._attr_hvac_mode = HVACMode.AUTO
             overrides.pop(room_id, None)
         elif preset_mode == PRESET_AWAY:
+            away_temp = self._get_option(CONF_AWAY_TEMP, DEFAULT_AWAY_TEMP)
+            away_duration = self._get_option(CONF_AWAY_DURATION, DEFAULT_AWAY_DURATION)
             await self._api.async_set_room_state(
                 room_id,
                 API_MODE_AWAY,
-                DEFAULT_AWAY_TEMP,
-                DEFAULT_AWAY_DURATION,
+                away_temp,
+                away_duration,
             )
             self._attr_hvac_mode = HVACMode.HEAT
-            end_ts = int(time.time()) + DEFAULT_AWAY_DURATION * 60
+            end_ts = int(time.time()) + away_duration * 60
             overrides[room_id] = {
                 "mode": API_MODE_AWAY,
-                "temp": float(DEFAULT_AWAY_TEMP),
+                "temp": float(away_temp),
                 "end": end_ts,
                 "sticky": True,
             }
             self._schedule_end_refresh(end_ts)
         elif preset_mode == PRESET_BOOST:
+            boost_temp = self._get_option(CONF_BOOST_TEMP, DEFAULT_BOOST_TEMP)
+            boost_duration = self._get_option(CONF_BOOST_DURATION, DEFAULT_BOOST_DURATION)
             await self._api.async_set_room_state(
                 room_id,
                 API_MODE_BOOST,
-                DEFAULT_BOOST_TEMP,
-                DEFAULT_BOOST_DURATION,
+                boost_temp,
+                boost_duration,
             )
             self._attr_hvac_mode = HVACMode.HEAT
-            end_ts = int(time.time()) + DEFAULT_BOOST_DURATION * 60
+            end_ts = int(time.time()) + boost_duration * 60
             overrides[room_id] = {
                 "mode": API_MODE_BOOST,
-                "temp": float(DEFAULT_BOOST_TEMP),
+                "temp": float(boost_temp),
                 "end": end_ts,
                 "sticky": True,
             }

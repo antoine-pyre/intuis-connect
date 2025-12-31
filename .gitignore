@@ -1,2 +1,13 @@
 .idea/
 bruno/*/environments/*.bru
+
+CLAUDE.md
+
+# Dev container HA config
+config/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/

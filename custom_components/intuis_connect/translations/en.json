@@ -8,6 +8,13 @@
           "password": "Password"
         }
       },
+      "options": {
+        "title": "Override Behavior",
+        "description": "The Intuis system limits manual temperature overrides to 12 hours maximum. Enable indefinite mode to let Home Assistant automatically re-apply your overrides before they expire, keeping your desired temperature until you change it.",
+        "data": {
+          "indefinite_mode": "Enable indefinite override mode"
+        }
+      },
       "reauth_confirm": {
         "title": "Reauthenticate Intuis account",
         "description": "Credentials expired for {username}. Enter new password."
@@ -20,6 +27,23 @@
     },
     "abort": {
       "reauth_successful": "Reauthentication successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "indefinite_mode": "Enable indefinite override mode",
+          "manual_duration": "Manual override duration (minutes)",
+          "away_duration": "Away mode duration (minutes)",
+          "boost_duration": "Boost mode duration (minutes)",
+          "away_temp": "Away mode temperature (°C)",
+          "boost_temp": "Boost mode temperature (°C)"
+        },
+        "data_description": {
+          "indefinite_mode": "When enabled, Home Assistant will automatically re-apply manual overrides before they expire, bypassing the 12-hour Intuis limit."
+        }
+      }
     }
   }
 }

@@ -22,11 +22,13 @@ from .utils.const import (
     CONF_BOOST_DURATION,
     CONF_AWAY_TEMP,
     CONF_BOOST_TEMP,
+    CONF_INDEFINITE_MODE,
     DEFAULT_MANUAL_DURATION,
     DEFAULT_AWAY_DURATION,
     DEFAULT_BOOST_DURATION,
     DEFAULT_AWAY_TEMP,
     DEFAULT_BOOST_TEMP,
+    DEFAULT_INDEFINITE_MODE,
 )
 from .utils.helper import async_validate_api
 
@@ -39,6 +41,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 2
     _reauth_entry: config_entries.ConfigEntry | None = None
     _username: str | None = None
+    _home_id: str | None = None
+    _refresh_token: str | None = None
 
     async def async_step_user(
             self, user_input: dict[str, Any] | None = None
@@ -60,21 +64,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
             else:
-                return self.async_create_entry(
-                    title=f"Intuis Connect ({username})",
-                    data={
-                        CONF_USERNAME: username,
-                        CONF_REFRESH_TOKEN: api.refresh_token,
-                        CONF_HOME_ID: home_id,
-                    },
-                    options={
-                        CONF_MANUAL_DURATION: DEFAULT_MANUAL_DURATION,
-                        CONF_AWAY_DURATION: DEFAULT_AWAY_DURATION,
-                        CONF_BOOST_DURATION: DEFAULT_BOOST_DURATION,
-                        CONF_AWAY_TEMP: DEFAULT_AWAY_TEMP,
-                        CONF_BOOST_TEMP: DEFAULT_BOOST_TEMP,
-                    },
-                )
+                # Store credentials and proceed to options step
+                self._username = username
+                self._home_id = home_id
+                self._refresh_token = api.refresh_token
+                return await self.async_step_options()
 
         data_schema = vol.Schema(
             {
@@ -84,6 +78,42 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(
             step_id="user", data_schema=data_schema, errors=errors
+        )
+
+    async def async_step_options(
+            self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle the options step after login."""
+        if user_input is not None:
+            return self.async_create_entry(
+                title=f"Intuis Connect ({self._username})",
+                data={
+                    CONF_USERNAME: self._username,
+                    CONF_REFRESH_TOKEN: self._refresh_token,
+                    CONF_HOME_ID: self._home_id,
+                },
+                options={
+                    CONF_MANUAL_DURATION: DEFAULT_MANUAL_DURATION,
+                    CONF_AWAY_DURATION: DEFAULT_AWAY_DURATION,
+                    CONF_BOOST_DURATION: DEFAULT_BOOST_DURATION,
+                    CONF_AWAY_TEMP: DEFAULT_AWAY_TEMP,
+                    CONF_BOOST_TEMP: DEFAULT_BOOST_TEMP,
+                    CONF_INDEFINITE_MODE: user_input.get(CONF_INDEFINITE_MODE, DEFAULT_INDEFINITE_MODE),
+                },
+            )
+
+        options_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_INDEFINITE_MODE,
+                    default=DEFAULT_INDEFINITE_MODE,
+                ): bool,
+            }
+        )
+        return self.async_show_form(
+            step_id="options",
+            data_schema=options_schema,
+            description_placeholders={"username": self._username},
         )
 
     async def async_step_reauth(self, data: dict[str, Any]) -> FlowResult:
@@ -164,6 +194,12 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
 
         options_schema = vol.Schema(
             {
+                vol.Optional(
+                    CONF_INDEFINITE_MODE,
+                    default=self._entry.options.get(
+                        CONF_INDEFINITE_MODE, DEFAULT_INDEFINITE_MODE
+                    ),
+                ): bool,
                 vol.Optional(
                     CONF_MANUAL_DURATION,
                     default=self._entry.options.get(

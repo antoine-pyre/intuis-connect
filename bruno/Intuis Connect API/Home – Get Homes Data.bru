@@ -20,11 +20,21 @@ headers {
 
 script:post-response {
   if (res.getStatus() === 200) {
-     var jsonData = res.getBody().body;
-     if (jsonData.homes) {
-         bru.setVar("home_id", jsonData.homes[0].id);
-         console.log("home id refreshed: ", jsonData.homes[0].id);
-     }
+    var jsonData = res.getBody().body;
+    if (jsonData.homes) {
+      bru.setVar("home_id", jsonData.homes[0].id);
+      console.log("home id refreshed: ", jsonData.homes[0].id);
+    }
+    if (jsonData.rooms) {
+      var i = 1;
+      bru.setVar("room_id", jsonData.rooms[0].id)
+      for (const room in jsonData.rooms) {
+        bru.setVar("room" + i + "_id", room.id);
+      }
+    }
+    if (jsonData.modules) {
+      bru.setVar("bridge_id", jsonData.modules[0].id)
+    }
   }
 }
 
