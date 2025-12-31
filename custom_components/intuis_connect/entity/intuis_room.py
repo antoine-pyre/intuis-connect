@@ -44,7 +44,8 @@ class IntuisRoom:
 
     def __init__(self, definition: IntuisRoomDefinition, id: str, name: str, mode: str, target_temperature: float,
                  temperature: float, presence: bool, open_window: bool, anticipation: bool,
-                 muller_type: str, boost_status: str, modules: list[IntuisModule], therm_setpoint_end_time: int) -> None:
+                 muller_type: str, boost_status: str, modules: list[IntuisModule], therm_setpoint_end_time: int,
+                 bridge_id: str | None = None) -> None:
         """Initialize the room with its definition."""
         self.definition = definition
         self.id = id
@@ -59,6 +60,7 @@ class IntuisRoom:
         self.boost_status = boost_status
         self.modules = modules
         self.therm_setpoint_end_time = therm_setpoint_end_time
+        self.bridge_id = bridge_id
 
     @staticmethod
     def from_dict(definition: IntuisRoomDefinition, data: dict[str, Any], modules: list[IntuisModule]) -> IntuisRoom:
@@ -66,6 +68,13 @@ class IntuisRoom:
 
         # Filter modules based on the room definition
         filtered_modules = [module for module in modules if module.id in definition.module_ids]
+
+        # Get bridge_id from the first module that has one
+        bridge_id = None
+        for module in filtered_modules:
+            if hasattr(module, "bridge") and module.bridge:
+                bridge_id = module.bridge
+                break
 
         return IntuisRoom(
             definition=definition,
@@ -80,7 +89,8 @@ class IntuisRoom:
             muller_type=data.get("muller_type", ""),
             boost_status=data.get("boost_status", "disabled"),
             therm_setpoint_end_time=data.get("therm_setpoint_end_time", 0),
-            modules=filtered_modules
+            modules=filtered_modules,
+            bridge_id=bridge_id,
         )
 
     def __repr__(self) -> str:

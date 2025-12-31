@@ -365,43 +365,79 @@ class IntuisAPI:
         if self._debug:
             _LOGGER.debug("Room %s state set to mode=%s, temp=%s", room_id, mode, temp)
 
-    async def async_get_home_measure(self, room_id: str, date_iso: str) -> float:
-        """Return kWh for given room and date (YYYY-MM-DD) or 0.0 on failure."""
+    async def async_get_energy_measures(
+        self, rooms: list[dict[str, str]], date_begin: int, date_end: int
+    ) -> dict[str, float]:
+        """Return daily kWh for multiple rooms.
+
+        Args:
+            rooms: List of dicts with keys 'id' and 'bridge' for each room.
+            date_begin: Unix epoch timestamp for start of period.
+            date_end: Unix epoch timestamp for end of period.
+
+        Returns:
+            Dict mapping room_id to energy in kWh.
+        """
+        if not rooms:
+            return {}
+
         if self._debug:
             _LOGGER.debug(
-                "Fetching home measure for room %s on date %s", room_id, date_iso
+                "Fetching energy measures for %d rooms from %s to %s",
+                len(rooms),
+                date_begin,
+                date_end,
             )
+
         payload = {
-            "home_id": self.home_id,
-            "room_id": room_id,
+            "app_identifier": APP_TYPE,
+            "home": {
+                "id": self.home_id,
+                "rooms": [
+                    {"id": r["id"], "bridge": r["bridge"], "type": "sum_energy_elec$0"}
+                    for r in rooms
+                ],
+            },
             "scale": "1day",
-            "type": "sum_energy",
-            "date_begin": date_iso,
-            "date_end": date_iso,
+            "date_begin": date_begin,
+            "date_end": date_end,
         }
+
         try:
             async with await self._async_request(
-                    "post", HOMEMEASURE_PATH, data=payload
+                "post",
+                HOMEMEASURE_PATH,
+                json=payload,
+                headers={"Content-Type": "application/json"},
             ) as resp:
                 data = await resp.json()
-            _LOGGER.debug("Home measure data received: %s", data)
-            measures = data.get("body", {}).get("measure", [])
-            if not measures:
-                _LOGGER.debug(
-                    "No measure data in response for room %s on date %s",
-                    room_id,
-                    date_iso,
-                )
-                return 0.0
-            return float(measures[0][1])
-        except APIError:
+
+            _LOGGER.debug("Energy measure response: %s", data)
+
+            result: dict[str, float] = {}
+            body = data.get("body", {})
+
+            # Response contains room data with measures
+            for room_data in body.get("rooms", []):
+                room_id = room_data.get("id")
+                measures = room_data.get("measures", [])
+                if room_id and measures:
+                    # measures is a list of [timestamp, value] pairs
+                    # Sum all values for the day
+                    total = sum(float(m[1]) for m in measures if len(m) > 1)
+                    result[room_id] = total
+                elif room_id:
+                    result[room_id] = 0.0
+
+            return result
+
+        except (APIError, KeyError, ValueError, TypeError) as e:
             _LOGGER.warning(
-                "Home measure request failed for room %s on date %s, returning 0.0",
-                room_id,
-                date_iso,
+                "Energy measure request failed: %s, returning empty dict",
+                e,
                 exc_info=True,
             )
-            return 0.0
+            return {}
 
     async def async_get_schedule(
             self, home_id: str, schedule_id: int
