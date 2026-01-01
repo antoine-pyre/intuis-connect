@@ -8,22 +8,30 @@
           "password": "Password"
         }
       },
-      "overrides": {
-        "title": "Override Settings",
-        "description": "The Intuis system limits manual temperature overrides to 12 hours maximum. Enable indefinite mode to let Home Assistant automatically re-apply your overrides before they expire.",
+      "indefinite": {
+        "title": "Temperature Override Mode",
+        "description": "Choose how Home Assistant should handle temperature overrides.\n\n**Important:** The Intuis system has a 12-hour maximum limit for manual temperature changes. After this time, your radiators will automatically return to the programmed schedule.",
         "data": {
-          "indefinite_mode": "Enable indefinite override mode",
+          "indefinite_mode": "Enable indefinite override mode"
+        },
+        "data_description": {
+          "indefinite_mode": "When ENABLED: Home Assistant will automatically re-apply your temperature settings before they expire. Your radiators will maintain the temperature you set until you manually change it or switch back to schedule mode.\n\nWhen DISABLED: Temperature overrides will follow Intuis behavior and return to the programmed schedule after the configured duration expires."
+        }
+      },
+      "overrides": {
+        "title": "Override Durations & Temperatures",
+        "description": "Configure the durations and temperatures for different override modes. These settings define how long each mode lasts and what temperature to use.",
+        "data": {
           "manual_duration": "Manual override duration (minutes)",
           "away_duration": "Away mode duration (minutes)",
           "boost_duration": "Boost mode duration (minutes)",
-          "away_temp": "Away mode temperature (°C)",
-          "boost_temp": "Boost mode temperature (°C)"
+          "away_temp": "Away mode temperature",
+          "boost_temp": "Boost mode temperature"
         },
         "data_description": {
-          "indefinite_mode": "When enabled, Home Assistant will automatically re-apply manual overrides before they expire, bypassing the 12-hour Intuis limit.",
-          "manual_duration": "Duration for manual temperature changes before reverting to schedule.",
-          "away_duration": "Duration for away mode preset.",
-          "boost_duration": "Duration for boost mode preset.",
+          "manual_duration": "How long a manual temperature change lasts before returning to schedule (if indefinite mode is disabled).",
+          "away_duration": "How long the away mode preset lasts.",
+          "boost_duration": "How long the boost mode preset lasts.",
           "away_temp": "Target temperature when away mode is activated.",
           "boost_temp": "Target temperature when boost mode is activated."
         }
@@ -58,22 +66,30 @@
   },
   "options": {
     "step": {
-      "overrides": {
-        "title": "Override Settings",
-        "description": "The Intuis system limits manual temperature overrides to 12 hours maximum. Enable indefinite mode to let Home Assistant automatically re-apply your overrides before they expire.",
+      "indefinite": {
+        "title": "Temperature Override Mode",
+        "description": "Choose how Home Assistant should handle temperature overrides.\n\n**Important:** The Intuis system has a 12-hour maximum limit for manual temperature changes. After this time, your radiators will automatically return to the programmed schedule.",
         "data": {
-          "indefinite_mode": "Enable indefinite override mode",
+          "indefinite_mode": "Enable indefinite override mode"
+        },
+        "data_description": {
+          "indefinite_mode": "When ENABLED: Home Assistant will automatically re-apply your temperature settings before they expire. Your radiators will maintain the temperature you set until you manually change it or switch back to schedule mode.\n\nWhen DISABLED: Temperature overrides will follow Intuis behavior and return to the programmed schedule after the configured duration expires."
+        }
+      },
+      "overrides": {
+        "title": "Override Durations & Temperatures",
+        "description": "Configure the durations and temperatures for different override modes. These settings define how long each mode lasts and what temperature to use.",
+        "data": {
           "manual_duration": "Manual override duration (minutes)",
           "away_duration": "Away mode duration (minutes)",
           "boost_duration": "Boost mode duration (minutes)",
-          "away_temp": "Away mode temperature (°C)",
-          "boost_temp": "Boost mode temperature (°C)"
+          "away_temp": "Away mode temperature",
+          "boost_temp": "Boost mode temperature"
         },
         "data_description": {
-          "indefinite_mode": "When enabled, Home Assistant will automatically re-apply manual overrides before they expire, bypassing the 12-hour Intuis limit.",
-          "manual_duration": "Duration for manual temperature changes before reverting to schedule.",
-          "away_duration": "Duration for away mode preset.",
-          "boost_duration": "Duration for boost mode preset.",
+          "manual_duration": "How long a manual temperature change lasts before returning to schedule (if indefinite mode is disabled).",
+          "away_duration": "How long the away mode preset lasts.",
+          "boost_duration": "How long the boost mode preset lasts.",
           "away_temp": "Target temperature when away mode is activated.",
           "boost_temp": "Target temperature when boost mode is activated."
         }

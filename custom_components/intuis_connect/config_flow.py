@@ -88,7 +88,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._username = username
                 self._home_id = home_id
                 self._refresh_token = api.refresh_token
-                return await self.async_step_overrides()
+                return await self.async_step_indefinite()
 
         data_schema = vol.Schema(
             {
@@ -104,13 +104,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user", data_schema=data_schema, errors=errors
         )
 
-    async def async_step_overrides(
+    async def async_step_indefinite(
             self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Step 2: Configure override behavior."""
+        """Step 2: Configure indefinite override mode."""
         if user_input is not None:
-            self._override_options = user_input
-            return await self.async_step_energy()
+            self._override_options[CONF_INDEFINITE_MODE] = user_input.get(
+                CONF_INDEFINITE_MODE, DEFAULT_INDEFINITE_MODE
+            )
+            return await self.async_step_overrides()
 
         options_schema = vol.Schema(
             {
@@ -118,6 +120,24 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_INDEFINITE_MODE,
                     default=DEFAULT_INDEFINITE_MODE,
                 ): BooleanSelector(),
+            }
+        )
+        return self.async_show_form(
+            step_id="indefinite",
+            data_schema=options_schema,
+            description_placeholders={},
+        )
+
+    async def async_step_overrides(
+            self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Step 3: Configure override durations and temperatures."""
+        if user_input is not None:
+            self._override_options.update(user_input)
+            return await self.async_step_energy()
+
+        options_schema = vol.Schema(
+            {
                 vol.Optional(
                     CONF_MANUAL_DURATION,
                     default=DEFAULT_MANUAL_DURATION,
@@ -281,16 +301,18 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(
             self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Step 1: Choose what to configure."""
-        return await self.async_step_overrides()
+        """Step 1: Start with indefinite mode configuration."""
+        return await self.async_step_indefinite()
 
-    async def async_step_overrides(
+    async def async_step_indefinite(
             self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Step 2: Configure override behavior."""
+        """Step 2: Configure indefinite override mode."""
         if user_input is not None:
-            self._override_options = user_input
-            return await self.async_step_energy()
+            self._override_options[CONF_INDEFINITE_MODE] = user_input.get(
+                CONF_INDEFINITE_MODE, DEFAULT_INDEFINITE_MODE
+            )
+            return await self.async_step_overrides()
 
         options_schema = vol.Schema(
             {
@@ -300,6 +322,24 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
                         CONF_INDEFINITE_MODE, DEFAULT_INDEFINITE_MODE
                     ),
                 ): BooleanSelector(),
+            }
+        )
+        return self.async_show_form(
+            step_id="indefinite",
+            data_schema=options_schema,
+            description_placeholders={},
+        )
+
+    async def async_step_overrides(
+            self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Step 3: Configure override durations and temperatures."""
+        if user_input is not None:
+            self._override_options.update(user_input)
+            return await self.async_step_energy()
+
+        options_schema = vol.Schema(
+            {
                 vol.Optional(
                     CONF_MANUAL_DURATION,
                     default=self._entry.options.get(
