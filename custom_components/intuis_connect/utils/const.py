@@ -81,6 +81,18 @@ ENERGY_SCALE_OPTIONS = {
     "1day": "1 day (daily total)",
 }
 
+# Historical import options
+CONF_IMPORT_HISTORY = "import_history"
+CONF_HISTORY_DAYS = "history_days"
+DEFAULT_IMPORT_HISTORY = False
+DEFAULT_HISTORY_DAYS = 30
+HISTORY_DAYS_OPTIONS = {
+    "7": "7 days",
+    "30": "30 days",
+    "90": "90 days",
+    "365": "1 year",
+}
+
 # API modes
 API_MODE_OFF = "off"
 API_MODE_HOME = "home"
