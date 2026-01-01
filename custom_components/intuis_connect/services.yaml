@@ -15,3 +15,33 @@ clear_override:
       description: >
         The integer/string room ID. You can find it in the entity_id of your
         climate device (e.g. climate.room_123456).
+
+switch_schedule:
+  name: Switch Schedule
+  description: >
+    Switch to a different heating schedule. The schedule applies to all rooms
+    in the home.
+  fields:
+    schedule_id:
+      name: Schedule ID
+      description: >
+        The ID of the schedule to activate. Can be found in the Schedule Summary
+        sensor attributes under 'available_schedules'.
+      required: false
+      example: "abc123def456"
+      selector:
+        text:
+    schedule_name:
+      name: Schedule Name
+      description: >
+        Alternative to schedule_id - the name of the schedule to activate.
+        If both are provided, schedule_id takes precedence.
+      required: false
+      example: "Work Week"
+      selector:
+        text:
+
+refresh_schedules:
+  name: Refresh Schedules
+  description: >
+    Force a refresh of all schedule and home data from the Intuis API.

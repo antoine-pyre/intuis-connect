@@ -9,17 +9,34 @@ _LOGGER = logging.getLogger(__name__)
 class IntuisScheduleRoom:
     """Class to represent a room in the Intuis Connect system."""
 
-    def __init__(self, id: str, therm_setpoint_temperature) -> None:
+    def __init__(
+        self,
+        id: str,
+        therm_setpoint_temperature: float | None = None,
+        therm_setpoint_fp: str | None = None
+    ) -> None:
         """Initialize the room."""
         self.id = id
         self.therm_setpoint_temperature = therm_setpoint_temperature
+        self.therm_setpoint_fp = therm_setpoint_fp  # Preset mode: "comfort", "away", etc.
+
+    @property
+    def effective_temperature(self) -> float | None:
+        """Return the effective temperature (if set directly)."""
+        return self.therm_setpoint_temperature
+
+    @property
+    def is_preset_mode(self) -> bool:
+        """Return True if this room uses a preset mode instead of temperature."""
+        return self.therm_setpoint_fp is not None
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> IntuisScheduleRoom:
         """Create a room from a dictionary."""
         return IntuisScheduleRoom(
             id=data["id"],
-            therm_setpoint_temperature=data["therm_setpoint_temperature"]
+            therm_setpoint_temperature=data.get("therm_setpoint_temperature"),
+            therm_setpoint_fp=data.get("therm_setpoint_fp")
         )
 
 
@@ -80,8 +97,8 @@ class IntuisThermZone(IntuisZone):
         rooms = [IntuisScheduleRoom.from_dict(r) for r in data.get("rooms", [])]
         return IntuisThermZone(
             id=data["id"],
-            name=data["name"],
-            type=data["type"],
+            name=data.get("name", f"Zone {data['id']}"),
+            type=data.get("type", 0),
             rooms_temp=rooms_temp,
             rooms=rooms
         )
@@ -141,7 +158,9 @@ class IntuisSchedule:
     def from_dict(data: dict[str, Any]) -> IntuisSchedule:
         """Create an Intuis schedule from a dictionary."""
         _LOGGER.debug("Creating IntuisSchedule from data: %s", data)
-        timetables = [IntuisTimetable.from_dict(t) for t in data.get("timetables", [])]
+        # API returns "timetable" (singular) but we store as "timetables" internally
+        timetable_data = data.get("timetable", data.get("timetables", []))
+        timetables = [IntuisTimetable.from_dict(t) for t in timetable_data]
 
         type = data["type"]
 
@@ -155,10 +174,10 @@ class IntuisSchedule:
             return IntuisThermSchedule(
                 timetables=timetables,
                 zones=zones,
-                name=data["name"],
-                default=data["default"],
-                away_temp=data["away_temp"],
-                hg_temp=data["hg_temp"],
+                name=data.get("name", f"Schedule {data['id'][-6:]}"),
+                default=data.get("default", False),
+                away_temp=data.get("away_temp", 12),
+                hg_temp=data.get("hg_temp", 7),
                 id=data["id"],
                 type=type,
                 selected=data.get("selected", False)
@@ -167,16 +186,16 @@ class IntuisSchedule:
             return IntuisElectricitySchedule(
                 timetables=timetables,
                 zones=zones,
-                name=data["name"],
-                default=data["default"],
+                name=data.get("name", f"Electricity {data['id'][-6:]}"),
+                default=data.get("default", False),
                 id=data["id"],
                 type=type,
                 selected=data.get("selected", False),
-                tariff=data["tariff"],
-                tariff_option=data["tariff_option"],
-                power_threshold=data["power_threshold"],
-                contract_power_unit=data["contract_power_unit"],
-                version=data["version"]
+                tariff=data.get("tariff", ""),
+                tariff_option=data.get("tariff_option", ""),
+                power_threshold=data.get("power_threshold", 0),
+                contract_power_unit=data.get("contract_power_unit", ""),
+                version=data.get("version", 1)
             )
         raise ValueError(f"Unknown schedule type: {type}")
 
