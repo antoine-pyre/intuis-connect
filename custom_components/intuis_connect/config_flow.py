@@ -96,14 +96,17 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_HOME_ID: self._home_id,
                 },
                 options={
-                    CONF_MANUAL_DURATION: DEFAULT_MANUAL_DURATION,
-                    CONF_AWAY_DURATION: DEFAULT_AWAY_DURATION,
-                    CONF_BOOST_DURATION: DEFAULT_BOOST_DURATION,
-                    CONF_AWAY_TEMP: DEFAULT_AWAY_TEMP,
-                    CONF_BOOST_TEMP: DEFAULT_BOOST_TEMP,
                     CONF_INDEFINITE_MODE: user_input.get(CONF_INDEFINITE_MODE, DEFAULT_INDEFINITE_MODE),
+                    CONF_ENERGY_SCALE: user_input.get(CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE),
+                    CONF_MANUAL_DURATION: user_input.get(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION),
+                    CONF_AWAY_DURATION: user_input.get(CONF_AWAY_DURATION, DEFAULT_AWAY_DURATION),
+                    CONF_BOOST_DURATION: user_input.get(CONF_BOOST_DURATION, DEFAULT_BOOST_DURATION),
+                    CONF_AWAY_TEMP: user_input.get(CONF_AWAY_TEMP, DEFAULT_AWAY_TEMP),
+                    CONF_BOOST_TEMP: user_input.get(CONF_BOOST_TEMP, DEFAULT_BOOST_TEMP),
                 },
             )
+
+        positive_int = vol.All(vol.Coerce(int), vol.Range(min=1))
 
         options_schema = vol.Schema(
             {
@@ -111,6 +114,30 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_INDEFINITE_MODE,
                     default=DEFAULT_INDEFINITE_MODE,
                 ): bool,
+                vol.Optional(
+                    CONF_ENERGY_SCALE,
+                    default=DEFAULT_ENERGY_SCALE,
+                ): vol.In(list(ENERGY_SCALE_OPTIONS.keys())),
+                vol.Optional(
+                    CONF_MANUAL_DURATION,
+                    default=DEFAULT_MANUAL_DURATION,
+                ): positive_int,
+                vol.Optional(
+                    CONF_AWAY_DURATION,
+                    default=DEFAULT_AWAY_DURATION,
+                ): positive_int,
+                vol.Optional(
+                    CONF_BOOST_DURATION,
+                    default=DEFAULT_BOOST_DURATION,
+                ): positive_int,
+                vol.Optional(
+                    CONF_AWAY_TEMP,
+                    default=DEFAULT_AWAY_TEMP,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_BOOST_TEMP,
+                    default=DEFAULT_BOOST_TEMP,
+                ): vol.Coerce(float),
             }
         )
         return self.async_show_form(
@@ -189,11 +216,8 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        def _pos_int(value: str) -> int:
-            val = vol.Coerce(int)(value)
-            if val <= 0:
-                raise vol.Invalid("must_be_positive")
-            return val
+        # Use vol.All with Range instead of custom function (custom functions can't be serialized)
+        positive_int = vol.All(vol.Coerce(int), vol.Range(min=1))
 
         options_schema = vol.Schema(
             {
@@ -208,25 +232,25 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
                     default=self._entry.options.get(
                         CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE
                     ),
-                ): vol.In(ENERGY_SCALE_OPTIONS),
+                ): vol.In(list(ENERGY_SCALE_OPTIONS.keys())),
                 vol.Optional(
                     CONF_MANUAL_DURATION,
                     default=self._entry.options.get(
                         CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION
                     ),
-                ): _pos_int,
+                ): positive_int,
                 vol.Optional(
                     CONF_AWAY_DURATION,
                     default=self._entry.options.get(
                         CONF_AWAY_DURATION, DEFAULT_AWAY_DURATION
                     ),
-                ): _pos_int,
+                ): positive_int,
                 vol.Optional(
                     CONF_BOOST_DURATION,
                     default=self._entry.options.get(
                         CONF_BOOST_DURATION, DEFAULT_BOOST_DURATION
                     ),
-                ): _pos_int,
+                ): positive_int,
                 vol.Optional(
                     CONF_AWAY_TEMP,
                     default=self._entry.options.get(

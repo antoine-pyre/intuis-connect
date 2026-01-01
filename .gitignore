@@ -13,3 +13,5 @@ __pycache__/
 *.egg-info/
 test/
 intuis_decompiled/
+
+custom_components/configuration.yml

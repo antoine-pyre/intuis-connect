@@ -9,10 +9,16 @@
         }
       },
       "options": {
-        "title": "Comportement des consignes",
-        "description": "Le système Intuis limite les consignes manuelles de température à 12 heures maximum. Activez le mode illimité pour que Home Assistant réapplique automatiquement vos consignes avant leur expiration, maintenant la température souhaitée jusqu'à ce que vous la changiez.",
+        "title": "Configuration",
+        "description": "Configurez les options de l'intégration. Le système Intuis limite les consignes manuelles de température à 12 heures maximum. Activez le mode illimité pour que Home Assistant réapplique automatiquement vos consignes avant leur expiration.",
         "data": {
-          "indefinite_mode": "Activer le mode consigne illimitée"
+          "indefinite_mode": "Activer le mode consigne illimitée",
+          "energy_scale": "Fréquence de mise à jour de l'énergie",
+          "manual_duration": "Durée de la consigne manuelle (minutes)",
+          "away_duration": "Durée du mode absence (minutes)",
+          "boost_duration": "Durée du mode boost (minutes)",
+          "away_temp": "Température du mode absence (°C)",
+          "boost_temp": "Température du mode boost (°C)"
         }
       },
       "reauth_confirm": {
