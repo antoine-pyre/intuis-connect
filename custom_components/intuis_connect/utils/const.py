@@ -71,6 +71,16 @@ CONF_BOOST_TEMP = "boost_temp"
 CONF_INDEFINITE_MODE = "indefinite_mode"
 DEFAULT_INDEFINITE_MODE = False
 
+# Energy scale options
+CONF_ENERGY_SCALE = "energy_scale"
+DEFAULT_ENERGY_SCALE = "1day"
+ENERGY_SCALE_OPTIONS = {
+    "5min": "5 minutes (real-time)",
+    "30min": "30 minutes",
+    "1hour": "1 hour",
+    "1day": "1 day (daily total)",
+}
+
 # API modes
 API_MODE_OFF = "off"
 API_MODE_HOME = "home"

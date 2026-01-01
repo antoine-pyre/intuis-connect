@@ -23,12 +23,15 @@ from .utils.const import (
     CONF_AWAY_TEMP,
     CONF_BOOST_TEMP,
     CONF_INDEFINITE_MODE,
+    CONF_ENERGY_SCALE,
     DEFAULT_MANUAL_DURATION,
     DEFAULT_AWAY_DURATION,
     DEFAULT_BOOST_DURATION,
     DEFAULT_AWAY_TEMP,
     DEFAULT_BOOST_TEMP,
     DEFAULT_INDEFINITE_MODE,
+    DEFAULT_ENERGY_SCALE,
+    ENERGY_SCALE_OPTIONS,
 )
 from .utils.helper import async_validate_api
 
@@ -200,6 +203,12 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
                         CONF_INDEFINITE_MODE, DEFAULT_INDEFINITE_MODE
                     ),
                 ): bool,
+                vol.Optional(
+                    CONF_ENERGY_SCALE,
+                    default=self._entry.options.get(
+                        CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE
+                    ),
+                ): vol.In(ENERGY_SCALE_OPTIONS),
                 vol.Optional(
                     CONF_MANUAL_DURATION,
                     default=self._entry.options.get(
