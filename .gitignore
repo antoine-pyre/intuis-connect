@@ -11,3 +11,5 @@ __pycache__/
 *.py[cod]
 .venv/
 *.egg-info/
+test*.py
+intuis_decompiled/
