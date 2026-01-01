@@ -8,17 +8,38 @@
           "password": "Mot de passe"
         }
       },
-      "options": {
-        "title": "Configuration",
-        "description": "Configurez les options de l'intégration. Le système Intuis limite les consignes manuelles de température à 12 heures maximum. Activez le mode illimité pour que Home Assistant réapplique automatiquement vos consignes avant leur expiration.",
+      "overrides": {
+        "title": "Paramètres de consigne",
+        "description": "Le système Intuis limite les consignes manuelles de température à 12 heures maximum. Activez le mode illimité pour que Home Assistant réapplique automatiquement vos consignes avant leur expiration.",
         "data": {
           "indefinite_mode": "Activer le mode consigne illimitée",
-          "energy_scale": "Fréquence de mise à jour de l'énergie",
           "manual_duration": "Durée de la consigne manuelle (minutes)",
           "away_duration": "Durée du mode absence (minutes)",
           "boost_duration": "Durée du mode boost (minutes)",
           "away_temp": "Température du mode absence (°C)",
           "boost_temp": "Température du mode boost (°C)"
+        },
+        "data_description": {
+          "indefinite_mode": "Lorsqu'il est activé, Home Assistant réapplique automatiquement les consignes manuelles avant leur expiration, contournant la limite de 12 heures d'Intuis.",
+          "manual_duration": "Durée des changements manuels de température avant retour au programme.",
+          "away_duration": "Durée du mode absence.",
+          "boost_duration": "Durée du mode boost.",
+          "away_temp": "Température cible lorsque le mode absence est activé.",
+          "boost_temp": "Température cible lorsque le mode boost est activé."
+        }
+      },
+      "energy": {
+        "title": "Suivi énergétique",
+        "description": "Configurez le suivi de la consommation énergétique. Vous pouvez optionnellement importer l'historique pour remplir votre tableau de bord énergétique avec les consommations passées.",
+        "data": {
+          "energy_scale": "Fréquence de mise à jour de l'énergie",
+          "import_history": "Importer l'historique énergétique",
+          "history_days": "Jours d'historique à importer"
+        },
+        "data_description": {
+          "energy_scale": "Fréquence de mise à jour de la consommation d'énergie. Les options temps réel (5min, 30min, 1h) récupèrent les données à chaque mise à jour. Journalier récupère une fois par jour.",
+          "import_history": "Importer les données de consommation passées au démarrage de l'intégration. Cela remplit votre tableau de bord énergétique avec l'historique.",
+          "history_days": "Nombre de jours d'historique à importer. Les valeurs élevées prennent plus de temps."
         }
       },
       "reauth_confirm": {
@@ -37,10 +58,11 @@
   },
   "options": {
     "step": {
-      "init": {
+      "overrides": {
+        "title": "Paramètres de consigne",
+        "description": "Le système Intuis limite les consignes manuelles de température à 12 heures maximum. Activez le mode illimité pour que Home Assistant réapplique automatiquement vos consignes avant leur expiration.",
         "data": {
           "indefinite_mode": "Activer le mode consigne illimitée",
-          "energy_scale": "Fréquence de mise à jour de l'énergie",
           "manual_duration": "Durée de la consigne manuelle (minutes)",
           "away_duration": "Durée du mode absence (minutes)",
           "boost_duration": "Durée du mode boost (minutes)",
@@ -49,6 +71,20 @@
         },
         "data_description": {
           "indefinite_mode": "Lorsqu'il est activé, Home Assistant réapplique automatiquement les consignes manuelles avant leur expiration, contournant la limite de 12 heures d'Intuis.",
+          "manual_duration": "Durée des changements manuels de température avant retour au programme.",
+          "away_duration": "Durée du mode absence.",
+          "boost_duration": "Durée du mode boost.",
+          "away_temp": "Température cible lorsque le mode absence est activé.",
+          "boost_temp": "Température cible lorsque le mode boost est activé."
+        }
+      },
+      "energy": {
+        "title": "Suivi énergétique",
+        "description": "Configurez les paramètres de suivi de la consommation énergétique.",
+        "data": {
+          "energy_scale": "Fréquence de mise à jour de l'énergie"
+        },
+        "data_description": {
           "energy_scale": "Fréquence de mise à jour de la consommation d'énergie. Les options temps réel (5min, 30min, 1h) récupèrent les données à chaque mise à jour. Journalier récupère une fois par jour."
         }
       }
