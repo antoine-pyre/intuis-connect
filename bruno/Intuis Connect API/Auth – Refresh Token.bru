@@ -1,0 +1,43 @@
+meta {
+  name: Auth – Refresh Token
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/oauth2/token
+  body: formUrlEncoded
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/x-www-form-urlencoded
+}
+
+body:form-urlencoded {
+  grant_type: refresh_token
+  refresh_token: {{refresh_token}}
+  client_id: {{client_id}}
+  client_secret: {{client_secret}}
+  scope: read_muller write_muller
+  user_prefix: muller
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+     var jsonData = res.getBody();
+     if (jsonData.access_token) {
+         bru.setVar("access_token", jsonData.access_token);
+         bru.setVar("refresh_token", jsonData.refresh_token || bru.getVar("refresh_token"));
+         console.log("Access token refreshed: ", jsonData.access_token);
+     }
+  }
+}
+
+settings {
+  encodeUrl: true
+}
+
+docs {
+  Use the refresh_token to get a new access_token (when the current one expires).
+}

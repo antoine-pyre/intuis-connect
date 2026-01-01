@@ -1,0 +1,42 @@
+meta {
+  name: Control – Set Manual Temp
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{base_url}}/syncapi/v1/setstate
+  body: json
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{access_token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "app_identifier": "app_muller",
+    "home": {
+      "id": "{{home_id}}",
+      "rooms": [
+        {
+          "id": "{{room_id}}",
+          "therm_setpoint_mode": "manual",
+          "therm_setpoint_temperature": {{temp_celsius}},
+          "therm_setpoint_end_time": {{end_time}}
+        }
+      ],
+      "timezone": "{{home_timezone}}"
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+}
+
+docs {
+  Set a manual temperature in a specific room. Adjust therm_setpoint_mode (manual/hg/schedule), temperature, and end_time as needed.
+}

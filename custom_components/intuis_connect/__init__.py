@@ -1,4 +1,4 @@
-"""Setup for Intuis Connect (v1.3.0)."""
+"""Setup for Intuis Connect (v1.6.0)."""
 from __future__ import annotations
 
 import datetime
@@ -13,15 +13,17 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .api import IntuisAPI, InvalidAuth, CannotConnect
-from .const import (
+from .entity.intuis_home import IntuisHome
+from .intuis_api.api import IntuisAPI, InvalidAuth, CannotConnect
+from .utils.const import (
     DOMAIN,
     CONF_HOME_ID,
     CONF_REFRESH_TOKEN,
+    DEFAULT_UPDATE_INTERVAL,
 )
 from .entity.intuis_entity import IntuisDataUpdateCoordinator
 from .entity.intuis_schedule import IntuisSchedule
-from .intuis_data import IntuisData, IntuisRoomDefinition
+from .intuis_data import IntuisData
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,28 +72,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except CannotConnect as err:
         raise ConfigEntryNotReady from err
 
-    home_data = await intuis_api.async_get_homes_data()
-    # build a static map of room_id → room_name
-    rooms_definitions: dict[str, IntuisRoomDefinition] = {
-        r["id"]: IntuisRoomDefinition.from_dict(r)
-        for r in home_data["rooms"]
-    }
-    _LOGGER.debug("Rooms definitions: %s", rooms_definitions)
+    intuis_home = await intuis_api.async_get_homes_data()
+    _LOGGER.debug("Intuis home: %s", intuis_home.__str__())
 
-    # --- pull the active schedule ---
-    _LOGGER.debug("Fetching active schedules")
-    _LOGGER.debug("schedules: %s", home_data.get("schedules", []))
-    schedules = [IntuisSchedule.from_dict(t) for t in home_data.get("schedules", [])]
+    # ---------- shared overrides (sticky intents) ----------------------------------
+    overrides: dict[str, dict] = {}
 
     # ---------- setup coordinator --------------------------------------------------
-    intuis_data = IntuisData(intuis_api, rooms_definitions, schedules)
+    # Callback to get current options from config entry
+    def get_options() -> dict:
+        return dict(entry.options)
+
+    intuis_data = IntuisData(intuis_api, intuis_home, overrides, get_options)
 
     coordinator: IntuisDataUpdateCoordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,
         name=DOMAIN,
         update_method=intuis_data.async_update,
-        update_interval=datetime.timedelta(minutes=5),
+        update_interval=datetime.timedelta(minutes=DEFAULT_UPDATE_INTERVAL),
     )
     await coordinator.async_config_entry_first_refresh()
 
@@ -100,8 +99,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = {
         "api": intuis_api,
         "coordinator": coordinator,
-        "home_id": intuis_api.home_id,
-        "rooms_definitions": rooms_definitions,
+        "intuis_home": intuis_home,
+        "overrides": overrides,
     }
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)
 
