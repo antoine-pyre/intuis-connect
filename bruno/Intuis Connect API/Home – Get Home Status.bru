@@ -1,0 +1,29 @@
+meta {
+  name: Home – Get Home Status
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/syncapi/v1/homestatus
+  body: json
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{access_token}}
+}
+
+body:json {
+  {
+    "home_id": "{{home_id}}"
+  }
+}
+
+settings {
+  encodeUrl: true
+}
+
+docs {
+  Get current status of the home (rooms temperatures, setpoints, modes, open window, presence, etc.). Requires home_id.
+}

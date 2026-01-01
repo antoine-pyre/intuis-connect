@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -e
+
+cd "$(dirname "$0")/.."
+
+# Ensure user local bin is in PATH (for pip --user installs)
+# Support both vscode user and root user installations
+export PATH="/home/vscode/.local/bin:$HOME/.local/bin:$PATH"
+
+# Create config directory if it doesn't exist
+if [ ! -d "config" ]; then
+    mkdir -p config
+    hass --config "${PWD}/config" --script ensure_config
+fi
+
+# Add custom_components to Python path so HA can find the integration
+export PYTHONPATH="${PWD}/custom_components:${PYTHONPATH}"
+
+# Start Home Assistant in debug mode
+hass --config "${PWD}/config" --debug

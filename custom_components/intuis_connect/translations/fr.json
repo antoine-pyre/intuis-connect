@@ -1,0 +1,109 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connexion à Intuis (Netatmo)",
+        "data": {
+          "username": "Email",
+          "password": "Mot de passe"
+        }
+      },
+      "indefinite": {
+        "title": "Mode de consigne",
+        "description": "Choisissez comment Home Assistant doit gérer les consignes de température.\n\n**Important :** Le système Intuis limite les consignes manuelles à 12 heures maximum. Après ce délai, vos radiateurs reviendront automatiquement au programme planifié.",
+        "data": {
+          "indefinite_mode": "Activer le mode consigne illimitée"
+        },
+        "data_description": {
+          "indefinite_mode": "Si ACTIVÉ : Home Assistant réappliquera automatiquement votre température avant son expiration. Vos radiateurs maintiendront la température choisie jusqu'à ce que vous la changiez manuellement ou reveniez au mode programme.\n\nSi DÉSACTIVÉ : Les consignes suivront le comportement Intuis et reviendront au programme planifié après la durée configurée."
+        }
+      },
+      "overrides": {
+        "title": "Durées et températures",
+        "description": "Configurez les durées et températures pour les différents modes. Ces paramètres définissent la durée de chaque mode et la température à utiliser.",
+        "data": {
+          "manual_duration": "Durée de la consigne manuelle (minutes)",
+          "away_duration": "Durée du mode absence (minutes)",
+          "boost_duration": "Durée du mode boost (minutes)",
+          "away_temp": "Température du mode absence",
+          "boost_temp": "Température du mode boost"
+        },
+        "data_description": {
+          "manual_duration": "Durée d'une consigne manuelle avant retour au programme (si le mode illimité est désactivé).",
+          "away_duration": "Durée du mode absence.",
+          "boost_duration": "Durée du mode boost.",
+          "away_temp": "Température cible lorsque le mode absence est activé.",
+          "boost_temp": "Température cible lorsque le mode boost est activé."
+        }
+      },
+      "energy": {
+        "title": "Suivi énergétique",
+        "description": "Configurez le suivi de la consommation énergétique. Vous pouvez optionnellement importer l'historique pour remplir votre tableau de bord énergétique avec les consommations passées.",
+        "data": {
+          "energy_scale": "Fréquence de mise à jour de l'énergie",
+          "import_history": "Importer l'historique énergétique",
+          "history_days": "Jours d'historique à importer"
+        },
+        "data_description": {
+          "energy_scale": "Fréquence de mise à jour de la consommation d'énergie. Les options temps réel (5min, 30min, 1h) récupèrent les données à chaque mise à jour. Journalier récupère une fois par jour.",
+          "import_history": "Importer les données de consommation passées au démarrage de l'intégration. Cela remplit votre tableau de bord énergétique avec l'historique.",
+          "history_days": "Nombre de jours d'historique à importer. Les valeurs élevées prennent plus de temps."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Réauthentification du compte Intuis",
+        "description": "Les identifiants ont expiré pour {username}. Entrez le nouveau mot de passe."
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de se connecter au service Intuis.",
+      "invalid_auth": "Email ou mot de passe invalide.",
+      "unknown": "Erreur inattendue."
+    },
+    "abort": {
+      "reauth_successful": "Réauthentification réussie."
+    }
+  },
+  "options": {
+    "step": {
+      "indefinite": {
+        "title": "Mode de consigne",
+        "description": "Choisissez comment Home Assistant doit gérer les consignes de température.\n\n**Important :** Le système Intuis limite les consignes manuelles à 12 heures maximum. Après ce délai, vos radiateurs reviendront automatiquement au programme planifié.",
+        "data": {
+          "indefinite_mode": "Activer le mode consigne illimitée"
+        },
+        "data_description": {
+          "indefinite_mode": "Si ACTIVÉ : Home Assistant réappliquera automatiquement votre température avant son expiration. Vos radiateurs maintiendront la température choisie jusqu'à ce que vous la changiez manuellement ou reveniez au mode programme.\n\nSi DÉSACTIVÉ : Les consignes suivront le comportement Intuis et reviendront au programme planifié après la durée configurée."
+        }
+      },
+      "overrides": {
+        "title": "Durées et températures",
+        "description": "Configurez les durées et températures pour les différents modes. Ces paramètres définissent la durée de chaque mode et la température à utiliser.",
+        "data": {
+          "manual_duration": "Durée de la consigne manuelle (minutes)",
+          "away_duration": "Durée du mode absence (minutes)",
+          "boost_duration": "Durée du mode boost (minutes)",
+          "away_temp": "Température du mode absence",
+          "boost_temp": "Température du mode boost"
+        },
+        "data_description": {
+          "manual_duration": "Durée d'une consigne manuelle avant retour au programme (si le mode illimité est désactivé).",
+          "away_duration": "Durée du mode absence.",
+          "boost_duration": "Durée du mode boost.",
+          "away_temp": "Température cible lorsque le mode absence est activé.",
+          "boost_temp": "Température cible lorsque le mode boost est activé."
+        }
+      },
+      "energy": {
+        "title": "Suivi énergétique",
+        "description": "Configurez les paramètres de suivi de la consommation énergétique.",
+        "data": {
+          "energy_scale": "Fréquence de mise à jour de l'énergie"
+        },
+        "data_description": {
+          "energy_scale": "Fréquence de mise à jour de la consommation d'énergie. Les options temps réel (5min, 30min, 1h) récupèrent les données à chaque mise à jour. Journalier récupère une fois par jour."
+        }
+      }
+    }
+  }
+}

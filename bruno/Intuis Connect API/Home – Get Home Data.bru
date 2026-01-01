@@ -1,0 +1,27 @@
+meta {
+  name: Home – Get Home Data
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/homesdata?home_id={{home_id}}
+  body: none
+  auth: inherit
+}
+
+params:query {
+  home_id: {{home_id}}
+}
+
+headers {
+  Authorization: Bearer {{access_token}}
+}
+
+settings {
+  encodeUrl: true
+}
+
+docs {
+  Get list of homes (and basic room/module info) associated with the account. Set home_id query param for a specific home, or leave blank to get all.
+}

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from custom_components.intuis_connect.entity.intuis_module import IntuisModule
+from ..entity.intuis_module import IntuisModule
 
 
 class IntuisRoomDefinition:
@@ -44,7 +44,8 @@ class IntuisRoom:
 
     def __init__(self, definition: IntuisRoomDefinition, id: str, name: str, mode: str, target_temperature: float,
                  temperature: float, presence: bool, open_window: bool, anticipation: bool,
-                 muller_type: str, boost_status: str, modules: list[IntuisModule]) -> None:
+                 muller_type: str, boost_status: str, modules: list[IntuisModule], therm_setpoint_end_time: int,
+                 bridge_id: str | None = None) -> None:
         """Initialize the room with its definition."""
         self.definition = definition
         self.id = id
@@ -58,6 +59,8 @@ class IntuisRoom:
         self.muller_type = muller_type
         self.boost_status = boost_status
         self.modules = modules
+        self.therm_setpoint_end_time = therm_setpoint_end_time
+        self.bridge_id = bridge_id
 
     @staticmethod
     def from_dict(definition: IntuisRoomDefinition, data: dict[str, Any], modules: list[IntuisModule]) -> IntuisRoom:
@@ -65,6 +68,13 @@ class IntuisRoom:
 
         # Filter modules based on the room definition
         filtered_modules = [module for module in modules if module.id in definition.module_ids]
+
+        # Get bridge_id from the first module that has one
+        bridge_id = None
+        for module in filtered_modules:
+            if hasattr(module, "bridge") and module.bridge:
+                bridge_id = module.bridge
+                break
 
         return IntuisRoom(
             definition=definition,
@@ -78,7 +88,9 @@ class IntuisRoom:
             anticipation=data.get("anticipation", False),
             muller_type=data.get("muller_type", ""),
             boost_status=data.get("boost_status", "disabled"),
-            modules=filtered_modules
+            therm_setpoint_end_time=data.get("therm_setpoint_end_time", 0),
+            modules=filtered_modules,
+            bridge_id=bridge_id,
         )
 
     def __repr__(self) -> str:

@@ -1,0 +1,54 @@
+meta {
+  name: Home – Get Homes Data
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/homesdata
+  body: none
+  auth: inherit
+}
+
+params:query {
+  ~home_id: {{home_id}}
+}
+
+headers {
+  Authorization: Bearer {{access_token}}
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    var jsonData = res.getBody().body;
+    if (jsonData.homes) {
+      bru.setVar("home_id", jsonData.homes[0].id);
+      console.log("home id refreshed: ", jsonData.homes[0].id);
+    }
+    if (jsonData.homes[0] != undefined) {
+      if (jsonData.homes[0].rooms) {
+        var rooms = jsonData.homes[0].rooms;
+        var i = 1;
+        bru.setVar("room_id", rooms[0].id)
+        for (const room of rooms) {
+          bru.setVar("room" + i + "_id", room.id);
+          console.log("room id refreshed: room" + i + "_id", room.id)
+          i++
+        }
+      }
+      if (jsonData.homes[0].modules) {
+        bru.setVar("bridge_id", jsonData.homes[0].modules[0].id)
+      }  
+    }
+    
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
+
+docs {
+  Get list of homes (and basic room/module info) associated with the account. Set home_id query param for a specific home, or leave blank to get all.
+}

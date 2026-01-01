@@ -8,10 +8,10 @@ from aiohttp import ClientSession
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .api import IntuisAPI, CannotConnect, InvalidAuth
-from .const import DOMAIN
-from .entity.intuis_entity import IntuisDataUpdateCoordinator
-from .intuis_data import IntuisRoom
+from ..utils.const import DOMAIN
+from ..entity.intuis_entity import IntuisDataUpdateCoordinator
+from ..entity.intuis_room import IntuisRoom
+from ..intuis_api.api import IntuisAPI, CannotConnect, InvalidAuth
 
 _LOGGER = logging.getLogger(__name__)
 
