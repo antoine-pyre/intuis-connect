@@ -22,7 +22,7 @@ from .utils.const import (
     DEFAULT_UPDATE_INTERVAL,
 )
 from .entity.intuis_entity import IntuisDataUpdateCoordinator
-from .entity.intuis_schedule import IntuisSchedule, IntuisThermSchedule
+from .entity.intuis_schedule import IntuisSchedule, IntuisThermSchedule, IntuisThermZone
 from .intuis_data import IntuisData
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,11 +39,16 @@ PLATFORMS: list[Platform] = [
 SERVICE_CLEAR_OVERRIDE = "clear_override"
 SERVICE_SWITCH_SCHEDULE = "switch_schedule"
 SERVICE_REFRESH_SCHEDULES = "refresh_schedules"
+SERVICE_SET_SCHEDULE_SLOT = "set_schedule_slot"
 
 # Service attributes
 ATTR_ROOM_ID = "room_id"
 ATTR_SCHEDULE_ID = "schedule_id"
 ATTR_SCHEDULE_NAME = "schedule_name"
+ATTR_DAY = "day"
+ATTR_START_TIME = "start_time"
+ATTR_ZONE_ID = "zone_id"
+ATTR_ZONE_NAME = "zone_name"
 
 # Service schemas
 CLEAR_OVERRIDE_SCHEMA = vol.Schema({vol.Required(ATTR_ROOM_ID): str})
@@ -52,6 +57,16 @@ SWITCH_SCHEDULE_SCHEMA = vol.Schema({
     vol.Optional(ATTR_SCHEDULE_NAME): str,
 })
 REFRESH_SCHEDULES_SCHEMA = vol.Schema({})
+SET_SCHEDULE_SLOT_SCHEMA = vol.Schema({
+    vol.Required(ATTR_DAY): vol.All(vol.Coerce(int), vol.Range(min=0, max=6)),
+    vol.Required(ATTR_START_TIME): str,  # HH:MM format
+    vol.Optional(ATTR_ZONE_ID): vol.Coerce(int),
+    vol.Optional(ATTR_ZONE_NAME): str,
+})
+
+# Day constants for readability
+DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+MINUTES_PER_DAY = 1440
 
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -203,6 +218,164 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
                 await coordinator.async_request_refresh()
                 break
 
+    async def async_handle_set_schedule_slot(call: ServiceCall) -> None:
+        """Handle set_schedule_slot service call.
+
+        Sets a zone for a specific time slot in the active schedule.
+        """
+        day = call.data.get(ATTR_DAY)
+        start_time = call.data.get(ATTR_START_TIME)
+        zone_id = call.data.get(ATTR_ZONE_ID)
+        zone_name = call.data.get(ATTR_ZONE_NAME)
+
+        if zone_id is None and zone_name is None:
+            _LOGGER.error("Either zone_id or zone_name must be provided")
+            return
+
+        # Parse start_time (HH:MM format)
+        try:
+            hours, minutes = map(int, start_time.split(":"))
+            if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+                raise ValueError("Invalid time")
+        except (ValueError, AttributeError):
+            _LOGGER.error("Invalid start_time format: %s (expected HH:MM)", start_time)
+            return
+
+        # Calculate m_offset (minutes from Monday 00:00)
+        m_offset = day * MINUTES_PER_DAY + hours * 60 + minutes
+
+        for entry_id, data in hass.data[DOMAIN].items():
+            if not isinstance(data, dict):
+                continue
+
+            api: IntuisAPI = data.get("api")
+            intuis_home: IntuisHome = data.get("intuis_home")
+            coordinator = data.get("coordinator")
+
+            if not api or not intuis_home:
+                continue
+
+            # Find the active therm schedule
+            active_schedule = None
+            for schedule in intuis_home.schedules:
+                if isinstance(schedule, IntuisThermSchedule) and schedule.selected:
+                    active_schedule = schedule
+                    break
+
+            if not active_schedule:
+                _LOGGER.error("No active therm schedule found")
+                return
+
+            # Find the target zone
+            target_zone = None
+            for zone in active_schedule.zones:
+                if isinstance(zone, IntuisThermZone):
+                    if zone_id is not None and zone.id == zone_id:
+                        target_zone = zone
+                        break
+                    if zone_name is not None and zone.name.lower() == zone_name.lower():
+                        target_zone = zone
+                        break
+
+            if not target_zone:
+                _LOGGER.error(
+                    "Zone not found: id=%s, name=%s. Available zones: %s",
+                    zone_id,
+                    zone_name,
+                    [(z.id, z.name) for z in active_schedule.zones if isinstance(z, IntuisThermZone)],
+                )
+                return
+
+            _LOGGER.info(
+                "Setting zone '%s' (ID: %d) at %s %s (m_offset: %d)",
+                target_zone.name,
+                target_zone.id,
+                DAYS_OF_WEEK[day],
+                start_time,
+                m_offset,
+            )
+
+            # Build updated timetable
+            # Find if there's an existing entry at this m_offset
+            timetable = [
+                {"zone_id": t.zone_id, "m_offset": t.m_offset}
+                for t in active_schedule.timetables
+            ]
+
+            # Update or insert the entry
+            entry_found = False
+            for entry in timetable:
+                if entry["m_offset"] == m_offset:
+                    entry["zone_id"] = target_zone.id
+                    entry_found = True
+                    break
+
+            if not entry_found:
+                timetable.append({"zone_id": target_zone.id, "m_offset": m_offset})
+
+            # Sort timetable by m_offset
+            timetable.sort(key=lambda x: x["m_offset"])
+
+            # Remove consecutive duplicate zones (API rejects these)
+            cleaned_timetable = []
+            prev_zone_id = None
+            for entry in timetable:
+                if entry["zone_id"] != prev_zone_id:
+                    cleaned_timetable.append(entry)
+                    prev_zone_id = entry["zone_id"]
+                else:
+                    _LOGGER.debug(
+                        "Skipping duplicate zone_id %d at m_offset %d",
+                        entry["zone_id"],
+                        entry["m_offset"],
+                    )
+            timetable = cleaned_timetable
+
+            # Build zones payload (only rooms_temp, not rooms - API requirement)
+            zones_payload = []
+            for zone in active_schedule.zones:
+                if isinstance(zone, IntuisThermZone):
+                    zone_data = {
+                        "id": zone.id,
+                        "name": zone.name,
+                        "type": zone.type,
+                        "rooms_temp": [
+                            {"room_id": rt.room_id, "temp": rt.temp}
+                            for rt in zone.rooms_temp
+                        ],
+                    }
+                    zones_payload.append(zone_data)
+
+            try:
+                await api.async_sync_schedule(
+                    schedule_id=active_schedule.id,
+                    schedule_name=active_schedule.name,
+                    schedule_type=active_schedule.type,
+                    timetable=timetable,
+                    zones=zones_payload,
+                    away_temp=active_schedule.away_temp,
+                    hg_temp=active_schedule.hg_temp,
+                )
+
+                # Update local timetable state
+                from .entity.intuis_schedule import IntuisTimetable
+                active_schedule.timetables = [
+                    IntuisTimetable(zone_id=t["zone_id"], m_offset=t["m_offset"])
+                    for t in timetable
+                ]
+
+                # Refresh coordinator
+                if coordinator:
+                    await coordinator.async_request_refresh()
+
+                _LOGGER.info("Schedule slot updated successfully")
+
+            except Exception as err:
+                _LOGGER.error("Failed to set schedule slot: %s", err)
+                raise
+
+            break
+
     # Only register services once
     if not hass.services.has_service(DOMAIN, SERVICE_SWITCH_SCHEDULE):
         hass.services.async_register(
@@ -218,6 +391,14 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
             SERVICE_REFRESH_SCHEDULES,
             async_handle_refresh_schedules,
             schema=REFRESH_SCHEDULES_SCHEMA,
+        )
+
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_SCHEDULE_SLOT):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_SCHEDULE_SLOT,
+            async_handle_set_schedule_slot,
+            schema=SET_SCHEDULE_SLOT_SCHEMA,
         )
 
 

@@ -45,3 +45,55 @@ refresh_schedules:
   name: Refresh Schedules
   description: >
     Force a refresh of all schedule and home data from the Intuis API.
+
+set_schedule_slot:
+  name: Set Schedule Slot
+  description: >
+    Set a zone (e.g., Night, Day, Eco) for a specific time slot in the active
+    heating schedule. The change is synced to the Intuis API immediately.
+  fields:
+    day:
+      name: Day of Week
+      description: >
+        Day of the week as a number: 0=Monday, 1=Tuesday, 2=Wednesday,
+        3=Thursday, 4=Friday, 5=Saturday, 6=Sunday.
+      required: true
+      example: 0
+      selector:
+        number:
+          min: 0
+          max: 6
+          step: 1
+          mode: slider
+    start_time:
+      name: Start Time
+      description: >
+        The start time for this zone in HH:MM format (24-hour). For example,
+        "08:00" for 8 AM or "22:00" for 10 PM.
+      required: true
+      example: "08:00"
+      selector:
+        time:
+    zone_id:
+      name: Zone ID
+      description: >
+        The numeric ID of the zone to set. Available zone IDs can be found in
+        the Schedule Summary sensor attributes under 'zones'.
+      required: false
+      example: 1
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 1
+          mode: box
+    zone_name:
+      name: Zone Name
+      description: >
+        Alternative to zone_id - the name of the zone (e.g., "Night", "Jour",
+        "Eco"). Case-insensitive matching. If both zone_id and zone_name are
+        provided, zone_id takes precedence.
+      required: false
+      example: "Jour"
+      selector:
+        text:

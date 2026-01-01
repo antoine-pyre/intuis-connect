@@ -40,6 +40,7 @@ GET_SCHEDULE_PATH = "/gethomeschedule"
 SET_SCHEDULE_PATH = "/updatenewhomeschedule"
 DELETE_SCHEDULE_PATH = "/deletenewhomeschedule"
 SWITCH_SCHEDULE_PATH = "/switchhomeschedule"
+SYNCHOMESCHEDULE_PATH = "/api/synchomeschedule"
 
 # Legacy full URLs so imports keep working
 AUTH_URL = f"{BASE_URL}{AUTH_PATH}"
