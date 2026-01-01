@@ -16,6 +16,8 @@ from ..utils.const import (
     HOMESTATUS_PATH,
     SETSTATE_PATH,
     HOMEMEASURE_PATH,
+    ROOMMEASURE_PATH,
+    ENERGY_MEASURE_TYPES,
     CLIENT_ID,
     CLIENT_SECRET,
     AUTH_SCOPE,
@@ -368,7 +370,10 @@ class IntuisAPI:
     async def async_get_energy_measures(
         self, rooms: list[dict[str, str]], date_begin: int, date_end: int
     ) -> dict[str, float]:
-        """Return daily kWh for multiple rooms.
+        """Return energy in Wh for multiple rooms.
+
+        Uses /api/getroommeasure endpoint with form-encoded data.
+        Requests all tariff types and sums non-null values.
 
         Args:
             rooms: List of dicts with keys 'id' and 'bridge' for each room.
@@ -376,7 +381,7 @@ class IntuisAPI:
             date_end: Unix epoch timestamp for end of period.
 
         Returns:
-            Dict mapping room_id to energy in kWh.
+            Dict mapping room_id to energy in Wh.
         """
         if not rooms:
             return {}
@@ -389,55 +394,81 @@ class IntuisAPI:
                 date_end,
             )
 
-        payload = {
-            "app_identifier": APP_TYPE,
-            "home": {
-                "id": self.home_id,
-                "rooms": [
-                    {"id": r["id"], "bridge": r["bridge"], "type": "sum_energy_elec$0"}
-                    for r in rooms
-                ],
-            },
+        result: dict[str, float] = {}
+
+        for room in rooms:
+            room_id = room["id"]
+            try:
+                energy = await self._async_get_room_energy(
+                    room_id, date_begin, date_end
+                )
+                result[room_id] = energy
+            except Exception as e:
+                _LOGGER.warning(
+                    "Failed to get energy for room %s: %s", room_id, e
+                )
+                result[room_id] = 0.0
+
+        return result
+
+    async def _async_get_room_energy(
+        self, room_id: str, date_begin: int, date_end: int
+    ) -> float:
+        """Get energy consumption for a single room.
+
+        Args:
+            room_id: The room ID.
+            date_begin: Unix epoch timestamp for start of period.
+            date_end: Unix epoch timestamp for end of period.
+
+        Returns:
+            Energy in Wh.
+        """
+        # Use form-encoded data (not JSON) - required by this endpoint
+        form_data = {
+            "home_id": self.home_id,
+            "room_id": room_id,
             "scale": "1day",
-            "date_begin": date_begin,
-            "date_end": date_end,
+            "type": ENERGY_MEASURE_TYPES,
+            "date_begin": str(date_begin),
+            "date_end": str(date_end),
         }
 
         try:
             async with await self._async_request(
                 "post",
-                HOMEMEASURE_PATH,
-                json=payload,
-                headers={"Content-Type": "application/json"},
+                ROOMMEASURE_PATH,
+                data=form_data,  # Form-encoded, not JSON
             ) as resp:
                 data = await resp.json()
 
-            _LOGGER.debug("Energy measure response: %s", data)
+            if self._debug:
+                _LOGGER.debug("Room %s energy response: %s", room_id, data)
 
-            result: dict[str, float] = {}
-            body = data.get("body", {})
+            # Sum all non-null values from all measure entries
+            # Response format: {"body": [{"beg_time": ..., "value": [[v1, v2, v3, v4], ...]}, ...]}
+            total_energy = 0.0
+            body = data.get("body", [])
 
-            # Response contains room data with measures
-            for room_data in body.get("rooms", []):
-                room_id = room_data.get("id")
-                measures = room_data.get("measures", [])
-                if room_id and measures:
-                    # measures is a list of [timestamp, value] pairs
-                    # Sum all values for the day
-                    total = sum(float(m[1]) for m in measures if len(m) > 1)
-                    result[room_id] = total
-                elif room_id:
-                    result[room_id] = 0.0
+            for measure in body:
+                values = measure.get("value", [])
+                for val_set in values:
+                    # val_set contains [sum_energy_elec, $0, $1, $2]
+                    # Sum all non-null values
+                    for val in val_set:
+                        if val is not None:
+                            total_energy += float(val)
 
-            return result
+            return total_energy
 
         except (APIError, KeyError, ValueError, TypeError) as e:
             _LOGGER.warning(
-                "Energy measure request failed: %s, returning empty dict",
+                "Energy measure request failed for room %s: %s",
+                room_id,
                 e,
                 exc_info=True,
             )
-            return {}
+            return 0.0
 
     async def async_get_schedule(
             self, home_id: str, schedule_id: int

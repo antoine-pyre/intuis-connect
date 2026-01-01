@@ -30,6 +30,10 @@ HOMESTATUS_PATH = "/syncapi/v1/homestatus"
 CONFIG_PATH = "/syncapi/v1/getconfigs"
 SETSTATE_PATH = "/syncapi/v1/setstate"
 HOMEMEASURE_PATH = "/api/gethomemeasure"
+ROOMMEASURE_PATH = "/api/getroommeasure"
+
+# Energy measure types - request all tariffs to capture all consumption
+ENERGY_MEASURE_TYPES = "sum_energy_elec,sum_energy_elec$0,sum_energy_elec$1,sum_energy_elec$2"
 
 ENERGY_BASE = "https://connect.intuis.net/api"
 GET_SCHEDULE_PATH = "/gethomeschedule"
