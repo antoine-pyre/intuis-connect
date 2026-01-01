@@ -201,11 +201,13 @@ class IntuisData:
         )
 
         # Cache the results and populate room.energy
+        # API returns Wh, convert to kWh for display
         self._energy_cache.clear()
         self._energy_cache["_date"] = today_iso
         for room_id, room in data_by_room.items():
-            kwh = energy_data.get(room_id, 0.0)
+            wh = energy_data.get(room_id, 0.0)
+            kwh = wh / 1000.0  # Convert Wh to kWh
             self._energy_cache[room_id] = kwh
             room.energy = kwh
 
-        _LOGGER.debug("Energy data cached for %s: %s", today_iso, energy_data)
+        _LOGGER.debug("Energy data cached for %s: %s kWh", today_iso, self._energy_cache)
