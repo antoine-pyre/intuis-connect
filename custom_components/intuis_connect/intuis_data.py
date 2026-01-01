@@ -21,7 +21,9 @@ from .utils.const import (
     CONF_MANUAL_DURATION,
     CONF_AWAY_DURATION,
     CONF_BOOST_DURATION,
+    CONF_ENERGY_SCALE,
     DEFAULT_INDEFINITE_MODE,
+    DEFAULT_ENERGY_SCALE,
 )
 
 # Re-apply override this many seconds before it expires (when indefinite mode is on)
@@ -162,15 +164,20 @@ class IntuisData:
         self, data_by_room: dict[str, Any], now: datetime
     ) -> None:
         """Fetch energy consumption data for all rooms."""
-        # Only fetch after 2 AM to ensure previous day's data is available
-        if now.hour < 2:
-            _LOGGER.debug("Skipping energy fetch before 2 AM")
+        # Get energy scale from options (default: 1day)
+        options = self._get_options()
+        scale = options.get(CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE)
+        is_realtime = scale != "1day"
+
+        # For daily scale, only fetch after 2 AM to ensure previous day's data is available
+        if not is_realtime and now.hour < 2:
+            _LOGGER.debug("Skipping energy fetch before 2 AM (daily mode)")
             return
 
         today_iso = now.date().isoformat()
 
-        # Check if we already have cached data for today
-        if self._energy_cache.get("_date") == today_iso:
+        # For daily scale, use caching. For real-time scales, always fetch fresh data.
+        if not is_realtime and self._energy_cache.get("_date") == today_iso:
             # Use cached data
             for room_id, room in data_by_room.items():
                 room.energy = self._energy_cache.get(room_id, 0.0)
@@ -188,26 +195,32 @@ class IntuisData:
             _LOGGER.debug("No rooms with bridge_id found, skipping energy fetch")
             return
 
-        # Calculate epoch timestamps for today (midnight to midnight)
+        # Calculate epoch timestamps for today (midnight to now for real-time, midnight to midnight for daily)
         today_start = datetime.combine(now.date(), datetime.min.time(), tzinfo=timezone.utc)
-        today_end = datetime.combine(now.date(), datetime.max.time(), tzinfo=timezone.utc)
+        if is_realtime:
+            date_end = int(now.timestamp())
+        else:
+            today_end = datetime.combine(now.date(), datetime.max.time(), tzinfo=timezone.utc)
+            date_end = int(today_end.timestamp())
         date_begin = int(today_start.timestamp())
-        date_end = int(today_end.timestamp())
 
-        _LOGGER.debug("Fetching energy data for %d rooms", len(rooms_for_api))
+        _LOGGER.debug("Fetching energy data for %d rooms (scale=%s)", len(rooms_for_api), scale)
 
         energy_data = await self._api.async_get_energy_measures(
-            rooms_for_api, date_begin, date_end
+            rooms_for_api, date_begin, date_end, scale=scale
         )
 
-        # Cache the results and populate room.energy
+        # Cache the results (for daily mode) and populate room.energy
         # API returns Wh, convert to kWh for display
-        self._energy_cache.clear()
-        self._energy_cache["_date"] = today_iso
+        if not is_realtime:
+            self._energy_cache.clear()
+            self._energy_cache["_date"] = today_iso
+
         for room_id, room in data_by_room.items():
             wh = energy_data.get(room_id, 0.0)
             kwh = wh / 1000.0  # Convert Wh to kWh
-            self._energy_cache[room_id] = kwh
+            if not is_realtime:
+                self._energy_cache[room_id] = kwh
             room.energy = kwh
 
-        _LOGGER.debug("Energy data cached for %s: %s kWh", today_iso, self._energy_cache)
+        _LOGGER.debug("Energy data fetched (scale=%s): %s", scale, {k: f"{v:.3f} kWh" for k, v in energy_data.items()})

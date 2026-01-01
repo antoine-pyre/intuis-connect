@@ -34,6 +34,7 @@
       "init": {
         "data": {
           "indefinite_mode": "Enable indefinite override mode",
+          "energy_scale": "Energy update frequency",
           "manual_duration": "Manual override duration (minutes)",
           "away_duration": "Away mode duration (minutes)",
           "boost_duration": "Boost mode duration (minutes)",
@@ -41,7 +42,8 @@
           "boost_temp": "Boost mode temperature (°C)"
         },
         "data_description": {
-          "indefinite_mode": "When enabled, Home Assistant will automatically re-apply manual overrides before they expire, bypassing the 12-hour Intuis limit."
+          "indefinite_mode": "When enabled, Home Assistant will automatically re-apply manual overrides before they expire, bypassing the 12-hour Intuis limit.",
+          "energy_scale": "How often to update energy consumption. Real-time options (5min, 30min, 1hour) fetch on every update. Daily fetches once per day."
         }
       }
     }

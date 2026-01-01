@@ -34,6 +34,7 @@
       "init": {
         "data": {
           "indefinite_mode": "Activer le mode consigne illimitée",
+          "energy_scale": "Fréquence de mise à jour de l'énergie",
           "manual_duration": "Durée de la consigne manuelle (minutes)",
           "away_duration": "Durée du mode absence (minutes)",
           "boost_duration": "Durée du mode boost (minutes)",
@@ -41,7 +42,8 @@
           "boost_temp": "Température du mode boost (°C)"
         },
         "data_description": {
-          "indefinite_mode": "Lorsqu'il est activé, Home Assistant réapplique automatiquement les consignes manuelles avant leur expiration, contournant la limite de 12 heures d'Intuis."
+          "indefinite_mode": "Lorsqu'il est activé, Home Assistant réapplique automatiquement les consignes manuelles avant leur expiration, contournant la limite de 12 heures d'Intuis.",
+          "energy_scale": "Fréquence de mise à jour de la consommation d'énergie. Les options temps réel (5min, 30min, 1h) récupèrent les données à chaque mise à jour. Journalier récupère une fois par jour."
         }
       }
     }

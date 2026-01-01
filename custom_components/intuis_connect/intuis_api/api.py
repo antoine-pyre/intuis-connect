@@ -368,7 +368,8 @@ class IntuisAPI:
             _LOGGER.debug("Room %s state set to mode=%s, temp=%s", room_id, mode, temp)
 
     async def async_get_energy_measures(
-        self, rooms: list[dict[str, str]], date_begin: int, date_end: int
+        self, rooms: list[dict[str, str]], date_begin: int, date_end: int,
+        scale: str = "1day"
     ) -> dict[str, float]:
         """Return energy in Wh for multiple rooms.
 
@@ -379,6 +380,7 @@ class IntuisAPI:
             rooms: List of dicts with keys 'id' and 'bridge' for each room.
             date_begin: Unix epoch timestamp for start of period.
             date_end: Unix epoch timestamp for end of period.
+            scale: Time scale for measures (5min, 30min, 1hour, 1day, etc.)
 
         Returns:
             Dict mapping room_id to energy in Wh.
@@ -400,7 +402,7 @@ class IntuisAPI:
             room_id = room["id"]
             try:
                 energy = await self._async_get_room_energy(
-                    room_id, date_begin, date_end
+                    room_id, date_begin, date_end, scale
                 )
                 result[room_id] = energy
             except Exception as e:
@@ -412,7 +414,7 @@ class IntuisAPI:
         return result
 
     async def _async_get_room_energy(
-        self, room_id: str, date_begin: int, date_end: int
+        self, room_id: str, date_begin: int, date_end: int, scale: str = "1day"
     ) -> float:
         """Get energy consumption for a single room.
 
@@ -420,6 +422,7 @@ class IntuisAPI:
             room_id: The room ID.
             date_begin: Unix epoch timestamp for start of period.
             date_end: Unix epoch timestamp for end of period.
+            scale: Time scale for measures.
 
         Returns:
             Energy in Wh.
@@ -428,7 +431,7 @@ class IntuisAPI:
         form_data = {
             "home_id": self.home_id,
             "room_id": room_id,
-            "scale": "1day",
+            "scale": scale,
             "type": ENERGY_MEASURE_TYPES,
             "date_begin": str(date_begin),
             "date_end": str(date_end),
