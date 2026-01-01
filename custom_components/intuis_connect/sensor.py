@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .entity.intuis_entity import IntuisEntity
 from .entity.intuis_home_entity import provide_home_sensors
 from .entity.intuis_room import IntuisRoom
+from .utils.const import DOMAIN
 from .utils.helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,12 +23,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     entities: list[IntuisSensor] = []
     for room_id in rooms:
-        entities.append(IntuisTemperatureSensor(coordinator, home_id, rooms.get(room_id)))
-        entities.append(IntuisTargetTemperatureSensor(coordinator, home_id, rooms.get(room_id)))
-        entities.append(IntuisMullerTypeSensor(coordinator, home_id, rooms.get(room_id)))
-        entities.append(IntuisEnergySensor(coordinator, home_id, rooms.get(room_id)))
-        entities.append(IntuisMinutesSensor(coordinator, home_id, rooms.get(room_id)))
-        entities.append(IntuisSetpointEndTimeSensor(coordinator, home_id, rooms.get(room_id)))
+        room = rooms.get(room_id)
+        entities.append(IntuisTemperatureSensor(coordinator, home_id, room))
+        entities.append(IntuisTargetTemperatureSensor(coordinator, home_id, room))
+        entities.append(IntuisMullerTypeSensor(coordinator, home_id, room))
+        entities.append(IntuisEnergySensor(coordinator, home_id, room))
+        entities.append(IntuisMinutesSensor(coordinator, home_id, room))
+        entities.append(IntuisSetpointEndTimeSensor(coordinator, home_id, room))
 
     entities += provide_home_sensors(coordinator, home_id)
     async_add_entities(entities, update_before_add=True)
@@ -173,7 +175,11 @@ class IntuisMinutesSensor(IntuisSensor):
 
 
 class IntuisEnergySensor(IntuisSensor):
-    """Specialized sensor for daily energy consumption data."""
+    """Specialized sensor for daily energy consumption.
+
+    This sensor tracks cumulative daily energy consumption (max seen today, never decreases).
+    The value resets at midnight to start tracking the new day's consumption.
+    """
 
     def __init__(self, coordinator, home_id: str, room: IntuisRoom) -> None:
         """Initialize the energy sensor."""
@@ -182,24 +188,43 @@ class IntuisEnergySensor(IntuisSensor):
             home_id,
             room,
             "energy",
-            "Energy Today",
+            "Energy",
             UnitOfEnergy.KILO_WATT_HOUR,
             SensorDeviceClass.ENERGY,
         )
         self._attr_icon = "mdi:flash"
-        # Use TOTAL for daily values that reset at midnight
         self._attr_state_class = SensorStateClass.TOTAL
+
+        # Track daily maximum energy (never decrease within a day)
+        self._daily_max_energy: float = 0.0
+        self._last_reset_date: datetime | None = None
 
     @property
     def native_value(self) -> float:
-        """Return the current energy value."""
-        room = self._get_room()
-        if room is None:
-            return 0.0
-        energy = room.energy
-        if energy is None:
-            return 0.0
-        return energy
+        """Return the cumulative daily energy value (max seen today)."""
+        if self._room is None:
+            return self._daily_max_energy
+
+        current_energy = self._room.energy or 0.0
+        now = datetime.now()
+
+        # Reset daily max on new day
+        if self._last_reset_date is None or self._last_reset_date.date() != now.date():
+            self._daily_max_energy = current_energy
+            self._last_reset_date = now
+            _LOGGER.debug(
+                "New day for %s, reset daily max to %.3f kWh",
+                self._room.name, current_energy
+            )
+        elif current_energy > self._daily_max_energy:
+            # Update max if current is higher
+            self._daily_max_energy = current_energy
+            _LOGGER.debug(
+                "Updated daily max for %s to %.3f kWh",
+                self._room.name, current_energy
+            )
+
+        return self._daily_max_energy
 
 
 class IntuisSetpointEndTimeSensor(IntuisSensor):
@@ -221,7 +246,9 @@ class IntuisSetpointEndTimeSensor(IntuisSensor):
     @property
     def native_value(self) -> datetime | None:
         """Return the end time of the current override as a datetime."""
-        end_ts = self._get_room().therm_setpoint_end_time
+        if self._room is None:
+            return None
+        end_ts = self._room.therm_setpoint_end_time
         if not end_ts or end_ts == 0:
             return None
         try:
