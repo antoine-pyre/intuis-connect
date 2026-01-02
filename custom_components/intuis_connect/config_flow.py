@@ -29,6 +29,7 @@ from .utils.const import (
     CONF_PASSWORD,
     CONF_REFRESH_TOKEN,
     CONF_HOME_ID,
+    CONF_HOME_NAME,
     CONF_MANUAL_DURATION,
     CONF_AWAY_DURATION,
     CONF_BOOST_DURATION,
@@ -55,10 +56,12 @@ _LOGGER = logging.getLogger(__name__)
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Intuis Connect."""
 
-    VERSION = 2
+    VERSION = 3
     _reauth_entry: config_entries.ConfigEntry | None = None
     _username: str | None = None
     _home_id: str | None = None
+    _home_name: str | None = None
+    _homes: list[dict[str, Any]] = []
     _refresh_token: str | None = None
     _override_options: dict[str, Any] = {}
 
@@ -71,21 +74,28 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             username = user_input[CONF_USERNAME].strip()
             password = user_input[CONF_PASSWORD]
 
-            await self.async_set_unique_id(username.lower())
-            self._abort_if_unique_id_configured()
-
             session = async_get_clientsession(self.hass)
             try:
-                home_id, api = await async_validate_api(username, password, session)
+                homes, api = await async_validate_api(username, password, session)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
             else:
                 self._username = username
-                self._home_id = home_id
+                self._homes = homes
                 self._refresh_token = api.refresh_token
-                return await self.async_step_indefinite()
+
+                if len(homes) == 1:
+                    # Single home - auto-select and use username as unique_id (backward compatible)
+                    self._home_id = homes[0]["id"]
+                    self._home_name = homes[0]["name"]
+                    await self.async_set_unique_id(username.lower())
+                    self._abort_if_unique_id_configured()
+                    return await self.async_step_indefinite()
+                else:
+                    # Multiple homes - show selection step
+                    return await self.async_step_select_home()
 
         data_schema = vol.Schema(
             {
@@ -99,6 +109,67 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(
             step_id="user", data_schema=data_schema, errors=errors
+        )
+
+    async def async_step_select_home(
+            self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Step 1b: Select which home to configure (multi-home accounts only)."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            selected_home_id = user_input[CONF_HOME_ID]
+
+            # Find the selected home details
+            for home in self._homes:
+                if home["id"] == selected_home_id:
+                    self._home_id = home["id"]
+                    self._home_name = home["name"]
+                    break
+
+            if not self._home_id:
+                errors["base"] = "home_not_found"
+            else:
+                # Use username + home_id as unique_id for multi-home entries
+                await self.async_set_unique_id(f"{self._username.lower()}_{self._home_id}")
+                self._abort_if_unique_id_configured()
+                return await self.async_step_indefinite()
+
+        # Build home options, filtering out already-configured homes
+        existing_home_ids: set[str] = set()
+        for entry in self._async_current_entries():
+            if entry.data.get(CONF_USERNAME, "").lower() == self._username.lower():
+                existing_home_ids.add(entry.data.get(CONF_HOME_ID))
+
+        home_options = []
+        for home in self._homes:
+            if home["id"] not in existing_home_ids:
+                home_options.append({
+                    "value": home["id"],
+                    "label": home["name"],
+                })
+
+        if not home_options:
+            return self.async_abort(reason="all_homes_configured")
+
+        data_schema = vol.Schema(
+            {
+                vol.Required(CONF_HOME_ID): SelectSelector(
+                    SelectSelectorConfig(
+                        options=home_options,
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="select_home",
+            data_schema=data_schema,
+            errors=errors,
+            description_placeholders={
+                "home_count": str(len(home_options)),
+            },
         )
 
     async def async_step_indefinite(
@@ -187,12 +258,19 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_ENERGY_SCALE: user_input.get(CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE),
             }
 
+            # Use home_name in title for multi-home setups, username for single-home
+            if self._home_name and len(self._homes) > 1:
+                title = f"Intuis Connect ({self._home_name})"
+            else:
+                title = f"Intuis Connect ({self._username})"
+
             return self.async_create_entry(
-                title=f"Intuis Connect ({self._username})",
+                title=title,
                 data={
                     CONF_USERNAME: self._username,
                     CONF_REFRESH_TOKEN: self._refresh_token,
                     CONF_HOME_ID: self._home_id,
+                    CONF_HOME_NAME: self._home_name,
                 },
                 options=all_options,
             )
@@ -250,6 +328,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_USERNAME: self._username,
                         CONF_REFRESH_TOKEN: api.refresh_token,
                         CONF_HOME_ID: self._reauth_entry.data[CONF_HOME_ID],
+                        CONF_HOME_NAME: self._reauth_entry.data.get(CONF_HOME_NAME),
                     },
                 )
                 await self.hass.config_entries.async_reload(

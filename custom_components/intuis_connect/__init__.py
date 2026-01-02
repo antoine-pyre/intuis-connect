@@ -1,4 +1,4 @@
-"""Setup for Intuis Connect (v1.6.0)."""
+"""Setup for Intuis Connect (v1.9.0)."""
 from __future__ import annotations
 
 import datetime
@@ -17,6 +17,8 @@ from .intuis_api.api import IntuisAPI, InvalidAuth, CannotConnect
 from .utils.const import (
     DOMAIN,
     CONF_REFRESH_TOKEN,
+    CONF_HOME_ID,
+    CONF_HOME_NAME,
     DEFAULT_UPDATE_INTERVAL,
 )
 from .entity.intuis_entity import IntuisDataUpdateCoordinator
@@ -155,3 +157,67 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id)
         _LOGGER.debug("Unloaded entry %s", entry.entry_id)
     return unload_ok
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate config entry to a newer version.
+
+    Handles migration from V2 to V3:
+    - Adds CONF_HOME_NAME if missing (for multi-home support)
+    """
+    _LOGGER.debug("Migrating entry %s from version %s", entry.entry_id, entry.version)
+
+    if entry.version < 3:
+        # V2 -> V3: Add home_name if missing
+        new_data = {**entry.data}
+
+        if CONF_HOME_NAME not in new_data or not new_data.get(CONF_HOME_NAME):
+            home_id = new_data.get(CONF_HOME_ID, "")
+            home_name = None
+
+            # Try to fetch the home name from the API
+            try:
+                session = async_get_clientsession(hass)
+                api = IntuisAPI(session, home_id=home_id)
+                api.refresh_token = new_data.get(CONF_REFRESH_TOKEN)
+                await api.async_refresh_access_token()
+
+                homes = await api.async_get_all_homes()
+                for home in homes:
+                    if home["id"] == home_id:
+                        home_name = home["name"]
+                        break
+
+                _LOGGER.info(
+                    "Migration: Fetched home name '%s' for home %s",
+                    home_name,
+                    home_id,
+                )
+            except Exception as err:
+                _LOGGER.warning(
+                    "Migration: Could not fetch home name from API: %s",
+                    err,
+                )
+
+            # Fall back to truncated home_id if API fails
+            if not home_name:
+                home_name = f"Home {home_id[:8]}" if home_id else "Unknown Home"
+                _LOGGER.info(
+                    "Migration: Using fallback home name '%s'",
+                    home_name,
+                )
+
+            new_data[CONF_HOME_NAME] = home_name
+
+        hass.config_entries.async_update_entry(
+            entry,
+            data=new_data,
+            version=3,
+        )
+        _LOGGER.info(
+            "Migrated entry %s to version 3 with home_name: %s",
+            entry.entry_id,
+            new_data.get(CONF_HOME_NAME),
+        )
+
+    return True

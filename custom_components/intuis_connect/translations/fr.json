@@ -12,7 +12,13 @@
     },
     "refresh_schedules": {
       "name": "Rafraichir les programmes",
-      "description": "Force la mise a jour de toutes les donnees de programme et de la maison depuis l'API Intuis."
+      "description": "Force la mise a jour de toutes les donnees de programme et de la maison depuis l'API Intuis.",
+      "fields": {
+        "home_id": {
+          "name": "ID de la maison",
+          "description": "Cible une maison specifique (optionnel). Si non fourni, rafraichit toutes les maisons configurees."
+        }
+      }
     },
     "set_schedule_slot": {
       "name": "Definir un creneau horaire",
@@ -45,6 +51,13 @@
         "data": {
           "username": "Adresse email",
           "password": "Mot de passe"
+        }
+      },
+      "select_home": {
+        "title": "Sélectionner la maison",
+        "description": "Votre compte possède plusieurs maisons. Sélectionnez celle à configurer.\n\nVous pouvez ajouter d'autres maisons en configurant l'intégration à nouveau.",
+        "data": {
+          "home_id": "Maison"
         }
       },
       "indefinite": {
@@ -93,10 +106,12 @@
     "error": {
       "cannot_connect": "Impossible de se connecter au service Intuis. Vérifiez votre connexion internet.",
       "invalid_auth": "Email ou mot de passe invalide.",
+      "home_not_found": "Maison sélectionnée introuvable. Veuillez réessayer.",
       "unknown": "Une erreur inattendue s'est produite."
     },
     "abort": {
-      "reauth_successful": "Reconnexion réussie."
+      "reauth_successful": "Reconnexion réussie.",
+      "all_homes_configured": "Toutes les maisons de ce compte sont déjà configurées."
     }
   },
   "options": {

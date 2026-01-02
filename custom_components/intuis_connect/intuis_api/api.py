@@ -192,8 +192,11 @@ class IntuisAPI:
         raise CannotConnect(f"Cannot connect for {path}") from last_exc
 
     # ---------- auth ------------------------------------------------------------
-    async def async_login(self, username: str, password: str) -> str:
-        """Log in to the Intuis Connect service."""
+    async def async_login(self, username: str, password: str) -> list[dict[str, Any]]:
+        """Log in to the Intuis Connect service.
+
+        Returns a list of available homes: [{"id": ..., "name": ..., "timezone": ...}, ...]
+        """
         if self._debug:
             _LOGGER.debug("Attempting login for user %s", username)
         payload = {
@@ -235,15 +238,17 @@ class IntuisAPI:
         else:
             _LOGGER.error("Unable to log in on any cluster")
             raise CannotConnect("Unable to log in on any cluster")
+
+        # Fetch all available homes
         if self._debug:
-            _LOGGER.debug("Retrieving homes data post-login for token validation")
-        await self.async_get_homes_data()
-        if not self.home_id:
+            _LOGGER.debug("Retrieving all homes post-login")
+        homes = await self.async_get_all_homes()
+        if not homes:
             _LOGGER.error("Login completed but no home associated with account")
             raise InvalidAuth("No home associated with account")
         if self._debug:
-            _LOGGER.debug("Login completed, home_id=%s", self.home_id)
-        return self.home_id
+            _LOGGER.debug("Login completed, found %d homes", len(homes))
+        return homes
 
     async def async_refresh_access_token(self) -> None:
         """Refresh the access token."""
@@ -275,17 +280,64 @@ class IntuisAPI:
             self._save_tokens(data)
 
     # ---------- data endpoints ---------------------------------------------------
-    async def async_get_homes_data(self) -> IntuisHome:
-        """Fetch homes data from the API."""
+    async def async_get_all_homes(self) -> list[dict[str, Any]]:
+        """Fetch all homes from the API.
+
+        Returns a list of dicts with home info:
+        [{"id": "...", "name": "...", "timezone": "..."}, ...]
+        """
+        _LOGGER.debug("Fetching all homes from %s", self._base_url + HOMESDATA_PATH)
+        async with await self._async_request("get", HOMESDATA_PATH) as resp:
+            data = await resp.json()
+
+        homes_raw = data.get("body", {}).get("homes", [])
+        if not homes_raw:
+            _LOGGER.error("No homes found in API response: %s", data)
+            raise APIError("No homes found")
+
+        homes = []
+        for home in homes_raw:
+            homes.append({
+                "id": home["id"],
+                "name": home.get("name", f"Home {home['id'][:8]}"),
+                "timezone": home.get("timezone", "GMT"),
+            })
+
+        _LOGGER.debug("Found %d homes: %s", len(homes), [h["name"] for h in homes])
+        return homes
+
+    async def async_get_homes_data(self, target_home_id: str | None = None) -> IntuisHome:
+        """Fetch homes data from the API.
+
+        Args:
+            target_home_id: If provided, fetch data for this specific home.
+                           If None, use self.home_id or fall back to first home.
+        """
         _LOGGER.debug("Fetching homes data from %s", self._base_url + HOMESDATA_PATH)
         async with await self._async_request("get", HOMESDATA_PATH) as resp:
             data = await resp.json()
 
-        if not data.get("body", {}).get("homes"):
+        homes = data.get("body", {}).get("homes", [])
+        if not homes:
             _LOGGER.error("Homes data response is empty or malformed: %s", data)
             raise APIError("Empty homesdata response")
-        _LOGGER.debug("Homes data received: %s", data)
-        home = data.get("body", {}).get("homes", [])[0]
+
+        # Find the target home
+        home = None
+        search_id = target_home_id or self.home_id
+
+        if search_id:
+            for h in homes:
+                if h["id"] == search_id:
+                    home = h
+                    break
+            if not home:
+                _LOGGER.error("Home %s not found in API response", search_id)
+                raise APIError(f"Home {search_id} not found")
+        else:
+            # Fall back to first home (backward compatible)
+            home = homes[0]
+
         self.home_id = home["id"]
         self.home_timezone = home.get("timezone", "GMT")
         _LOGGER.debug(

@@ -12,7 +12,13 @@
     },
     "refresh_schedules": {
       "name": "Refresh Schedules",
-      "description": "Force a refresh of all schedule and home data from the Intuis API."
+      "description": "Force a refresh of all schedule and home data from the Intuis API.",
+      "fields": {
+        "home_id": {
+          "name": "Home ID",
+          "description": "Target a specific home (optional). If not provided, refreshes all configured homes."
+        }
+      }
     },
     "set_schedule_slot": {
       "name": "Set Schedule Slot",
@@ -45,6 +51,13 @@
         "data": {
           "username": "Email address",
           "password": "Password"
+        }
+      },
+      "select_home": {
+        "title": "Select Home",
+        "description": "Your account has multiple homes. Select which one to configure.\n\nYou can add additional homes by setting up the integration again.",
+        "data": {
+          "home_id": "Home"
         }
       },
       "indefinite": {
@@ -93,10 +106,12 @@
     "error": {
       "cannot_connect": "Cannot connect to Intuis service. Please check your internet connection.",
       "invalid_auth": "Invalid email or password.",
+      "home_not_found": "Selected home not found. Please try again.",
       "unknown": "An unexpected error occurred."
     },
     "abort": {
-      "reauth_successful": "Re-authentication successful."
+      "reauth_successful": "Re-authentication successful.",
+      "all_homes_configured": "All homes from this account are already configured."
     }
   },
   "options": {
