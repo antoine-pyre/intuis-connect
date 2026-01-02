@@ -226,6 +226,7 @@ class IntuisCurrentZoneSensor(CoordinatorEntity[IntuisDataUpdateCoordinator], Se
 
     _attr_icon = "mdi:home-thermometer"
     _attr_has_entity_name = True
+    _attr_entity_registry_enabled_default = False
 
     def __init__(
             self,
@@ -291,6 +292,7 @@ class IntuisNextZoneChangeSensor(CoordinatorEntity[IntuisDataUpdateCoordinator],
     _attr_icon = "mdi:calendar-clock"
     _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_registry_enabled_default = False
 
     def __init__(
             self,
@@ -361,6 +363,7 @@ class IntuisScheduleSummarySensor(CoordinatorEntity[IntuisDataUpdateCoordinator]
 
     _attr_icon = "mdi:calendar-week"
     _attr_has_entity_name = True
+    _attr_entity_registry_enabled_default = False
 
     def __init__(
             self,

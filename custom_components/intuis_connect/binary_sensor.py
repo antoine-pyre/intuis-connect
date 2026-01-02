@@ -29,6 +29,7 @@ class _Base(CoordinatorEntity[IntuisDataUpdateCoordinator], BinarySensorEntity, 
         BinarySensorEntity.__init__(self)
         IntuisEntity.__init__(self, coordinator, room, home_id, name, metric)
         self._attr_device_class = device_class
+        self._attr_entity_registry_enabled_default = False
 
 
 class PresenceSensor(_Base):
