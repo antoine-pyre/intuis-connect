@@ -409,16 +409,48 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
             break
 
     async def async_handle_refresh_schedules(call: ServiceCall) -> None:
-        """Handle refresh_schedules service call."""
+        """Handle refresh_schedules service call.
+
+        This fetches fresh schedule data from the Intuis API and updates
+        the local state, then regenerates services.yaml with updated options.
+        """
         for entry_id, data in hass.data[DOMAIN].items():
             if not isinstance(data, dict):
                 continue
 
+            api: IntuisAPI = data.get("api")
+            intuis_home: IntuisHome = data.get("intuis_home")
             coordinator = data.get("coordinator")
-            if coordinator:
-                _LOGGER.info("Refreshing schedule data")
-                await coordinator.async_request_refresh()
-                break
+
+            if not api or not intuis_home:
+                continue
+
+            _LOGGER.info("Fetching fresh schedule data from Intuis API")
+
+            try:
+                # Fetch fresh homes data (includes schedules) from the API
+                fresh_home = await api.async_get_homes_data()
+
+                # Update local schedules from fresh data
+                intuis_home.schedules = fresh_home.schedules
+
+                _LOGGER.info(
+                    "Refreshed %d schedules from Intuis API",
+                    len(fresh_home.schedules),
+                )
+
+                # Regenerate services.yaml with updated schedule/zone options
+                await _async_generate_services_yaml(hass, intuis_home)
+
+                # Also trigger coordinator refresh for room status
+                if coordinator:
+                    await coordinator.async_request_refresh()
+
+            except Exception as err:
+                _LOGGER.error("Failed to refresh schedules from API: %s", err)
+                raise
+
+            break
 
     async def async_handle_set_schedule_slot(call: ServiceCall) -> None:
         """Handle set_schedule_slot service call.
@@ -493,14 +525,14 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
         # Calculate m_offsets (minutes from Monday 00:00)
         start_m_offset = start_day * MINUTES_PER_DAY + start_hours * 60 + start_minutes
 
-        # For end offset: if end_time is 00:00, it means end of end_day (next day's 00:00)
-        if end_hours == 0 and end_minutes == 0:
-            # End at midnight = start of next day
-            end_m_offset = ((end_day + 1) % 7) * MINUTES_PER_DAY
-            # Handle week wrap: if end_day is Sunday (6), next day offset wraps to Monday (0)
-            if end_day == 6:
-                end_m_offset = 7 * MINUTES_PER_DAY  # Use 10080 for Sunday midnight
+        # For end offset: handle 00:00 (midnight) specially
+        # - Same day with 00:00 end: means "end of that day" = start of next day
+        # - Different day with 00:00: means "start of that day" (the midnight boundary)
+        if end_hours == 0 and end_minutes == 0 and start_day == end_day:
+            # Same day, 00:00 means end of that day (next day's 00:00)
+            end_m_offset = (end_day + 1) * MINUTES_PER_DAY
         else:
+            # Different day or non-midnight: calculate normally
             end_m_offset = end_day * MINUTES_PER_DAY + end_hours * 60 + end_minutes
 
         # Validate that end is after start (considering week wrap)
@@ -579,8 +611,9 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
                 for t in active_schedule.timetables
             ]
 
-            # Find which zone was active before start_time (to restore at end_time)
-            restore_zone_id = _find_zone_at_offset(timetable, start_m_offset)
+            # Find which zone is active at end_time (to restore after the slot ends)
+            # We look at end_m_offset to find what zone was scheduled there originally
+            restore_zone_id = _find_zone_at_offset(timetable, end_m_offset)
 
             # Insert/update start entry with target zone
             _upsert_timetable_entry(timetable, start_m_offset, target_zone.id)
