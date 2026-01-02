@@ -14,6 +14,9 @@ import yaml
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
@@ -44,6 +47,7 @@ SERVICE_CLEAR_OVERRIDE = "clear_override"
 SERVICE_SWITCH_SCHEDULE = "switch_schedule"
 SERVICE_REFRESH_SCHEDULES = "refresh_schedules"
 SERVICE_SET_SCHEDULE_SLOT = "set_schedule_slot"
+SERVICE_SET_ZONE_TEMPERATURE = "set_zone_temperature"
 
 # Service attributes
 ATTR_ROOM_ID = "room_id"
@@ -55,6 +59,8 @@ ATTR_END_DAY = "end_day"
 ATTR_START_TIME = "start_time"
 ATTR_END_TIME = "end_time"
 ATTR_ZONE_NAME = "zone_name"
+ATTR_ROOM_NAME = "room_name"
+ATTR_TEMPERATURE = "temperature"
 
 # Base service schemas (dynamic schemas are built in async_register_services)
 CLEAR_OVERRIDE_SCHEMA = vol.Schema({vol.Required(ATTR_ROOM_ID): str})
@@ -72,6 +78,8 @@ async def async_generate_services_yaml(hass: HomeAssistant, intuis_home: IntuisH
     # Collect schedule names (only home-level schedules with zones and timetables)
     schedule_names: list[str] = []
     zone_names: list[str] = []
+    all_zone_names: list[str] = []  # All zones from all schedules
+    room_names: list[str] = []
 
     # Log all schedules for debugging
     _LOGGER.debug("=== All schedules from API ===")
@@ -98,11 +106,19 @@ async def async_generate_services_yaml(hass: HomeAssistant, intuis_home: IntuisH
 
             if has_zones and has_timetables:
                 schedule_names.append(schedule.name)
-                if schedule.selected:
-                    # Get zones from active schedule
-                    for zone in schedule.zones:
-                        if isinstance(zone, IntuisThermZone):
+                # Collect zones from all schedules
+                for zone in schedule.zones:
+                    if isinstance(zone, IntuisThermZone):
+                        if zone.name not in all_zone_names:
+                            all_zone_names.append(zone.name)
+                        if schedule.selected:
                             zone_names.append(zone.name)
+
+    # Collect room names from home.rooms
+    for room_id, room_def in intuis_home.rooms.items():
+        room_name = room_def.name if hasattr(room_def, 'name') else str(room_id)
+        if room_name not in room_names:
+            room_names.append(room_name)
 
     # Build day options with French labels
     day_options = [
@@ -115,10 +131,20 @@ async def async_generate_services_yaml(hass: HomeAssistant, intuis_home: IntuisH
     if not schedule_options:
         schedule_options = [{"label": "No schedules found", "value": ""}]
 
-    # Build zone options
+    # Build zone options (active schedule only for set_schedule_slot)
     zone_options = [{"label": name, "value": name} for name in zone_names]
     if not zone_options:
         zone_options = [{"label": "No zones found", "value": ""}]
+
+    # Build all zone options (all schedules for set_zone_temperature)
+    all_zone_options = [{"label": name, "value": name} for name in all_zone_names]
+    if not all_zone_options:
+        all_zone_options = [{"label": "No zones found", "value": ""}]
+
+    # Build room options
+    room_options = [{"label": name, "value": name} for name in room_names]
+    if not room_options:
+        room_options = [{"label": "No rooms found", "value": ""}]
 
     # Build services.yaml content
     services_config = {
@@ -181,6 +207,56 @@ async def async_generate_services_yaml(hass: HomeAssistant, intuis_home: IntuisH
                     "selector": {
                         "select": {
                             "options": zone_options,
+                        }
+                    }
+                }
+            }
+        },
+        "set_zone_temperature": {
+            "name": "Set Zone Temperature",
+            "description": "Set the temperature for a specific room in a schedule zone. Works with any schedule, not just the active one.",
+            "fields": {
+                "schedule_name": {
+                    "name": "Schedule Name",
+                    "description": "Select the schedule to modify.",
+                    "required": True,
+                    "selector": {
+                        "select": {
+                            "options": schedule_options,
+                        }
+                    }
+                },
+                "zone_name": {
+                    "name": "Zone Name",
+                    "description": "Select the zone within the schedule.",
+                    "required": True,
+                    "selector": {
+                        "select": {
+                            "options": all_zone_options,
+                        }
+                    }
+                },
+                "room_name": {
+                    "name": "Room Name",
+                    "description": "Select the room to set temperature for.",
+                    "required": True,
+                    "selector": {
+                        "select": {
+                            "options": room_options,
+                        }
+                    }
+                },
+                "temperature": {
+                    "name": "Temperature",
+                    "description": "Target temperature in Celsius (5-30).",
+                    "required": True,
+                    "selector": {
+                        "number": {
+                            "min": 5,
+                            "max": 30,
+                            "step": 0.5,
+                            "unit_of_measurement": "°C",
+                            "mode": "box"
                         }
                     }
                 }
@@ -557,30 +633,203 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
 
             break
 
+    async def async_handle_set_zone_temperature(call: ServiceCall) -> None:
+        """Handle set_zone_temperature service call.
+
+        Sets the temperature for a specific room in a schedule zone.
+        Works with any schedule, not just the active one.
+        """
+        schedule_name = call.data.get(ATTR_SCHEDULE_NAME)
+        zone_name = call.data.get(ATTR_ZONE_NAME)
+        room_name = call.data.get(ATTR_ROOM_NAME)
+        temperature = call.data.get(ATTR_TEMPERATURE)
+
+        if not all([schedule_name, zone_name, room_name, temperature is not None]):
+            _LOGGER.error("Missing required parameters for set_zone_temperature")
+            return
+
+        # Validate temperature range
+        if not (5 <= temperature <= 30):
+            _LOGGER.error("Temperature must be between 5 and 30, got: %s", temperature)
+            return
+
+        for entry_id, data in hass.data[DOMAIN].items():
+            if not isinstance(data, dict):
+                continue
+
+            api: IntuisAPI = data.get("api")
+            intuis_home: IntuisHome = data.get("intuis_home")
+            coordinator = data.get("coordinator")
+
+            if not api or not intuis_home:
+                continue
+
+            # Find the target schedule by name (any schedule, not just active)
+            target_schedule = None
+            available_schedules = []
+            for schedule in intuis_home.schedules:
+                if isinstance(schedule, IntuisThermSchedule):
+                    has_zones = schedule.zones and len(schedule.zones) > 0
+                    has_timetables = schedule.timetables and len(schedule.timetables) > 0
+                    if has_zones and has_timetables:
+                        available_schedules.append(schedule.name)
+                        if schedule.name == schedule_name:
+                            target_schedule = schedule
+                            break
+
+            if not target_schedule:
+                _LOGGER.error(
+                    "Schedule not found: %s. Available schedules: %s",
+                    schedule_name,
+                    available_schedules,
+                )
+                return
+
+            # Find the target zone by name within the schedule
+            target_zone = None
+            available_zones = []
+            for zone in target_schedule.zones:
+                if isinstance(zone, IntuisThermZone):
+                    available_zones.append(zone.name)
+                    if zone.name.lower() == zone_name.lower():
+                        target_zone = zone
+                        break
+
+            if not target_zone:
+                _LOGGER.error(
+                    "Zone not found: %s in schedule %s. Available zones: %s",
+                    zone_name,
+                    schedule_name,
+                    available_zones,
+                )
+                return
+
+            # Find the room by name and get its ID
+            room_id = None
+            available_rooms = []
+            for rid, room_def in intuis_home.rooms.items():
+                rname = room_def.name if hasattr(room_def, 'name') else str(rid)
+                available_rooms.append(rname)
+                if rname.lower() == room_name.lower():
+                    room_id = rid
+                    break
+
+            if not room_id:
+                _LOGGER.error(
+                    "Room not found: %s. Available rooms: %s",
+                    room_name,
+                    available_rooms,
+                )
+                return
+
+            # Find and update the room temperature in the zone
+            room_temp_found = False
+            for room_temp in target_zone.rooms_temp:
+                if room_temp.room_id == room_id:
+                    old_temp = room_temp.temp
+                    room_temp.temp = int(temperature)
+                    room_temp_found = True
+                    _LOGGER.info(
+                        "Updating temperature for room '%s' in zone '%s' of schedule '%s': %d -> %d",
+                        room_name,
+                        zone_name,
+                        schedule_name,
+                        old_temp,
+                        int(temperature),
+                    )
+                    break
+
+            if not room_temp_found:
+                _LOGGER.error(
+                    "Room '%s' (ID: %s) not found in zone '%s' rooms_temp",
+                    room_name,
+                    room_id,
+                    zone_name,
+                )
+                return
+
+            # Build zones payload (only rooms_temp, not rooms - API requirement)
+            zones_payload = []
+            for zone in target_schedule.zones:
+                if isinstance(zone, IntuisThermZone):
+                    zone_data = {
+                        "id": zone.id,
+                        "name": zone.name,
+                        "type": zone.type,
+                        "rooms_temp": [
+                            {"room_id": rt.room_id, "temp": rt.temp}
+                            for rt in zone.rooms_temp
+                        ],
+                    }
+                    zones_payload.append(zone_data)
+
+            # Build timetable payload
+            timetable = [
+                {"zone_id": t.zone_id, "m_offset": t.m_offset}
+                for t in target_schedule.timetables
+            ]
+
+            try:
+                await api.async_sync_schedule(
+                    schedule_id=target_schedule.id,
+                    schedule_name=target_schedule.name,
+                    schedule_type=target_schedule.type,
+                    timetable=timetable,
+                    zones=zones_payload,
+                    away_temp=target_schedule.away_temp,
+                    hg_temp=target_schedule.hg_temp,
+                )
+
+                # Refresh coordinator
+                if coordinator:
+                    await coordinator.async_request_refresh()
+
+                _LOGGER.info("Zone temperature updated successfully")
+
+            except Exception as err:
+                _LOGGER.error("Failed to set zone temperature: %s", err)
+                raise
+
+            break
+
     # Build dynamic options from coordinator data
     intuis_home: IntuisHome = hass.data[DOMAIN][entry.entry_id].get("intuis_home")
 
     schedule_options: list[dict] = []
     zone_options: list[dict] = []
+    all_zone_options: list[dict] = []
+    room_options: list[dict] = []
 
     if intuis_home:
         for schedule in intuis_home.schedules:
             if isinstance(schedule, IntuisThermSchedule):
-                schedule_options.append({
-                    "value": schedule.name,
-                    "label": schedule.name,
-                })
-                if schedule.selected:
-                    # Get zones from active schedule
+                has_zones = schedule.zones and len(schedule.zones) > 0
+                has_timetables = schedule.timetables and len(schedule.timetables) > 0
+                if has_zones and has_timetables:
+                    schedule_options.append({
+                        "value": schedule.name,
+                        "label": schedule.name,
+                    })
+                    # Collect zones from all schedules
                     for zone in schedule.zones:
                         if isinstance(zone, IntuisThermZone):
-                            zone_options.append({
-                                "value": zone.name,
-                                "label": zone.name,
-                            })
+                            zone_opt = {"value": zone.name, "label": zone.name}
+                            if zone_opt not in all_zone_options:
+                                all_zone_options.append(zone_opt)
+                            if schedule.selected:
+                                zone_options.append(zone_opt)
+
+        # Collect room options
+        for room_id, room_def in intuis_home.rooms.items():
+            room_name = room_def.name if hasattr(room_def, 'name') else str(room_id)
+            room_opt = {"value": room_name, "label": room_name}
+            if room_opt not in room_options:
+                room_options.append(room_opt)
 
     _LOGGER.debug("Dynamic schedule options: %s", schedule_options)
     _LOGGER.debug("Dynamic zone options: %s", zone_options)
+    _LOGGER.debug("Dynamic all zone options: %s", all_zone_options)
+    _LOGGER.debug("Dynamic room options: %s", room_options)
 
     # Day options with French labels
     day_options = [
@@ -626,6 +875,36 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
         ),
     })
 
+    set_zone_temperature_schema = vol.Schema({
+        vol.Required(ATTR_SCHEDULE_NAME): SelectSelector(
+            SelectSelectorConfig(
+                options=schedule_options if schedule_options else [{"value": "", "label": "No schedules found"}],
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        ),
+        vol.Required(ATTR_ZONE_NAME): SelectSelector(
+            SelectSelectorConfig(
+                options=all_zone_options if all_zone_options else [{"value": "", "label": "No zones found"}],
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        ),
+        vol.Required(ATTR_ROOM_NAME): SelectSelector(
+            SelectSelectorConfig(
+                options=room_options if room_options else [{"value": "", "label": "No rooms found"}],
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        ),
+        vol.Required(ATTR_TEMPERATURE): NumberSelector(
+            NumberSelectorConfig(
+                min=5,
+                max=30,
+                step=0.5,
+                unit_of_measurement="°C",
+                mode=NumberSelectorMode.BOX,
+            )
+        ),
+    })
+
     # Register services (only once)
     if not hass.services.has_service(DOMAIN, SERVICE_SWITCH_SCHEDULE):
         hass.services.async_register(
@@ -649,4 +928,12 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
             SERVICE_SET_SCHEDULE_SLOT,
             async_handle_set_schedule_slot,
             schema=set_schedule_slot_schema,
+        )
+
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_ZONE_TEMPERATURE):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_ZONE_TEMPERATURE,
+            async_handle_set_zone_temperature,
+            schema=set_zone_temperature_schema,
         )
