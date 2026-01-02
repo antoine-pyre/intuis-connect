@@ -4,10 +4,10 @@ from __future__ import annotations
 import pytest
 
 # Import the functions under test
-from custom_components.intuis_connect import (
-    _find_zone_at_offset,
-    _upsert_timetable_entry,
-    _remove_consecutive_duplicates,
+from custom_components.intuis_connect.timetable import (
+    find_zone_at_offset,
+    upsert_timetable_entry,
+    remove_consecutive_duplicates,
 )
 
 
@@ -20,7 +20,7 @@ class TestFindZoneAtOffset:
 
     def test_empty_timetable_returns_zero(self):
         """Empty timetable should return 0 as fallback."""
-        assert _find_zone_at_offset([], 420) == 0
+        assert find_zone_at_offset([], 420) == 0
 
     def test_exact_match_returns_zone(self):
         """Exact match on m_offset should return that zone."""
@@ -29,7 +29,7 @@ class TestFindZoneAtOffset:
             {"m_offset": 420, "zone_id": 2},
             {"m_offset": 1320, "zone_id": 1},
         ]
-        assert _find_zone_at_offset(timetable, 420) == 2
+        assert find_zone_at_offset(timetable, 420) == 2
 
     def test_between_entries_returns_previous_zone(self):
         """Offset between entries should return the previous (most recent) zone."""
@@ -39,7 +39,7 @@ class TestFindZoneAtOffset:
             {"m_offset": 1320, "zone_id": 1},
         ]
         # 600 is between 420 and 1320, so zone 2 should be active
-        assert _find_zone_at_offset(timetable, 600) == 2
+        assert find_zone_at_offset(timetable, 600) == 2
 
     def test_before_first_entry_wraps_to_end(self):
         """Offset before first entry should wrap to last zone of week."""
@@ -48,7 +48,7 @@ class TestFindZoneAtOffset:
             {"m_offset": 1320, "zone_id": 1},
         ]
         # Offset 0 is before first entry (420), should wrap to zone 1
-        assert _find_zone_at_offset(timetable, 0) == 1
+        assert find_zone_at_offset(timetable, 0) == 1
 
     def test_at_start_of_week(self):
         """Offset 0 with entry at 0 should return that zone."""
@@ -56,7 +56,7 @@ class TestFindZoneAtOffset:
             {"m_offset": 0, "zone_id": 3},
             {"m_offset": 420, "zone_id": 2},
         ]
-        assert _find_zone_at_offset(timetable, 0) == 3
+        assert find_zone_at_offset(timetable, 0) == 3
 
     def test_unsorted_timetable_handled(self):
         """Unsorted timetable should be handled correctly."""
@@ -66,7 +66,7 @@ class TestFindZoneAtOffset:
             {"m_offset": 420, "zone_id": 2},
         ]
         # Function sorts internally
-        assert _find_zone_at_offset(timetable, 600) == 2
+        assert find_zone_at_offset(timetable, 600) == 2
 
     def test_end_of_week(self):
         """Offset at end of week should return last active zone."""
@@ -76,7 +76,7 @@ class TestFindZoneAtOffset:
             {"m_offset": 1320, "zone_id": 3},
         ]
         # Sunday 23:59 = 6 * 1440 + 23*60 + 59 = 10079
-        assert _find_zone_at_offset(timetable, 10079) == 3
+        assert find_zone_at_offset(timetable, 10079) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +89,7 @@ class TestUpsertTimetableEntry:
     def test_insert_into_empty(self):
         """Insert into empty timetable."""
         timetable = []
-        _upsert_timetable_entry(timetable, 420, 2)
+        upsert_timetable_entry(timetable, 420, 2)
         assert timetable == [{"zone_id": 2, "m_offset": 420}]
 
     def test_insert_new_entry(self):
@@ -98,7 +98,7 @@ class TestUpsertTimetableEntry:
             {"m_offset": 0, "zone_id": 1},
             {"m_offset": 1320, "zone_id": 1},
         ]
-        _upsert_timetable_entry(timetable, 420, 2)
+        upsert_timetable_entry(timetable, 420, 2)
         assert len(timetable) == 3
         assert {"zone_id": 2, "m_offset": 420} in timetable
 
@@ -109,7 +109,7 @@ class TestUpsertTimetableEntry:
             {"m_offset": 420, "zone_id": 2},
             {"m_offset": 1320, "zone_id": 1},
         ]
-        _upsert_timetable_entry(timetable, 420, 3)
+        upsert_timetable_entry(timetable, 420, 3)
         assert len(timetable) == 3
         # Find entry with m_offset 420 and verify zone changed
         entry = next(e for e in timetable if e["m_offset"] == 420)
@@ -122,7 +122,7 @@ class TestUpsertTimetableEntry:
             {"m_offset": 420, "zone_id": 2},
             {"m_offset": 1320, "zone_id": 1},
         ]
-        _upsert_timetable_entry(timetable, 420, 3)
+        upsert_timetable_entry(timetable, 420, 3)
 
         entry_0 = next(e for e in timetable if e["m_offset"] == 0)
         entry_1320 = next(e for e in timetable if e["m_offset"] == 1320)
@@ -139,12 +139,12 @@ class TestRemoveConsecutiveDuplicates:
 
     def test_empty_timetable(self):
         """Empty timetable returns empty list."""
-        assert _remove_consecutive_duplicates([]) == []
+        assert remove_consecutive_duplicates([]) == []
 
     def test_single_entry(self):
         """Single entry is returned as-is."""
         timetable = [{"m_offset": 0, "zone_id": 1}]
-        result = _remove_consecutive_duplicates(timetable)
+        result = remove_consecutive_duplicates(timetable)
         assert result == [{"m_offset": 0, "zone_id": 1}]
 
     def test_no_duplicates(self):
@@ -154,7 +154,7 @@ class TestRemoveConsecutiveDuplicates:
             {"m_offset": 420, "zone_id": 2},
             {"m_offset": 1320, "zone_id": 1},
         ]
-        result = _remove_consecutive_duplicates(timetable)
+        result = remove_consecutive_duplicates(timetable)
         assert len(result) == 3
 
     def test_consecutive_duplicates_removed(self):
@@ -164,7 +164,7 @@ class TestRemoveConsecutiveDuplicates:
             {"m_offset": 420, "zone_id": 1},  # Duplicate
             {"m_offset": 1320, "zone_id": 2},
         ]
-        result = _remove_consecutive_duplicates(timetable)
+        result = remove_consecutive_duplicates(timetable)
         assert len(result) == 2
         assert result[0] == {"m_offset": 0, "zone_id": 1}
         assert result[1] == {"m_offset": 1320, "zone_id": 2}
@@ -177,7 +177,7 @@ class TestRemoveConsecutiveDuplicates:
             {"m_offset": 840, "zone_id": 1},  # Duplicate
             {"m_offset": 1320, "zone_id": 2},
         ]
-        result = _remove_consecutive_duplicates(timetable)
+        result = remove_consecutive_duplicates(timetable)
         assert len(result) == 2
         assert result[0]["m_offset"] == 0
         assert result[1]["m_offset"] == 1320
@@ -189,7 +189,7 @@ class TestRemoveConsecutiveDuplicates:
             {"m_offset": 420, "zone_id": 2},
             {"m_offset": 840, "zone_id": 1},  # Same as first but not consecutive
         ]
-        result = _remove_consecutive_duplicates(timetable)
+        result = remove_consecutive_duplicates(timetable)
         assert len(result) == 3
 
     def test_unsorted_input_handled(self):
@@ -199,7 +199,7 @@ class TestRemoveConsecutiveDuplicates:
             {"m_offset": 0, "zone_id": 1},
             {"m_offset": 1320, "zone_id": 2},
         ]
-        result = _remove_consecutive_duplicates(timetable)
+        result = remove_consecutive_duplicates(timetable)
         assert len(result) == 2
         # First entry should be m_offset 0 after sorting
         assert result[0]["m_offset"] == 0
@@ -212,7 +212,7 @@ class TestRemoveConsecutiveDuplicates:
             {"m_offset": 840, "zone_id": 1},
             {"m_offset": 1320, "zone_id": 1},
         ]
-        result = _remove_consecutive_duplicates(timetable)
+        result = remove_consecutive_duplicates(timetable)
         assert len(result) == 1
         assert result[0]["m_offset"] == 0
 
@@ -236,17 +236,17 @@ class TestTimetableIntegration:
         end_offset = 1320   # Monday 22:00
 
         # Find what zone to restore at end
-        restore_zone = _find_zone_at_offset(timetable, end_offset)
+        restore_zone = find_zone_at_offset(timetable, end_offset)
         assert restore_zone == 1  # Night
 
         # Insert start slot
-        _upsert_timetable_entry(timetable, start_offset, 2)  # Comfort at 07:00
+        upsert_timetable_entry(timetable, start_offset, 2)  # Comfort at 07:00
 
         # Insert end slot to restore
-        _upsert_timetable_entry(timetable, end_offset, restore_zone)  # Night at 22:00
+        upsert_timetable_entry(timetable, end_offset, restore_zone)  # Night at 22:00
 
         # Clean up duplicates
-        result = _remove_consecutive_duplicates(timetable)
+        result = remove_consecutive_duplicates(timetable)
 
         assert len(result) == 3
         # Verify schedule: Night -> Comfort -> Night
@@ -268,13 +268,13 @@ class TestTimetableIntegration:
         start_offset = 720   # 12:00
         end_offset = 840     # 14:00
 
-        restore_zone = _find_zone_at_offset(timetable, end_offset)
+        restore_zone = find_zone_at_offset(timetable, end_offset)
         assert restore_zone == 2  # Comfort is active at 14:00
 
-        _upsert_timetable_entry(timetable, start_offset, 3)  # Eco
-        _upsert_timetable_entry(timetable, end_offset, restore_zone)  # Comfort
+        upsert_timetable_entry(timetable, start_offset, 3)  # Eco
+        upsert_timetable_entry(timetable, end_offset, restore_zone)  # Comfort
 
-        result = _remove_consecutive_duplicates(timetable)
+        result = remove_consecutive_duplicates(timetable)
 
         # Should be: Night -> Comfort -> Eco -> Comfort -> Night
         assert len(result) == 5

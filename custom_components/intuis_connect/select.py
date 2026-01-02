@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -71,13 +72,13 @@ class IntuisScheduleSelect(CoordinatorEntity[IntuisDataUpdateCoordinator], Selec
         self._attr_options = list(self._schedule_map.keys())
 
     @property
-    def device_info(self) -> dict[str, Any]:
+    def device_info(self) -> DeviceInfo:
         """Return device info for the home."""
-        return {
-            "identifiers": {(DOMAIN, self._home_id)},
-            "name": "Intuis Home",
-            "manufacturer": "Muller Intuitiv",
-        }
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._home_id)},
+            name="Intuis Home",
+            manufacturer="Muller Intuitiv",
+        )
 
     @property
     def current_option(self) -> str | None:

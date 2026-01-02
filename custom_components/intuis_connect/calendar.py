@@ -115,12 +115,28 @@ class IntuisScheduleCalendar(
         if not schedule or not schedule.timetables:
             return events
 
-        # Sort timetables by m_offset
-        sorted_timetables = sorted(schedule.timetables, key=lambda t: t.m_offset)
+        # Filter and sort valid timetables by m_offset
+        valid_timetables = []
+        for t in schedule.timetables:
+            # Validate m_offset is within valid range (0 to MINUTES_IN_WEEK-1)
+            if not hasattr(t, 'm_offset') or not hasattr(t, 'zone_id'):
+                _LOGGER.warning("Skipping malformed timetable entry (missing attributes)")
+                continue
+            if not isinstance(t.m_offset, int) or not (0 <= t.m_offset < MINUTES_IN_WEEK):
+                _LOGGER.warning("Skipping timetable with invalid m_offset: %s", t.m_offset)
+                continue
+            valid_timetables.append(t)
+
+        if not valid_timetables:
+            _LOGGER.debug("No valid timetables found for schedule %s", schedule.name)
+            return events
+
+        sorted_timetables = sorted(valid_timetables, key=lambda t: t.m_offset)
 
         for i, timetable in enumerate(sorted_timetables):
             zone = _get_zone_by_id(schedule, timetable.zone_id)
             if not zone:
+                _LOGGER.debug("Zone ID %d not found in schedule, skipping", timetable.zone_id)
                 continue
 
             # Calculate start time
