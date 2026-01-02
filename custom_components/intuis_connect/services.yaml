@@ -10,10 +10,12 @@ switch_schedule:
       selector:
         select:
           options:
-          - label: Planning
-            value: Planning
+          - label: Test
+            value: Test
           - label: 'Rouge '
             value: 'Rouge '
+          - label: Test
+            value: Test
 refresh_schedules:
   name: Refresh Schedules
   description: Force a refresh of all schedule and home data from the Intuis API.
@@ -64,17 +66,11 @@ set_schedule_slot:
       selector:
         select:
           options:
-          - label: Eco
-            value: Eco
-          - label: Comfort+
-            value: Comfort+
+          - label: Comfort
+            value: Comfort
           - label: Night
             value: Night
-          - label: Jour rouge
-            value: Jour rouge
-          - label: Nuit rouge
-            value: Nuit rouge
-          - label: Douche
-            value: Douche
-          - label: Jour
-            value: Jour
+          - label: Comfort+
+            value: Comfort+
+          - label: Eco
+            value: Eco
