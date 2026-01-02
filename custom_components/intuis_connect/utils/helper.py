@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from aiohttp import ClientSession
 from homeassistant.config_entries import ConfigEntry
@@ -17,12 +18,17 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_validate_api(
         username: str, password: str, session: ClientSession
-) -> tuple[str, IntuisAPI]:
-    """Validate the API and return the home ID and API instance."""
+) -> tuple[list[dict[str, Any]], IntuisAPI]:
+    """Validate the API and return the list of homes and API instance.
+
+    Returns:
+        Tuple of (homes_list, api) where homes_list is:
+        [{"id": ..., "name": ..., "timezone": ...}, ...]
+    """
     api = IntuisAPI(session)
     try:
-        home_id = await api.async_login(username, password)
-        return home_id, api
+        homes = await api.async_login(username, password)
+        return homes, api
     except (CannotConnect, InvalidAuth) as e:
         _LOGGER.error("API validation failed: %s", e)
         raise

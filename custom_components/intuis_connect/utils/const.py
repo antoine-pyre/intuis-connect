@@ -1,4 +1,4 @@
-"""Constants for Intuis Connect integration (v1.3.0)."""
+"""Constants for Intuis Connect integration (v1.9.0)."""
 
 DOMAIN = "intuis_connect"
 
@@ -6,6 +6,7 @@ CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_REFRESH_TOKEN = "refresh_token"
 CONF_HOME_ID = "home_id"
+CONF_HOME_NAME = "home_name"
 
 DEFAULT_UPDATE_INTERVAL = 2 # minutes
 

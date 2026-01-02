@@ -48,6 +48,7 @@ SERVICE_SET_SCHEDULE_SLOT = "set_schedule_slot"
 # Service attributes
 ATTR_ROOM_ID = "room_id"
 ATTR_SCHEDULE_NAME = "schedule_name"
+ATTR_HOME_ID = "home_id"
 ATTR_DAY = "day"  # Legacy, kept for backward compatibility
 ATTR_START_DAY = "start_day"
 ATTR_END_DAY = "end_day"
@@ -57,7 +58,9 @@ ATTR_ZONE_NAME = "zone_name"
 
 # Base service schemas (dynamic schemas are built in async_register_services)
 CLEAR_OVERRIDE_SCHEMA = vol.Schema({vol.Required(ATTR_ROOM_ID): str})
-REFRESH_SCHEDULES_SCHEMA = vol.Schema({})
+REFRESH_SCHEDULES_SCHEMA = vol.Schema({
+    vol.Optional(ATTR_HOME_ID): str,  # Target specific home (multi-home support)
+})
 
 
 async def async_generate_services_yaml(hass: HomeAssistant, intuis_home: IntuisHome) -> None:
@@ -271,7 +274,13 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
 
         This fetches fresh schedule data from the Intuis API and updates
         the local state, then regenerates services.yaml with updated options.
+
+        Optional home_id parameter targets a specific home (for multi-home setups).
+        If not provided, refreshes all configured homes.
         """
+        target_home_id = call.data.get(ATTR_HOME_ID)
+        refreshed_count = 0
+
         for entry_id, data in hass.data[DOMAIN].items():
             if not isinstance(data, dict):
                 continue
@@ -283,7 +292,14 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
             if not api or not intuis_home:
                 continue
 
-            _LOGGER.info("Fetching fresh schedule data from Intuis API")
+            # Filter by home_id if specified
+            if target_home_id and intuis_home.id != target_home_id:
+                continue
+
+            _LOGGER.info(
+                "Fetching fresh schedule data from Intuis API for home: %s",
+                intuis_home.name or intuis_home.id
+            )
 
             try:
                 # Fetch fresh homes data (includes schedules) from the API
@@ -293,8 +309,9 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
                 intuis_home.schedules = fresh_home.schedules
 
                 _LOGGER.info(
-                    "Refreshed %d schedules from Intuis API",
+                    "Refreshed %d schedules for home %s",
                     len(fresh_home.schedules),
+                    intuis_home.name or intuis_home.id,
                 )
 
                 # Regenerate services.yaml with updated schedule/zone options
@@ -304,11 +321,20 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
                 if coordinator:
                     await coordinator.async_request_refresh()
 
+                refreshed_count += 1
+
             except Exception as err:
-                _LOGGER.error("Failed to refresh schedules from API: %s", err)
+                _LOGGER.error(
+                    "Failed to refresh schedules for home %s: %s",
+                    intuis_home.name or intuis_home.id,
+                    err,
+                )
                 raise
 
-            break
+        if refreshed_count == 0 and target_home_id:
+            _LOGGER.warning("Home with ID %s not found", target_home_id)
+        else:
+            _LOGGER.info("Refreshed schedules for %d home(s)", refreshed_count)
 
     async def async_handle_set_schedule_slot(call: ServiceCall) -> None:
         """Handle set_schedule_slot service call.
