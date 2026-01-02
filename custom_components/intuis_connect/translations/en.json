@@ -79,14 +79,10 @@
         "title": "Energy Monitoring",
         "description": "Configure how energy usage is tracked.",
         "data": {
-          "energy_scale": "Update frequency",
-          "import_history": "Import past 30 days of energy data",
-          "history_days": "Days of history to import"
+          "energy_scale": "Update frequency"
         },
         "data_description": {
-          "energy_scale": "How often to update energy consumption data.",
-          "import_history": "Import historical energy data to populate your dashboard (runs once during setup).",
-          "history_days": "Number of days of past data to import."
+          "energy_scale": "How often to update energy consumption data."
         }
       },
       "reauth_confirm": {

@@ -36,8 +36,6 @@ from .utils.const import (
     CONF_BOOST_TEMP,
     CONF_INDEFINITE_MODE,
     CONF_ENERGY_SCALE,
-    CONF_IMPORT_HISTORY,
-    CONF_HISTORY_DAYS,
     DEFAULT_MANUAL_DURATION,
     DEFAULT_AWAY_DURATION,
     DEFAULT_BOOST_DURATION,
@@ -45,10 +43,7 @@ from .utils.const import (
     DEFAULT_BOOST_TEMP,
     DEFAULT_INDEFINITE_MODE,
     DEFAULT_ENERGY_SCALE,
-    DEFAULT_IMPORT_HISTORY,
-    DEFAULT_HISTORY_DAYS,
     ENERGY_SCALE_OPTIONS,
-    HISTORY_DAYS_OPTIONS,
     DURATION_OPTIONS_SHORT,
     DURATION_OPTIONS_LONG,
 )
@@ -184,14 +179,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_energy(
             self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Step 3: Configure energy settings and history import."""
+        """Step 4: Configure energy settings."""
         if user_input is not None:
             # Combine all options
             all_options = {
                 **self._override_options,
                 CONF_ENERGY_SCALE: user_input.get(CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE),
-                CONF_IMPORT_HISTORY: user_input.get(CONF_IMPORT_HISTORY, DEFAULT_IMPORT_HISTORY),
-                CONF_HISTORY_DAYS: int(user_input.get(CONF_HISTORY_DAYS, DEFAULT_HISTORY_DAYS)),
             }
 
             return self.async_create_entry(
@@ -209,11 +202,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             {"value": key, "label": label}
             for key, label in ENERGY_SCALE_OPTIONS.items()
         ]
-        # Build select options for history days
-        history_options = [
-            {"value": key, "label": label}
-            for key, label in HISTORY_DAYS_OPTIONS.items()
-        ]
 
         options_schema = vol.Schema(
             {
@@ -222,16 +210,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     default=DEFAULT_ENERGY_SCALE,
                 ): SelectSelector(
                     SelectSelectorConfig(options=energy_options, mode=SelectSelectorMode.DROPDOWN)
-                ),
-                vol.Optional(
-                    CONF_IMPORT_HISTORY,
-                    default=DEFAULT_IMPORT_HISTORY,
-                ): BooleanSelector(),
-                vol.Optional(
-                    CONF_HISTORY_DAYS,
-                    default=str(DEFAULT_HISTORY_DAYS),
-                ): SelectSelector(
-                    SelectSelectorConfig(options=history_options, mode=SelectSelectorMode.DROPDOWN)
                 ),
             }
         )

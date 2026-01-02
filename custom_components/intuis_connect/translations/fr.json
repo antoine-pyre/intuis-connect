@@ -79,14 +79,10 @@
         "title": "Suivi énergétique",
         "description": "Configurez le suivi de la consommation d'énergie.",
         "data": {
-          "energy_scale": "Fréquence de mise à jour",
-          "import_history": "Importer les 30 derniers jours de données",
-          "history_days": "Jours d'historique à importer"
+          "energy_scale": "Fréquence de mise à jour"
         },
         "data_description": {
-          "energy_scale": "Fréquence de mise à jour des données de consommation.",
-          "import_history": "Importer l'historique de consommation pour remplir votre tableau de bord (exécuté une fois à l'installation).",
-          "history_days": "Nombre de jours d'historique à importer."
+          "energy_scale": "Fréquence de mise à jour des données de consommation."
         }
       },
       "reauth_confirm": {
