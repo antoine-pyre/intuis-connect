@@ -86,6 +86,16 @@ class IntuisData:
         overrides_changed = False
         rooms_to_clear = []
 
+        # First, clean up orphaned overrides (rooms that no longer exist in API)
+        for room_id in list(self._overrides.keys()):
+            if room_id not in data_by_room:
+                _LOGGER.warning(
+                    "Removing orphaned override for room %s (room no longer in API response)",
+                    room_id,
+                )
+                rooms_to_clear.append(room_id)
+                overrides_changed = True
+
         for room_id, room in data_by_room.items():
             override = self._overrides.get(room_id)
             if not override or not override.get("sticky", True):
