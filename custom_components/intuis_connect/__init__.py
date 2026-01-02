@@ -22,6 +22,7 @@ from homeassistant.helpers.selector import (
 )
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.storage import Store
 
 from .entity.intuis_home import IntuisHome
 from .intuis_api.api import IntuisAPI, InvalidAuth, CannotConnect
@@ -36,6 +37,10 @@ from .entity.intuis_schedule import IntuisSchedule, IntuisThermSchedule, IntuisT
 from .intuis_data import IntuisData
 
 _LOGGER = logging.getLogger(__name__)
+
+# Storage for persisting overrides across restarts
+STORAGE_VERSION = 1
+STORAGE_KEY = f"{DOMAIN}.overrides"
 
 PLATFORMS: list[Platform] = [
     Platform.CALENDAR,
@@ -308,15 +313,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # ---------- generate dynamic services.yaml -------------------------------------
     await _async_generate_services_yaml(hass, intuis_home)
 
-    # ---------- shared overrides (sticky intents) ----------------------------------
-    overrides: dict[str, dict] = {}
+    # ---------- shared overrides (sticky intents) with persistence -----------------
+    # Set up storage for persisting overrides across restarts
+    store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}.{entry.entry_id}")
+
+    # Load persisted overrides
+    stored_data = await store.async_load()
+    overrides: dict[str, dict] = stored_data.get("overrides", {}) if stored_data else {}
+
+    if overrides:
+        _LOGGER.info("Loaded %d persisted overrides from storage", len(overrides))
+
+    # Callback to save overrides to storage
+    async def save_overrides() -> None:
+        """Persist overrides to storage."""
+        await store.async_save({"overrides": overrides})
+        _LOGGER.debug("Saved %d overrides to storage", len(overrides))
 
     # ---------- setup coordinator --------------------------------------------------
     # Callback to get current options from config entry
     def get_options() -> dict:
         return dict(entry.options)
 
-    intuis_data = IntuisData(intuis_api, intuis_home, overrides, get_options)
+    intuis_data = IntuisData(
+        intuis_api,
+        intuis_home,
+        overrides,
+        get_options,
+        save_overrides_callback=save_overrides,
+    )
 
     coordinator: IntuisDataUpdateCoordinator = DataUpdateCoordinator(
         hass,
@@ -334,6 +359,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
         "intuis_home": intuis_home,
         "overrides": overrides,
+        "save_overrides": save_overrides,
     }
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)
 
