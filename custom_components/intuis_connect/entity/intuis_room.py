@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..entity.intuis_module import IntuisModule
+from ..entity.intuis_module import IntuisModule, NMHIntuisModule
 
 
 class IntuisRoomDefinition:
@@ -38,14 +38,14 @@ class IntuisRoomDefinition:
 class IntuisRoom:
     """Class to represent a room in the Intuis Connect system."""
 
-    heating: bool = False
+    # Accumulated counters (updated by mapper, not from API)
     minutes: int = 0
     energy: float = 0.0
 
     def __init__(self, definition: IntuisRoomDefinition, id: str, name: str, mode: str, target_temperature: float,
                  temperature: float, presence: bool, open_window: bool, anticipation: bool,
                  muller_type: str, boost_status: str, modules: list[IntuisModule], therm_setpoint_end_time: int,
-                 bridge_id: str | None = None) -> None:
+                 bridge_id: str | None = None, heating: bool = False) -> None:
         """Initialize the room with its definition."""
         self.definition = definition
         self.id = id
@@ -61,6 +61,7 @@ class IntuisRoom:
         self.modules = modules
         self.therm_setpoint_end_time = therm_setpoint_end_time
         self.bridge_id = bridge_id
+        self.heating = heating
 
     @staticmethod
     def from_dict(definition: IntuisRoomDefinition, data: dict[str, Any], modules: list[IntuisModule]) -> IntuisRoom:
@@ -74,6 +75,14 @@ class IntuisRoom:
         for module in filtered_modules:
             if hasattr(module, "bridge") and module.bridge:
                 bridge_id = module.bridge
+                break
+
+        # Determine heating status from NMH modules' radiator_state
+        # A room is heating if any of its NMH modules has radiator_state == "heating"
+        heating = False
+        for module in filtered_modules:
+            if isinstance(module, NMHIntuisModule) and module.radiator_state == "heating":
+                heating = True
                 break
 
         return IntuisRoom(
@@ -91,6 +100,7 @@ class IntuisRoom:
             therm_setpoint_end_time=data.get("therm_setpoint_end_time", 0),
             modules=filtered_modules,
             bridge_id=bridge_id,
+            heating=heating,
         )
 
     def __repr__(self) -> str:
