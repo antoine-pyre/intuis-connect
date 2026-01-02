@@ -1,17 +1,76 @@
-clear_override:
-  name: Clear override / resume schedule
-  description: >
-    Cancels any manual or boost set-point for a specific room and returns the
-    radiator to its scheduled mode.
-  target:
-    entity:
-      domain: climate
+switch_schedule:
+  name: Switch Schedule
+  description: Switch to a different heating schedule. The schedule applies to all
+    rooms in the home.
   fields:
-    room_id:
+    schedule_name:
+      name: Schedule Name
+      description: Select the schedule to activate.
       required: true
-      example: room_123456
       selector:
-        text:
-      description: >
-        The integer/string room ID. You can find it in the entity_id of your
-        climate device (e.g. climate.room_123456).
+        select:
+          options:
+          - label: Test
+            value: Test
+          - label: 'Rouge '
+            value: 'Rouge '
+          - label: Normal
+            value: Normal
+refresh_schedules:
+  name: Refresh Schedules
+  description: Force a refresh of all schedule and home data from the Intuis API.
+set_schedule_slot:
+  name: Set Schedule Slot
+  description: Set a zone for a specific time range in the active heating schedule.
+    Creates a slot from start_time to end_time with the specified zone.
+  fields:
+    day:
+      name: Day of Week
+      description: Select the day of the week.
+      required: true
+      selector:
+        select:
+          options:
+          - label: Lundi
+            value: '0'
+          - label: Mardi
+            value: '1'
+          - label: Mercredi
+            value: '2'
+          - label: Jeudi
+            value: '3'
+          - label: Vendredi
+            value: '4'
+          - label: Samedi
+            value: '5'
+          - label: Dimanche
+            value: '6'
+    start_time:
+      name: Start Time
+      description: When the zone should start (24-hour format).
+      required: true
+      example: 08:00
+      selector:
+        time: null
+    end_time:
+      name: End Time
+      description: When the zone should end.
+      required: true
+      example: '22:00'
+      selector:
+        time: null
+    zone_name:
+      name: Zone Name
+      description: Select the zone to apply.
+      required: true
+      selector:
+        select:
+          options:
+          - label: Comfort
+            value: Comfort
+          - label: Eco
+            value: Eco
+          - label: Nuit
+            value: Nuit
+          - label: À la maison
+            value: À la maison

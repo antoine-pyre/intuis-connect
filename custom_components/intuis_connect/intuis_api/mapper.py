@@ -53,14 +53,6 @@ def extract_rooms(home: dict[str, Any],
 
         intuis_room.minutes = minutes_counter[room_id]
 
-        # ---- daily kWh ---
-        # cache_key = f"{rid}_{today_iso}"
-        # if cache_key not in energy_cache and now.hour >= 2:
-        #     _LOGGER.debug("Fetching energy data for room %s on %s", rid, today_iso)
-        #     energy_cache[cache_key] = await api.async_get_home_measure(
-        #         rid, today_iso
-        #     )
-        # info.energy = energy_cache.get(cache_key, 0.0)
         _LOGGER.debug("Room %s data compiled: %s", room_id, intuis_room)
 
         data_by_room[room_id] = intuis_room

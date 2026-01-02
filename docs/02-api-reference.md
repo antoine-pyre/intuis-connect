@@ -264,6 +264,44 @@ Fetches energy consumption data.
 - `home_id`: Home identifier
 - `schedule_id`: Schedule identifier
 
+### Sync Home Schedule
+
+**POST** `/api/synchomeschedule`
+
+Creates or updates a schedule. This is the primary endpoint for schedule modifications.
+
+#### Request
+
+```json
+{
+  "home_id": "home_id",
+  "id": "schedule_id",
+  "name": "Planning",
+  "type": "therm",
+  "timetable": [
+    {"zone_id": 1, "m_offset": 0},
+    {"zone_id": 6, "m_offset": 360}
+  ],
+  "zones": [
+    {
+      "id": 1,
+      "name": "Night",
+      "type": 1,
+      "rooms_temp": [{"room_id": "123", "temp": 17}]
+    }
+  ],
+  "away_temp": 12,
+  "hg_temp": 7
+}
+```
+
+**Important**:
+- `m_offset` is minutes from Monday 00:00 (0-10079)
+- Zones must use `rooms_temp` array (not `rooms`)
+- Consecutive timetable entries cannot have the same `zone_id`
+
+See [Schedule Management](07-schedule-management.md) for detailed documentation.
+
 ### Update Schedule
 
 **POST** `https://connect.intuis.net/api/updatenewhomeschedule`
@@ -300,7 +338,10 @@ Fetches energy consumption data.
 
 | Code | Description |
 |------|-------------|
+| 10 | Argument(s) is(are) missing |
 | 21 | Invalid filter/type parameter |
+| 21 | two same consecutive zone_id in timetable |
+| 21 | Cannot mix rooms and rooms_temp in zones |
 | 31 | Device not found in home |
 
 ## Request Headers

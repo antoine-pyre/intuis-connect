@@ -4,7 +4,6 @@ from __future__ import annotations
 import datetime
 import logging
 
-import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -12,32 +11,44 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.storage import Store
 
-from .entity.intuis_home import IntuisHome
 from .intuis_api.api import IntuisAPI, InvalidAuth, CannotConnect
 from .utils.const import (
     DOMAIN,
-    CONF_HOME_ID,
     CONF_REFRESH_TOKEN,
     DEFAULT_UPDATE_INTERVAL,
 )
 from .entity.intuis_entity import IntuisDataUpdateCoordinator
-from .entity.intuis_schedule import IntuisSchedule
 from .intuis_data import IntuisData
+from .services import (
+    async_generate_services_yaml,
+    async_register_services,
+    SERVICE_SWITCH_SCHEDULE,
+    SERVICE_REFRESH_SCHEDULES,
+    SERVICE_SET_SCHEDULE_SLOT,
+    ATTR_SCHEDULE_NAME,
+    ATTR_DAY,
+    ATTR_START_DAY,
+    ATTR_END_DAY,
+    ATTR_START_TIME,
+    ATTR_END_TIME,
+    ATTR_ZONE_NAME,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
+# Storage for persisting overrides across restarts
+STORAGE_VERSION = 1
+STORAGE_KEY = f"{DOMAIN}.overrides"
+
 PLATFORMS: list[Platform] = [
-    # Platform.CALENDAR,
+    Platform.CALENDAR,
     Platform.CLIMATE,
     Platform.BINARY_SENSOR,
     Platform.SENSOR,
+    Platform.SELECT,
 ]
-
-SERVICE_CLEAR_OVERRIDE = "clear_override"
-ATTR_ROOM_ID = "room_id"
-
-CLEAR_OVERRIDE_SCHEMA = vol.Schema({vol.Required(ATTR_ROOM_ID): str})
 
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -75,15 +86,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     intuis_home = await intuis_api.async_get_homes_data()
     _LOGGER.debug("Intuis home: %s", intuis_home.__str__())
 
-    # ---------- shared overrides (sticky intents) ----------------------------------
-    overrides: dict[str, dict] = {}
+    # ---------- generate dynamic services.yaml -------------------------------------
+    await async_generate_services_yaml(hass, intuis_home)
+
+    # ---------- shared overrides (sticky intents) with persistence -----------------
+    # Set up storage for persisting overrides across restarts
+    store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}.{entry.entry_id}")
+
+    # Load persisted overrides
+    stored_data = await store.async_load()
+    overrides: dict[str, dict] = stored_data.get("overrides", {}) if stored_data else {}
+
+    if overrides:
+        _LOGGER.info("Loaded %d persisted overrides from storage", len(overrides))
+
+    # Callback to save overrides to storage
+    async def save_overrides() -> None:
+        """Persist overrides to storage."""
+        await store.async_save({"overrides": overrides})
+        _LOGGER.debug("Saved %d overrides to storage", len(overrides))
 
     # ---------- setup coordinator --------------------------------------------------
     # Callback to get current options from config entry
     def get_options() -> dict:
         return dict(entry.options)
 
-    intuis_data = IntuisData(intuis_api, intuis_home, overrides, get_options)
+    intuis_data = IntuisData(
+        intuis_api,
+        intuis_home,
+        overrides,
+        get_options,
+        save_overrides_callback=save_overrides,
+    )
 
     coordinator: IntuisDataUpdateCoordinator = DataUpdateCoordinator(
         hass,
@@ -101,11 +135,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
         "intuis_home": intuis_home,
         "overrides": overrides,
+        "save_overrides": save_overrides,
     }
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)
 
     # ---------- setup platforms ----------------------------------------------------
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # ---------- register services -------------------------------------------------
+    await async_register_services(hass, entry)
 
     return True
 

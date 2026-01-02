@@ -1,107 +1,142 @@
 {
+  "services": {
+    "switch_schedule": {
+      "name": "Switch Schedule",
+      "description": "Switch to a different heating schedule. The schedule applies to all rooms in the home.",
+      "fields": {
+        "schedule_name": {
+          "name": "Schedule Name",
+          "description": "The name of the schedule to activate."
+        }
+      }
+    },
+    "refresh_schedules": {
+      "name": "Refresh Schedules",
+      "description": "Force a refresh of all schedule and home data from the Intuis API."
+    },
+    "set_schedule_slot": {
+      "name": "Set Schedule Slot",
+      "description": "Set a zone for a specific time range in the active heating schedule. Creates a slot from start_time to end_time with the specified zone.",
+      "fields": {
+        "day": {
+          "name": "Day of Week",
+          "description": "Day of the week for the time slot (0=Monday, 6=Sunday)."
+        },
+        "start_time": {
+          "name": "Start Time",
+          "description": "When the zone should start (HH:MM format, 24-hour)."
+        },
+        "end_time": {
+          "name": "End Time",
+          "description": "When the zone should end and return to the previous zone (HH:MM format, 24-hour)."
+        },
+        "zone_name": {
+          "name": "Zone Name",
+          "description": "The name of the zone (e.g., Night, Day, Eco)."
+        }
+      }
+    }
+  },
   "config": {
     "step": {
       "user": {
-        "title": "Connect to Intuis (Netatmo)",
+        "title": "Connect Your Account",
+        "description": "Enter your Netatmo/Intuis credentials to connect your heating system.",
         "data": {
-          "username": "Email",
+          "username": "Email address",
           "password": "Password"
         }
       },
       "indefinite": {
-        "title": "Temperature Override Mode",
-        "description": "Choose how Home Assistant should handle temperature overrides.\n\n**Important:** The Intuis system has a 12-hour maximum limit for manual temperature changes. After this time, your radiators will automatically return to the programmed schedule.",
+        "title": "Override Behavior",
+        "description": "Choose what happens when temperature overrides expire.",
         "data": {
-          "indefinite_mode": "Enable indefinite override mode"
+          "indefinite_mode": "Keep overrides active indefinitely"
         },
         "data_description": {
-          "indefinite_mode": "When ENABLED: Home Assistant will automatically re-apply your temperature settings before they expire. Your radiators will maintain the temperature you set until you manually change it or switch back to schedule mode.\n\nWhen DISABLED: Temperature overrides will follow Intuis behavior and return to the programmed schedule after the configured duration expires."
+          "indefinite_mode": "**ON**: Temperature changes stay active until you change them again (auto-renewed before the 12-hour hardware limit).\n\n**OFF**: Overrides expire after their set duration and return to schedule."
         }
       },
       "overrides": {
-        "title": "Override Durations & Temperatures",
-        "description": "Configure the durations and temperatures for different override modes. These settings define how long each mode lasts and what temperature to use.",
+        "title": "Temperature & Duration Settings",
+        "description": "Set preset temperatures and how long overrides last.\n\n*Note: The 12-hour maximum for Manual and Boost is a hardware limit.*",
         "data": {
-          "manual_duration": "Manual override duration (minutes)",
-          "away_duration": "Away mode duration (minutes)",
-          "boost_duration": "Boost mode duration (minutes)",
-          "away_temp": "Away mode temperature",
-          "boost_temp": "Boost mode temperature"
+          "away_temp": "Away temperature",
+          "boost_temp": "Boost temperature",
+          "manual_duration": "Manual override duration",
+          "away_duration": "Away mode duration",
+          "boost_duration": "Boost mode duration"
         },
         "data_description": {
-          "manual_duration": "How long a manual temperature change lasts before returning to schedule (if indefinite mode is disabled).",
-          "away_duration": "How long the away mode preset lasts.",
-          "boost_duration": "How long the boost mode preset lasts.",
-          "away_temp": "Target temperature when away mode is activated.",
-          "boost_temp": "Target temperature when boost mode is activated."
+          "away_temp": "Temperature when Away mode is active (e.g., on vacation).",
+          "boost_temp": "Temperature for Boost mode (quick warm-up).",
+          "manual_duration": "How long manual temperature changes last.",
+          "away_duration": "How long Away mode stays active.",
+          "boost_duration": "How long Boost mode stays active."
         }
       },
       "energy": {
-        "title": "Energy Tracking",
-        "description": "Configure energy consumption tracking. You can optionally import historical data to populate your energy dashboard with past consumption.",
+        "title": "Energy Monitoring",
+        "description": "Configure how energy usage is tracked.",
         "data": {
-          "energy_scale": "Energy update frequency",
-          "import_history": "Import historical energy data",
-          "history_days": "Days of history to import"
+          "energy_scale": "Update frequency"
         },
         "data_description": {
-          "energy_scale": "How often to update energy consumption. Real-time options (5min, 30min, 1hour) fetch on every update. Daily fetches once per day.",
-          "import_history": "Import past energy consumption data when the integration starts. This populates your energy dashboard with historical data.",
-          "history_days": "Number of days of historical data to import. Larger values take longer to import."
+          "energy_scale": "How often to update energy consumption data."
         }
       },
       "reauth_confirm": {
-        "title": "Reauthenticate Intuis account",
-        "description": "Credentials expired for {username}. Enter new password."
+        "title": "Re-authenticate Intuis Account",
+        "description": "Session expired for {username}. Please enter your password."
       }
     },
     "error": {
-      "cannot_connect": "Cannot connect to Intuis service.",
-      "invalid_auth": "Invalid email / password.",
-      "unknown": "Unexpected error."
+      "cannot_connect": "Cannot connect to Intuis service. Please check your internet connection.",
+      "invalid_auth": "Invalid email or password.",
+      "unknown": "An unexpected error occurred."
     },
     "abort": {
-      "reauth_successful": "Reauthentication successful."
+      "reauth_successful": "Re-authentication successful."
     }
   },
   "options": {
     "step": {
       "indefinite": {
-        "title": "Temperature Override Mode",
-        "description": "Choose how Home Assistant should handle temperature overrides.\n\n**Important:** The Intuis system has a 12-hour maximum limit for manual temperature changes. After this time, your radiators will automatically return to the programmed schedule.",
+        "title": "Override Behavior",
+        "description": "Choose what happens when temperature overrides expire.",
         "data": {
-          "indefinite_mode": "Enable indefinite override mode"
+          "indefinite_mode": "Keep overrides active indefinitely"
         },
         "data_description": {
-          "indefinite_mode": "When ENABLED: Home Assistant will automatically re-apply your temperature settings before they expire. Your radiators will maintain the temperature you set until you manually change it or switch back to schedule mode.\n\nWhen DISABLED: Temperature overrides will follow Intuis behavior and return to the programmed schedule after the configured duration expires."
+          "indefinite_mode": "**ON**: Temperature changes stay active until you change them again (auto-renewed before the 12-hour hardware limit).\n\n**OFF**: Overrides expire after their set duration and return to schedule."
         }
       },
       "overrides": {
-        "title": "Override Durations & Temperatures",
-        "description": "Configure the durations and temperatures for different override modes. These settings define how long each mode lasts and what temperature to use.",
+        "title": "Temperature & Duration Settings",
+        "description": "Set preset temperatures and how long overrides last.\n\n*Note: The 12-hour maximum for Manual and Boost is a hardware limit.*",
         "data": {
-          "manual_duration": "Manual override duration (minutes)",
-          "away_duration": "Away mode duration (minutes)",
-          "boost_duration": "Boost mode duration (minutes)",
-          "away_temp": "Away mode temperature",
-          "boost_temp": "Boost mode temperature"
+          "away_temp": "Away temperature",
+          "boost_temp": "Boost temperature",
+          "manual_duration": "Manual override duration",
+          "away_duration": "Away mode duration",
+          "boost_duration": "Boost mode duration"
         },
         "data_description": {
-          "manual_duration": "How long a manual temperature change lasts before returning to schedule (if indefinite mode is disabled).",
-          "away_duration": "How long the away mode preset lasts.",
-          "boost_duration": "How long the boost mode preset lasts.",
-          "away_temp": "Target temperature when away mode is activated.",
-          "boost_temp": "Target temperature when boost mode is activated."
+          "away_temp": "Temperature when Away mode is active (e.g., on vacation).",
+          "boost_temp": "Temperature for Boost mode (quick warm-up).",
+          "manual_duration": "How long manual temperature changes last.",
+          "away_duration": "How long Away mode stays active.",
+          "boost_duration": "How long Boost mode stays active."
         }
       },
       "energy": {
-        "title": "Energy Tracking",
-        "description": "Configure energy consumption tracking settings.",
+        "title": "Energy Monitoring",
+        "description": "Configure how energy usage is tracked.",
         "data": {
-          "energy_scale": "Energy update frequency"
+          "energy_scale": "Update frequency"
         },
         "data_description": {
-          "energy_scale": "How often to update energy consumption. Real-time options (5min, 30min, 1hour) fetch on every update. Daily fetches once per day."
+          "energy_scale": "How often to update energy consumption data."
         }
       }
     }
