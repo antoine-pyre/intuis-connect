@@ -1,99 +1,80 @@
-clear_override:
-  name: Clear override / resume schedule
-  description: >
-    Cancels any manual or boost set-point for a specific room and returns the
-    radiator to its scheduled mode.
-  target:
-    entity:
-      domain: climate
-  fields:
-    room_id:
-      required: true
-      example: room_123456
-      selector:
-        text:
-      description: >
-        The integer/string room ID. You can find it in the entity_id of your
-        climate device (e.g. climate.room_123456).
-
 switch_schedule:
   name: Switch Schedule
-  description: >
-    Switch to a different heating schedule. The schedule applies to all rooms
-    in the home.
+  description: Switch to a different heating schedule. The schedule applies to all
+    rooms in the home.
   fields:
-    schedule_id:
-      name: Schedule ID
-      description: >
-        The ID of the schedule to activate. Can be found in the Schedule Summary
-        sensor attributes under 'available_schedules'.
-      required: false
-      example: "abc123def456"
-      selector:
-        text:
     schedule_name:
       name: Schedule Name
-      description: >
-        Alternative to schedule_id - the name of the schedule to activate.
-        If both are provided, schedule_id takes precedence.
-      required: false
-      example: "Work Week"
+      description: Select the schedule to activate.
+      required: true
       selector:
-        text:
-
+        select:
+          options:
+          - label: Planning
+            value: Planning
+          - label: 'Rouge '
+            value: 'Rouge '
 refresh_schedules:
   name: Refresh Schedules
-  description: >
-    Force a refresh of all schedule and home data from the Intuis API.
-
+  description: Force a refresh of all schedule and home data from the Intuis API.
 set_schedule_slot:
   name: Set Schedule Slot
-  description: >
-    Set a zone (e.g., Night, Day, Eco) for a specific time slot in the active
-    heating schedule. The change is synced to the Intuis API immediately.
+  description: Set a zone for a specific time range in the active heating schedule.
+    Creates a slot from start_time to end_time with the specified zone.
   fields:
     day:
       name: Day of Week
-      description: >
-        Day of the week as a number: 0=Monday, 1=Tuesday, 2=Wednesday,
-        3=Thursday, 4=Friday, 5=Saturday, 6=Sunday.
+      description: Select the day of the week.
       required: true
-      example: 0
       selector:
-        number:
-          min: 0
-          max: 6
-          step: 1
-          mode: slider
+        select:
+          options:
+          - label: Lundi
+            value: '0'
+          - label: Mardi
+            value: '1'
+          - label: Mercredi
+            value: '2'
+          - label: Jeudi
+            value: '3'
+          - label: Vendredi
+            value: '4'
+          - label: Samedi
+            value: '5'
+          - label: Dimanche
+            value: '6'
     start_time:
       name: Start Time
-      description: >
-        The start time for this zone in HH:MM format (24-hour). For example,
-        "08:00" for 8 AM or "22:00" for 10 PM.
+      description: When the zone should start (24-hour format).
       required: true
-      example: "08:00"
+      example: 08:00
       selector:
-        time:
-    zone_id:
-      name: Zone ID
-      description: >
-        The numeric ID of the zone to set. Available zone IDs can be found in
-        the Schedule Summary sensor attributes under 'zones'.
-      required: false
-      example: 1
+        time: null
+    end_time:
+      name: End Time
+      description: When the zone should end.
+      required: true
+      example: '22:00'
       selector:
-        number:
-          min: 0
-          max: 10
-          step: 1
-          mode: box
+        time: null
     zone_name:
       name: Zone Name
-      description: >
-        Alternative to zone_id - the name of the zone (e.g., "Night", "Jour",
-        "Eco"). Case-insensitive matching. If both zone_id and zone_name are
-        provided, zone_id takes precedence.
-      required: false
-      example: "Jour"
+      description: Select the zone to apply.
+      required: true
       selector:
-        text:
+        select:
+          options:
+          - label: Eco
+            value: Eco
+          - label: Comfort+
+            value: Comfort+
+          - label: Night
+            value: Night
+          - label: Jour rouge
+            value: Jour rouge
+          - label: Nuit rouge
+            value: Nuit rouge
+          - label: Douche
+            value: Douche
+          - label: Jour
+            value: Jour

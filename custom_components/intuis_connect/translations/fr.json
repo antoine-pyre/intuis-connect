@@ -1,4 +1,42 @@
 {
+  "services": {
+    "switch_schedule": {
+      "name": "Changer de programme",
+      "description": "Passe a un autre programme de chauffage. Le programme s'applique a toutes les pieces de la maison.",
+      "fields": {
+        "schedule_name": {
+          "name": "Nom du programme",
+          "description": "Le nom du programme a activer."
+        }
+      }
+    },
+    "refresh_schedules": {
+      "name": "Rafraichir les programmes",
+      "description": "Force la mise a jour de toutes les donnees de programme et de la maison depuis l'API Intuis."
+    },
+    "set_schedule_slot": {
+      "name": "Definir un creneau horaire",
+      "description": "Definit une zone pour une plage horaire dans le programme de chauffage actif. Cree un creneau de l'heure de debut a l'heure de fin avec la zone specifiee.",
+      "fields": {
+        "day": {
+          "name": "Jour de la semaine",
+          "description": "Jour de la semaine pour le creneau horaire (0=Lundi, 6=Dimanche)."
+        },
+        "start_time": {
+          "name": "Heure de debut",
+          "description": "Quand la zone doit commencer (format HH:MM, 24 heures)."
+        },
+        "end_time": {
+          "name": "Heure de fin",
+          "description": "Quand la zone doit se terminer et revenir a la zone precedente (format HH:MM, 24 heures)."
+        },
+        "zone_name": {
+          "name": "Nom de la zone",
+          "description": "Le nom de la zone (ex: Nuit, Jour, Eco)."
+        }
+      }
+    }
+  },
   "config": {
     "step": {
       "user": {

@@ -3,13 +3,23 @@ from __future__ import annotations
 
 import datetime
 import logging
+import os
+from pathlib import Path
 
 import voluptuous as vol
+import yaml
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+    TimeSelector,
+    TimeSelectorConfig,
+)
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
@@ -43,30 +53,197 @@ SERVICE_SET_SCHEDULE_SLOT = "set_schedule_slot"
 
 # Service attributes
 ATTR_ROOM_ID = "room_id"
-ATTR_SCHEDULE_ID = "schedule_id"
 ATTR_SCHEDULE_NAME = "schedule_name"
 ATTR_DAY = "day"
 ATTR_START_TIME = "start_time"
-ATTR_ZONE_ID = "zone_id"
+ATTR_END_TIME = "end_time"
 ATTR_ZONE_NAME = "zone_name"
 
-# Service schemas
+# Base service schemas (dynamic schemas are built in _async_register_services)
 CLEAR_OVERRIDE_SCHEMA = vol.Schema({vol.Required(ATTR_ROOM_ID): str})
-SWITCH_SCHEDULE_SCHEMA = vol.Schema({
-    vol.Optional(ATTR_SCHEDULE_ID): str,
-    vol.Optional(ATTR_SCHEDULE_NAME): str,
-})
 REFRESH_SCHEDULES_SCHEMA = vol.Schema({})
-SET_SCHEDULE_SLOT_SCHEMA = vol.Schema({
-    vol.Required(ATTR_DAY): vol.All(vol.Coerce(int), vol.Range(min=0, max=6)),
-    vol.Required(ATTR_START_TIME): str,  # HH:MM format
-    vol.Optional(ATTR_ZONE_ID): vol.Coerce(int),
-    vol.Optional(ATTR_ZONE_NAME): str,
-})
+
+
+# ---------- Helper functions for timetable manipulation -----------------------
+
+def _find_zone_at_offset(timetable: list[dict], m_offset: int) -> int:
+    """Find which zone is active at a given m_offset.
+
+    Looks backwards through sorted timetable to find the most recent zone.
+    If no entry found before the offset, uses the last zone of the week (wraps around).
+    """
+    if not timetable:
+        return 0  # Default fallback
+
+    sorted_tt = sorted(timetable, key=lambda x: x["m_offset"])
+
+    # Default to last zone (for wrap-around from end of week)
+    result_zone = sorted_tt[-1]["zone_id"]
+
+    for entry in sorted_tt:
+        if entry["m_offset"] <= m_offset:
+            result_zone = entry["zone_id"]
+        else:
+            break
+
+    return result_zone
+
+
+def _upsert_timetable_entry(timetable: list[dict], m_offset: int, zone_id: int) -> None:
+    """Update existing entry or insert new one at m_offset."""
+    for entry in timetable:
+        if entry["m_offset"] == m_offset:
+            entry["zone_id"] = zone_id
+            return
+    timetable.append({"zone_id": zone_id, "m_offset": m_offset})
+
+
+def _remove_consecutive_duplicates(timetable: list[dict]) -> list[dict]:
+    """Remove consecutive entries with the same zone_id (API requirement)."""
+    if not timetable:
+        return []
+
+    sorted_tt = sorted(timetable, key=lambda x: x["m_offset"])
+    result = [sorted_tt[0]]
+
+    for entry in sorted_tt[1:]:
+        if entry["zone_id"] != result[-1]["zone_id"]:
+            result.append(entry)
+        else:
+            _LOGGER.debug(
+                "Removing duplicate zone_id %d at m_offset %d",
+                entry["zone_id"],
+                entry["m_offset"],
+            )
+
+    return result
 
 # Day constants for readability
 DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+DAYS_OF_WEEK_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
 MINUTES_PER_DAY = 1440
+
+
+async def _async_generate_services_yaml(hass: HomeAssistant, intuis_home: IntuisHome) -> None:
+    """Generate services.yaml with dynamic options from API data.
+
+    This allows the Home Assistant UI to show dropdown lists populated
+    with actual schedule and zone names from the user's Intuis account.
+    """
+    # Collect schedule names
+    schedule_names: list[str] = []
+    zone_names: list[str] = []
+
+    for schedule in intuis_home.schedules:
+        if isinstance(schedule, IntuisThermSchedule):
+            schedule_names.append(schedule.name)
+            if schedule.selected:
+                # Get zones from active schedule
+                for zone in schedule.zones:
+                    if isinstance(zone, IntuisThermZone):
+                        zone_names.append(zone.name)
+
+    # Build day options with French labels
+    day_options = [
+        {"label": day_fr, "value": str(i)}
+        for i, day_fr in enumerate(DAYS_OF_WEEK_FR)
+    ]
+
+    # Build schedule options
+    schedule_options = [{"label": name, "value": name} for name in schedule_names]
+    if not schedule_options:
+        schedule_options = [{"label": "No schedules found", "value": ""}]
+
+    # Build zone options
+    zone_options = [{"label": name, "value": name} for name in zone_names]
+    if not zone_options:
+        zone_options = [{"label": "No zones found", "value": ""}]
+
+    # Build services.yaml content
+    services_config = {
+        "switch_schedule": {
+            "name": "Switch Schedule",
+            "description": "Switch to a different heating schedule. The schedule applies to all rooms in the home.",
+            "fields": {
+                "schedule_name": {
+                    "name": "Schedule Name",
+                    "description": "Select the schedule to activate.",
+                    "required": True,
+                    "selector": {
+                        "select": {
+                            "options": schedule_options,
+                        }
+                    }
+                }
+            }
+        },
+        "refresh_schedules": {
+            "name": "Refresh Schedules",
+            "description": "Force a refresh of all schedule and home data from the Intuis API.",
+        },
+        "set_schedule_slot": {
+            "name": "Set Schedule Slot",
+            "description": "Set a zone for a specific time range in the active heating schedule. Creates a slot from start_time to end_time with the specified zone.",
+            "fields": {
+                "day": {
+                    "name": "Day of Week",
+                    "description": "Select the day of the week.",
+                    "required": True,
+                    "selector": {
+                        "select": {
+                            "options": day_options,
+                        }
+                    }
+                },
+                "start_time": {
+                    "name": "Start Time",
+                    "description": "When the zone should start (24-hour format).",
+                    "required": True,
+                    "example": "08:00",
+                    "selector": {
+                        "time": None
+                    }
+                },
+                "end_time": {
+                    "name": "End Time",
+                    "description": "When the zone should end.",
+                    "required": True,
+                    "example": "22:00",
+                    "selector": {
+                        "time": None
+                    }
+                },
+                "zone_name": {
+                    "name": "Zone Name",
+                    "description": "Select the zone to apply.",
+                    "required": True,
+                    "selector": {
+                        "select": {
+                            "options": zone_options,
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    # Write to services.yaml using async I/O
+    services_yaml_path = Path(__file__).parent / "services.yaml"
+    yaml_content = yaml.dump(services_config, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    def write_file():
+        with open(services_yaml_path, "w", encoding="utf-8") as f:
+            f.write(yaml_content)
+
+    try:
+        await hass.async_add_executor_job(write_file)
+        _LOGGER.info(
+            "Generated services.yaml with %d schedules and %d zones",
+            len(schedule_names),
+            len(zone_names),
+        )
+    except Exception as err:
+        _LOGGER.error("Failed to generate services.yaml: %s", err)
 
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -103,6 +280,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     intuis_home = await intuis_api.async_get_homes_data()
     _LOGGER.debug("Intuis home: %s", intuis_home.__str__())
+
+    # ---------- generate dynamic services.yaml -------------------------------------
+    await _async_generate_services_yaml(hass, intuis_home)
 
     # ---------- shared overrides (sticky intents) ----------------------------------
     overrides: dict[str, dict] = {}
@@ -147,11 +327,10 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
 
     async def async_handle_switch_schedule(call: ServiceCall) -> None:
         """Handle switch_schedule service call."""
-        schedule_id = call.data.get(ATTR_SCHEDULE_ID)
         schedule_name = call.data.get(ATTR_SCHEDULE_NAME)
 
-        if not schedule_id and not schedule_name:
-            _LOGGER.error("Either schedule_id or schedule_name must be provided")
+        if not schedule_name:
+            _LOGGER.error("schedule_name must be provided")
             return
 
         # Get the first (and usually only) config entry
@@ -166,22 +345,21 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
             if not api or not intuis_home:
                 continue
 
-            # Find the schedule by ID or name
+            # Find the schedule by name
             target_schedule = None
+            available_schedules = []
             for schedule in intuis_home.schedules:
                 if isinstance(schedule, IntuisThermSchedule):
-                    if schedule_id and schedule.id == schedule_id:
-                        target_schedule = schedule
-                        break
-                    if schedule_name and schedule.name == schedule_name:
+                    available_schedules.append(schedule.name)
+                    if schedule.name == schedule_name:
                         target_schedule = schedule
                         break
 
             if not target_schedule:
                 _LOGGER.error(
-                    "Schedule not found: id=%s, name=%s",
-                    schedule_id,
-                    schedule_name
+                    "Schedule not found: %s. Available schedules: %s",
+                    schedule_name,
+                    available_schedules
                 )
                 return
 
@@ -221,28 +399,72 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
     async def async_handle_set_schedule_slot(call: ServiceCall) -> None:
         """Handle set_schedule_slot service call.
 
-        Sets a zone for a specific time slot in the active schedule.
+        Sets a zone for a specific time range in the active schedule.
+        Creates two timetable entries: one at start_time with the target zone,
+        and one at end_time to restore the previous zone.
         """
-        day = call.data.get(ATTR_DAY)
+        day_str = call.data.get(ATTR_DAY)
         start_time = call.data.get(ATTR_START_TIME)
-        zone_id = call.data.get(ATTR_ZONE_ID)
+        end_time = call.data.get(ATTR_END_TIME)
         zone_name = call.data.get(ATTR_ZONE_NAME)
 
-        if zone_id is None and zone_name is None:
-            _LOGGER.error("Either zone_id or zone_name must be provided")
+        if not zone_name:
+            _LOGGER.error("zone_name must be provided")
             return
 
-        # Parse start_time (HH:MM format)
+        # Convert day from string to int (SelectSelector returns strings)
         try:
-            hours, minutes = map(int, start_time.split(":"))
-            if not (0 <= hours <= 23 and 0 <= minutes <= 59):
-                raise ValueError("Invalid time")
-        except (ValueError, AttributeError):
-            _LOGGER.error("Invalid start_time format: %s (expected HH:MM)", start_time)
+            day = int(day_str)
+            if not (0 <= day <= 6):
+                raise ValueError("Day must be between 0 and 6")
+        except (ValueError, TypeError):
+            _LOGGER.error("Invalid day value: %s (expected 0-6)", day_str)
             return
 
-        # Calculate m_offset (minutes from Monday 00:00)
-        m_offset = day * MINUTES_PER_DAY + hours * 60 + minutes
+        # Parse start_time (TimeSelector returns HH:MM:SS string or dict)
+        try:
+            if isinstance(start_time, dict):
+                start_hours = start_time.get("hours", 0)
+                start_minutes = start_time.get("minutes", 0)
+            else:
+                # Handle HH:MM or HH:MM:SS format
+                parts = str(start_time).split(":")
+                start_hours = int(parts[0])
+                start_minutes = int(parts[1]) if len(parts) > 1 else 0
+            if not (0 <= start_hours <= 23 and 0 <= start_minutes <= 59):
+                raise ValueError("Invalid start time")
+        except (ValueError, AttributeError, TypeError) as e:
+            _LOGGER.error("Invalid start_time format: %s (%s)", start_time, e)
+            return
+
+        # Parse end_time (TimeSelector returns HH:MM:SS string or dict)
+        try:
+            if isinstance(end_time, dict):
+                end_hours = end_time.get("hours", 0)
+                end_minutes = end_time.get("minutes", 0)
+            else:
+                # Handle HH:MM or HH:MM:SS format
+                parts = str(end_time).split(":")
+                end_hours = int(parts[0])
+                end_minutes = int(parts[1]) if len(parts) > 1 else 0
+            if not (0 <= end_hours <= 23 and 0 <= end_minutes <= 59):
+                raise ValueError("Invalid end time")
+        except (ValueError, AttributeError, TypeError) as e:
+            _LOGGER.error("Invalid end_time format: %s (%s)", end_time, e)
+            return
+
+        # Calculate m_offsets (minutes from Monday 00:00)
+        start_m_offset = day * MINUTES_PER_DAY + start_hours * 60 + start_minutes
+        end_m_offset = day * MINUTES_PER_DAY + end_hours * 60 + end_minutes
+
+        # Validate that end_time is after start_time
+        if end_m_offset <= start_m_offset:
+            _LOGGER.error(
+                "end_time (%s) must be after start_time (%s) on the same day",
+                end_time,
+                start_time,
+            )
+            return
 
         for entry_id, data in hass.data[DOMAIN].items():
             if not isinstance(data, dict):
@@ -266,70 +488,55 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
                 _LOGGER.error("No active therm schedule found")
                 return
 
-            # Find the target zone
+            # Find the target zone by name
             target_zone = None
+            available_zones = []
             for zone in active_schedule.zones:
                 if isinstance(zone, IntuisThermZone):
-                    if zone_id is not None and zone.id == zone_id:
-                        target_zone = zone
-                        break
-                    if zone_name is not None and zone.name.lower() == zone_name.lower():
+                    available_zones.append(zone.name)
+                    if zone.name.lower() == zone_name.lower():
                         target_zone = zone
                         break
 
             if not target_zone:
                 _LOGGER.error(
-                    "Zone not found: id=%s, name=%s. Available zones: %s",
-                    zone_id,
+                    "Zone not found: %s. Available zones: %s",
                     zone_name,
-                    [(z.id, z.name) for z in active_schedule.zones if isinstance(z, IntuisThermZone)],
+                    available_zones,
                 )
                 return
 
             _LOGGER.info(
-                "Setting zone '%s' (ID: %d) at %s %s (m_offset: %d)",
+                "Setting zone '%s' (ID: %d) on %s from %s to %s",
                 target_zone.name,
                 target_zone.id,
                 DAYS_OF_WEEK[day],
                 start_time,
-                m_offset,
+                end_time,
             )
 
             # Build updated timetable
-            # Find if there's an existing entry at this m_offset
             timetable = [
                 {"zone_id": t.zone_id, "m_offset": t.m_offset}
                 for t in active_schedule.timetables
             ]
 
-            # Update or insert the entry
-            entry_found = False
-            for entry in timetable:
-                if entry["m_offset"] == m_offset:
-                    entry["zone_id"] = target_zone.id
-                    entry_found = True
-                    break
+            # Find which zone was active before start_time (to restore at end_time)
+            restore_zone_id = _find_zone_at_offset(timetable, start_m_offset)
 
-            if not entry_found:
-                timetable.append({"zone_id": target_zone.id, "m_offset": m_offset})
+            # Insert/update start entry with target zone
+            _upsert_timetable_entry(timetable, start_m_offset, target_zone.id)
 
-            # Sort timetable by m_offset
-            timetable.sort(key=lambda x: x["m_offset"])
+            # Insert/update end entry to restore previous zone
+            _upsert_timetable_entry(timetable, end_m_offset, restore_zone_id)
 
-            # Remove consecutive duplicate zones (API rejects these)
-            cleaned_timetable = []
-            prev_zone_id = None
-            for entry in timetable:
-                if entry["zone_id"] != prev_zone_id:
-                    cleaned_timetable.append(entry)
-                    prev_zone_id = entry["zone_id"]
-                else:
-                    _LOGGER.debug(
-                        "Skipping duplicate zone_id %d at m_offset %d",
-                        entry["zone_id"],
-                        entry["m_offset"],
-                    )
-            timetable = cleaned_timetable
+            # Sort and remove consecutive duplicates (API requirement)
+            timetable = _remove_consecutive_duplicates(timetable)
+
+            _LOGGER.debug(
+                "Timetable after update: %s",
+                [(t["m_offset"], t["zone_id"]) for t in timetable],
+            )
 
             # Build zones payload (only rooms_temp, not rooms - API requirement)
             zones_payload = []
@@ -376,13 +583,76 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
 
             break
 
-    # Only register services once
+    # Build dynamic options from coordinator data
+    intuis_home: IntuisHome = hass.data[DOMAIN][entry.entry_id].get("intuis_home")
+
+    schedule_options: list[dict] = []
+    zone_options: list[dict] = []
+
+    if intuis_home:
+        for schedule in intuis_home.schedules:
+            if isinstance(schedule, IntuisThermSchedule):
+                schedule_options.append({
+                    "value": schedule.name,
+                    "label": schedule.name,
+                })
+                if schedule.selected:
+                    # Get zones from active schedule
+                    for zone in schedule.zones:
+                        if isinstance(zone, IntuisThermZone):
+                            zone_options.append({
+                                "value": zone.name,
+                                "label": zone.name,
+                            })
+
+    _LOGGER.debug("Dynamic schedule options: %s", schedule_options)
+    _LOGGER.debug("Dynamic zone options: %s", zone_options)
+
+    # Day options with French labels
+    day_options = [
+        {"value": "0", "label": "Lundi"},
+        {"value": "1", "label": "Mardi"},
+        {"value": "2", "label": "Mercredi"},
+        {"value": "3", "label": "Jeudi"},
+        {"value": "4", "label": "Vendredi"},
+        {"value": "5", "label": "Samedi"},
+        {"value": "6", "label": "Dimanche"},
+    ]
+
+    # Build dynamic schemas with SelectSelector for proper dropdown UI
+    switch_schedule_schema = vol.Schema({
+        vol.Required(ATTR_SCHEDULE_NAME): SelectSelector(
+            SelectSelectorConfig(
+                options=schedule_options if schedule_options else [{"value": "", "label": "No schedules found"}],
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        ),
+    })
+
+    set_schedule_slot_schema = vol.Schema({
+        vol.Required(ATTR_DAY): SelectSelector(
+            SelectSelectorConfig(
+                options=day_options,
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        ),
+        vol.Required(ATTR_START_TIME): TimeSelector(TimeSelectorConfig()),
+        vol.Required(ATTR_END_TIME): TimeSelector(TimeSelectorConfig()),
+        vol.Required(ATTR_ZONE_NAME): SelectSelector(
+            SelectSelectorConfig(
+                options=zone_options if zone_options else [{"value": "", "label": "No zones found"}],
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        ),
+    })
+
+    # Register services (only once)
     if not hass.services.has_service(DOMAIN, SERVICE_SWITCH_SCHEDULE):
         hass.services.async_register(
             DOMAIN,
             SERVICE_SWITCH_SCHEDULE,
             async_handle_switch_schedule,
-            schema=SWITCH_SCHEDULE_SCHEMA,
+            schema=switch_schedule_schema,
         )
 
     if not hass.services.has_service(DOMAIN, SERVICE_REFRESH_SCHEDULES):
@@ -398,7 +668,7 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
             DOMAIN,
             SERVICE_SET_SCHEDULE_SLOT,
             async_handle_set_schedule_slot,
-            schema=SET_SCHEDULE_SLOT_SCHEMA,
+            schema=set_schedule_slot_schema,
         )
 
 
