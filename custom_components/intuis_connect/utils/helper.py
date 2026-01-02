@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Tuple
 
 from aiohttp import ClientSession
 from homeassistant.config_entries import ConfigEntry
@@ -18,7 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_validate_api(
         username: str, password: str, session: ClientSession
-) -> Tuple[str, IntuisAPI]:
+) -> tuple[str, IntuisAPI]:
     """Validate the API and return the home ID and API instance."""
     api = IntuisAPI(session)
     try:
@@ -81,7 +80,7 @@ def get_home_id(hass: HomeAssistant, entry: ConfigEntry) -> str:
     return get_api(hass, entry).home_id
 
 
-def get_basic_utils(hass: HomeAssistant, entry: ConfigEntry) -> Tuple[
+def get_basic_utils(hass: HomeAssistant, entry: ConfigEntry) -> tuple[
     IntuisDataUpdateCoordinator, str, dict[str, IntuisRoom], IntuisAPI]:
     """Get basic utilities from the Home Assistant instance."""
     coordinator = get_coordinator(hass, entry)

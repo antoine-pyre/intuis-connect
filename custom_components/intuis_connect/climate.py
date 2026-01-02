@@ -62,7 +62,8 @@ class IntuisConnectClimate(
         self._home_id = home_id
         self._api = api
         self._entry_id = entry_id
-        self._attr_assumed_state = True
+        # We have real state from the coordinator, not assumed state
+        self._attr_assumed_state = False
         self._attr_hvac_mode: HVACMode | None = None
         self._attr_preset_mode: str | None = None
         self._attr_target_temperature: float | None = None

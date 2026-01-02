@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import Any
-import time
 
 from .entity.intuis_home import IntuisHome
 from .entity.intuis_home_config import IntuisHomeConfig
@@ -43,8 +44,8 @@ class IntuisData:
         api: IntuisAPI,
         intuis_home: IntuisHome,
         overrides: dict[str, dict] | None = None,
-        get_options: callable = None,
-        save_overrides_callback: callable = None,
+        get_options: Callable[[], dict[str, Any]] | None = None,
+        save_overrides_callback: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """Initialize the data handler."""
         self._api = api
@@ -72,10 +73,19 @@ class IntuisData:
 
         _LOGGER.debug("Starting data update at %s", now)
 
-        home = await self._api.async_get_home_status()
-        modules = extract_modules(home)
-        data_by_room = extract_rooms(home, modules, self._minutes_counter, self._intuis_home.rooms,
-                                     self._last_update_timestamp)
+        try:
+            home = await self._api.async_get_home_status()
+        except Exception as err:
+            _LOGGER.error("Failed to fetch home status from API: %s", err)
+            raise
+
+        try:
+            modules = extract_modules(home)
+            data_by_room = extract_rooms(home, modules, self._minutes_counter, self._intuis_home.rooms,
+                                         self._last_update_timestamp)
+        except (KeyError, TypeError, ValueError) as err:
+            _LOGGER.error("Failed to parse home data: %s", err)
+            raise
 
         # Get current options
         options = self._get_options()

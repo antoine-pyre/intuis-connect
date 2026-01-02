@@ -253,3 +253,86 @@ def event_loop_policy():
     """Use default event loop policy."""
     import asyncio
     return asyncio.DefaultEventLoopPolicy()
+
+
+# ---------------------------------------------------------------------------
+# Mock Home Assistant (for climate tests)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def mock_hass():
+    """Mock Home Assistant instance with data storage."""
+    hass = MagicMock()
+    hass.data = {}
+    hass.config_entries = MagicMock()
+    hass.async_create_task = MagicMock()
+    return hass
+
+
+@pytest.fixture
+def mock_config_entry(default_options):
+    """Mock ConfigEntry with options."""
+    entry = MagicMock()
+    entry.entry_id = "test_entry_123"
+    entry.options = default_options
+    return entry
+
+
+@pytest.fixture
+def mock_coordinator(sample_room_data):
+    """Mock DataUpdateCoordinator with room data."""
+    coordinator = MagicMock()
+    coordinator.data = {
+        "id": "home_123",
+        "home_id": "home_123",
+        "rooms": sample_room_data,
+        "modules": {},
+        "schedules": [],
+    }
+    coordinator.async_request_refresh = AsyncMock()
+    coordinator.last_update_success = True
+    return coordinator
+
+
+@pytest.fixture
+def climate_entity_factory(mock_hass, mock_coordinator, mock_api, mock_config_entry, mock_save_overrides, sample_room):
+    """Factory to create IntuisConnectClimate instances for testing."""
+    from custom_components.intuis_connect.climate import IntuisConnectClimate
+    from custom_components.intuis_connect.utils.const import DOMAIN
+
+    def _factory(
+        room=None,
+        options: dict | None = None,
+        overrides: dict | None = None,
+    ):
+        # Setup hass.data
+        entry_id = mock_config_entry.entry_id
+        mock_hass.data[DOMAIN] = {
+            entry_id: {
+                "coordinator": mock_coordinator,
+                "api": mock_api,
+                "overrides": overrides if overrides is not None else {},
+                "save_overrides": mock_save_overrides,
+            }
+        }
+
+        # Update config entry options if provided
+        if options:
+            mock_config_entry.options = options
+
+        mock_hass.config_entries.async_get_entry = MagicMock(return_value=mock_config_entry)
+
+        # Create entity
+        entity = IntuisConnectClimate(
+            coordinator=mock_coordinator,
+            home_id="home_123",
+            room=room or sample_room,
+            api=mock_api,
+            entry_id=entry_id,
+        )
+        entity.hass = mock_hass
+        entity.async_write_ha_state = MagicMock()
+
+        return entity
+
+    return _factory

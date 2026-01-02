@@ -5,6 +5,7 @@ import logging
 import time
 from datetime import datetime, timezone
 
+import homeassistant.util.dt as dt_util
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfTemperature, UnitOfEnergy
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -13,6 +14,7 @@ from .entity.intuis_entity import IntuisEntity
 from .entity.intuis_home_entity import provide_home_sensors
 from .entity.intuis_room import IntuisRoom
 from .entity.intuis_schedule import IntuisThermSchedule, IntuisThermZone
+from .timetable import MINUTES_PER_DAY
 from .utils.const import DOMAIN
 from .utils.helper import get_basic_utils
 
@@ -210,7 +212,7 @@ class IntuisEnergySensor(IntuisSensor):
             return self._daily_max_energy
 
         current_energy = self._room.energy or 0.0
-        now = datetime.now()
+        now = dt_util.now()
 
         # Reset daily max on new day
         if self._last_reset_date is None or self._last_reset_date.date() != now.date():
@@ -299,12 +301,12 @@ class IntuisScheduledTempSensor(IntuisSensor):
             return None
 
         # Calculate current minute offset in the week
-        # m_offset: 0 = Monday 00:00, 1440 = Tuesday 00:00, etc.
-        now = datetime.now()
+        # m_offset: 0 = Monday 00:00, MINUTES_PER_DAY = Tuesday 00:00, etc.
+        now = dt_util.now()
         # Python weekday: Monday = 0, Sunday = 6
         day_of_week = now.weekday()
         minutes_today = now.hour * 60 + now.minute
-        current_offset = day_of_week * 1440 + minutes_today
+        current_offset = day_of_week * MINUTES_PER_DAY + minutes_today
 
         # Find the active zone for this time
         active_zone_id = None
