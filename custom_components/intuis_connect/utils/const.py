@@ -10,11 +10,11 @@ CONF_HOME_ID = "home_id"
 DEFAULT_UPDATE_INTERVAL = 2 # minutes
 
 # Default override / preset settings (editable in Options flow later)
-DEFAULT_MANUAL_DURATION = 5  # minutes
-DEFAULT_AWAY_DURATION = 1440  # minutes
+DEFAULT_MANUAL_DURATION = 60  # minutes (1 hour)
+DEFAULT_AWAY_DURATION = 240  # minutes (4 hours)
 DEFAULT_BOOST_DURATION = 30  # minutes
 DEFAULT_AWAY_TEMP = 16.0  # °C
-DEFAULT_BOOST_TEMP = 30.0  # °C
+DEFAULT_BOOST_TEMP = 22.0  # °C
 
 # API clusters
 BASE_URLS: list[str] = [
@@ -40,6 +40,7 @@ GET_SCHEDULE_PATH = "/gethomeschedule"
 SET_SCHEDULE_PATH = "/updatenewhomeschedule"
 DELETE_SCHEDULE_PATH = "/deletenewhomeschedule"
 SWITCH_SCHEDULE_PATH = "/switchhomeschedule"
+SYNCHOMESCHEDULE_PATH = "/api/synchomeschedule"
 
 # Legacy full URLs so imports keep working
 AUTH_URL = f"{BASE_URL}{AUTH_PATH}"
@@ -71,6 +72,31 @@ CONF_BOOST_TEMP = "boost_temp"
 CONF_INDEFINITE_MODE = "indefinite_mode"
 DEFAULT_INDEFINITE_MODE = False
 
+# Duration options for dropdown selectors (value in minutes, label for display)
+# 12-hour max is a hardware limit for manual/boost modes
+DURATION_OPTIONS_SHORT = [
+    {"value": "15", "label": "15 minutes"},
+    {"value": "30", "label": "30 minutes"},
+    {"value": "60", "label": "1 hour"},
+    {"value": "120", "label": "2 hours"},
+    {"value": "240", "label": "4 hours"},
+    {"value": "360", "label": "6 hours"},
+    {"value": "480", "label": "8 hours"},
+    {"value": "720", "label": "12 hours (max)"},
+]
+
+# Away mode allows longer durations
+DURATION_OPTIONS_LONG = [
+    {"value": "60", "label": "1 hour"},
+    {"value": "120", "label": "2 hours"},
+    {"value": "240", "label": "4 hours"},
+    {"value": "480", "label": "8 hours"},
+    {"value": "720", "label": "12 hours"},
+    {"value": "1440", "label": "1 day"},
+    {"value": "4320", "label": "3 days"},
+    {"value": "10080", "label": "1 week"},
+]
+
 # Energy scale options
 CONF_ENERGY_SCALE = "energy_scale"
 DEFAULT_ENERGY_SCALE = "1day"
@@ -79,18 +105,6 @@ ENERGY_SCALE_OPTIONS = {
     "30min": "30 minutes",
     "1hour": "1 hour",
     "1day": "1 day (daily total)",
-}
-
-# Historical import options
-CONF_IMPORT_HISTORY = "import_history"
-CONF_HISTORY_DAYS = "history_days"
-DEFAULT_IMPORT_HISTORY = False
-DEFAULT_HISTORY_DAYS = 30
-HISTORY_DAYS_OPTIONS = {
-    "7": "7 days",
-    "30": "30 days",
-    "90": "90 days",
-    "365": "1 year",
 }
 
 # API modes

@@ -62,14 +62,20 @@ class IntuisConnectClimate(
         self._home_id = home_id
         self._api = api
         self._entry_id = entry_id
-        self._attr_assumed_state = True
+        # We have real state from the coordinator, not assumed state
+        self._attr_assumed_state = False
         self._attr_hvac_mode: HVACMode | None = None
         self._attr_preset_mode: str | None = None
         self._attr_target_temperature: float | None = None
 
     def _get_overrides(self) -> dict[str, dict]:
         data = self.hass.data.get(DOMAIN, {}).get(self._entry_id, {})
-        return data.setdefault("overrides", {})
+        return data.get("overrides", {})
+
+    def _get_save_overrides(self):
+        """Get the save_overrides callback."""
+        data = self.hass.data.get(DOMAIN, {}).get(self._entry_id, {})
+        return data.get("save_overrides")
 
     def _get_option(self, key: str, default: Any) -> Any:
         """Get an option value from the config entry."""
@@ -148,14 +154,20 @@ class IntuisConnectClimate(
         await self._api.async_set_room_state(
             room_id, API_MODE_MANUAL, float(temp), manual_duration
         )
-        end_ts = int(time.time()) + manual_duration * 60
+        now_ts = int(time.time())
+        end_ts = now_ts + manual_duration * 60
         overrides = self._get_overrides()
         overrides[room_id] = {
             "mode": API_MODE_MANUAL,
             "temp": float(temp),
             "end": end_ts,
             "sticky": True,
+            "last_reapply": now_ts,
         }
+        # Persist overrides to storage
+        save_overrides = self._get_save_overrides()
+        if save_overrides:
+            await save_overrides()
         self._schedule_end_refresh(end_ts)
         self._attr_target_temperature = temp
         self._attr_hvac_mode = HVACMode.HEAT
@@ -167,13 +179,19 @@ class IntuisConnectClimate(
         """Set new hvac mode."""
         room_id = self._get_room().id
         overrides = self._get_overrides()
+        overrides_changed = False
+
         if hvac_mode == HVACMode.OFF:
             await self._api.async_set_room_state(room_id, API_MODE_OFF)
-            overrides.pop(room_id, None)
+            if room_id in overrides:
+                overrides.pop(room_id, None)
+                overrides_changed = True
             self._attr_preset_mode = None
         elif hvac_mode == HVACMode.AUTO:
             await self._api.async_set_room_state(room_id, API_MODE_HOME)
-            overrides.pop(room_id, None)
+            if room_id in overrides:
+                overrides.pop(room_id, None)
+                overrides_changed = True
             self._attr_preset_mode = PRESET_SCHEDULE
         elif hvac_mode == HVACMode.HEAT:
             temp = float(self.target_temperature or 20.0)
@@ -181,15 +199,25 @@ class IntuisConnectClimate(
             await self._api.async_set_room_state(
                 room_id, API_MODE_MANUAL, temp, manual_duration
             )
-            end_ts = int(time.time()) + manual_duration * 60
+            now_ts = int(time.time())
+            end_ts = now_ts + manual_duration * 60
             overrides[room_id] = {
                 "mode": API_MODE_MANUAL,
                 "temp": temp,
                 "end": end_ts,
                 "sticky": True,
+                "last_reapply": now_ts,
             }
+            overrides_changed = True
             self._schedule_end_refresh(end_ts)
             self._attr_preset_mode = None
+
+        # Persist overrides to storage
+        if overrides_changed:
+            save_overrides = self._get_save_overrides()
+            if save_overrides:
+                await save_overrides()
+
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
 
@@ -197,10 +225,14 @@ class IntuisConnectClimate(
         """Set new preset mode."""
         room_id = self._get_room().id
         overrides = self._get_overrides()
+        overrides_changed = False
+
         if preset_mode == PRESET_SCHEDULE:
             await self._api.async_set_room_state(room_id, API_MODE_HOME)
             self._attr_hvac_mode = HVACMode.AUTO
-            overrides.pop(room_id, None)
+            if room_id in overrides:
+                overrides.pop(room_id, None)
+                overrides_changed = True
         elif preset_mode == PRESET_AWAY:
             away_temp = self._get_option(CONF_AWAY_TEMP, DEFAULT_AWAY_TEMP)
             away_duration = self._get_option(CONF_AWAY_DURATION, DEFAULT_AWAY_DURATION)
@@ -211,13 +243,16 @@ class IntuisConnectClimate(
                 away_duration,
             )
             self._attr_hvac_mode = HVACMode.HEAT
-            end_ts = int(time.time()) + away_duration * 60
+            now_ts = int(time.time())
+            end_ts = now_ts + away_duration * 60
             overrides[room_id] = {
                 "mode": API_MODE_AWAY,
                 "temp": float(away_temp),
                 "end": end_ts,
                 "sticky": True,
+                "last_reapply": now_ts,
             }
+            overrides_changed = True
             self._schedule_end_refresh(end_ts)
         elif preset_mode == PRESET_BOOST:
             boost_temp = self._get_option(CONF_BOOST_TEMP, DEFAULT_BOOST_TEMP)
@@ -229,14 +264,24 @@ class IntuisConnectClimate(
                 boost_duration,
             )
             self._attr_hvac_mode = HVACMode.HEAT
-            end_ts = int(time.time()) + boost_duration * 60
+            now_ts = int(time.time())
+            end_ts = now_ts + boost_duration * 60
             overrides[room_id] = {
                 "mode": API_MODE_BOOST,
                 "temp": float(boost_temp),
                 "end": end_ts,
                 "sticky": True,
+                "last_reapply": now_ts,
             }
+            overrides_changed = True
             self._schedule_end_refresh(end_ts)
+
+        # Persist overrides to storage
+        if overrides_changed:
+            save_overrides = self._get_save_overrides()
+            if save_overrides:
+                await save_overrides()
+
         self._attr_preset_mode = preset_mode
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()

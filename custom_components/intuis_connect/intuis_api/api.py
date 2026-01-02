@@ -30,6 +30,7 @@ from ..utils.const import (
     SET_SCHEDULE_PATH,
     DELETE_SCHEDULE_PATH,
     SWITCH_SCHEDULE_PATH,
+    SYNCHOMESCHEDULE_PATH,
     CONFIG_PATH,
 )
 
@@ -537,3 +538,83 @@ class IntuisAPI:
         async with self._session.post(url, json=payload, timeout=10) as resp:
             if resp.status not in (200, 204):
                 raise APIError(f"switch_schedule failed (HTTP {resp.status})")
+
+    async def async_sync_schedule(
+        self,
+        schedule_id: str,
+        schedule_name: str,
+        schedule_type: str,
+        timetable: list[dict[str, int]],
+        zones: list[dict[str, Any]],
+        away_temp: int | None = None,
+        hg_temp: int | None = None,
+    ) -> None:
+        """Sync a schedule to the API (create/update).
+
+        This uses the synchomeschedule endpoint which requires a specific format:
+        - home_id at root level
+        - schedule fields (id, name, type) at root level
+        - timetable: list of {zone_id, m_offset} entries
+        - zones: list with only rooms_temp (not rooms) to avoid API error
+
+        Args:
+            schedule_id: The schedule ID.
+            schedule_name: The schedule name.
+            schedule_type: The schedule type ('therm' or 'electricity').
+            timetable: List of timetable entries [{zone_id: int, m_offset: int}, ...].
+            zones: List of zone dicts with only rooms_temp field.
+            away_temp: Away temperature (for therm schedules).
+            hg_temp: Frost protection temperature (for therm schedules).
+        """
+        if self._debug:
+            _LOGGER.debug(
+                "Syncing schedule %s (%s) with %d timetable entries and %d zones",
+                schedule_name,
+                schedule_id,
+                len(timetable),
+                len(zones),
+            )
+
+        # Build payload in the required format
+        payload: dict[str, Any] = {
+            "home_id": self.home_id,
+            "id": schedule_id,
+            "name": schedule_name,
+            "type": schedule_type,
+            "timetable": timetable,
+            "zones": zones,
+        }
+
+        # Add therm-specific fields
+        if schedule_type == "therm":
+            if away_temp is not None:
+                payload["away_temp"] = away_temp
+            if hg_temp is not None:
+                payload["hg_temp"] = hg_temp
+
+        # Make direct request to handle error responses properly
+        await self._ensure_token()
+        headers = {
+            "Authorization": f"Bearer {self._access_token}",
+            "Content-Type": "application/json",
+        }
+        url = f"{self._base_url}{SYNCHOMESCHEDULE_PATH}"
+
+        _LOGGER.debug("Sync schedule payload: %s", payload)
+
+        async with self._session.post(url, json=payload, headers=headers, timeout=20) as resp:
+            result = await resp.json()
+            _LOGGER.debug("Sync schedule response (status=%s): %s", resp.status, result)
+
+            # Check for API error in response body
+            if "error" in result:
+                error = result["error"]
+                raise APIError(
+                    f"sync_schedule failed: {error.get('message', 'Unknown error')} "
+                    f"(code: {error.get('code')})"
+                )
+
+            if resp.status not in (200, 204):
+                raise APIError(f"sync_schedule failed with status {resp.status}: {result}")
+
+        _LOGGER.info("Schedule %s synced successfully", schedule_name)

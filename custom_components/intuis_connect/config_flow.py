@@ -36,8 +36,6 @@ from .utils.const import (
     CONF_BOOST_TEMP,
     CONF_INDEFINITE_MODE,
     CONF_ENERGY_SCALE,
-    CONF_IMPORT_HISTORY,
-    CONF_HISTORY_DAYS,
     DEFAULT_MANUAL_DURATION,
     DEFAULT_AWAY_DURATION,
     DEFAULT_BOOST_DURATION,
@@ -45,10 +43,9 @@ from .utils.const import (
     DEFAULT_BOOST_TEMP,
     DEFAULT_INDEFINITE_MODE,
     DEFAULT_ENERGY_SCALE,
-    DEFAULT_IMPORT_HISTORY,
-    DEFAULT_HISTORY_DAYS,
     ENERGY_SCALE_OPTIONS,
-    HISTORY_DAYS_OPTIONS,
+    DURATION_OPTIONS_SHORT,
+    DURATION_OPTIONS_LONG,
 )
 from .utils.helper import async_validate_api
 
@@ -133,29 +130,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Step 3: Configure override durations and temperatures."""
         if user_input is not None:
+            # Convert duration strings back to integers for storage
+            user_input[CONF_MANUAL_DURATION] = int(user_input[CONF_MANUAL_DURATION])
+            user_input[CONF_AWAY_DURATION] = int(user_input[CONF_AWAY_DURATION])
+            user_input[CONF_BOOST_DURATION] = int(user_input[CONF_BOOST_DURATION])
             self._override_options.update(user_input)
             return await self.async_step_energy()
 
         options_schema = vol.Schema(
             {
-                vol.Optional(
-                    CONF_MANUAL_DURATION,
-                    default=DEFAULT_MANUAL_DURATION,
-                ): NumberSelector(
-                    NumberSelectorConfig(min=1, max=720, step=1, mode=NumberSelectorMode.BOX)
-                ),
-                vol.Optional(
-                    CONF_AWAY_DURATION,
-                    default=DEFAULT_AWAY_DURATION,
-                ): NumberSelector(
-                    NumberSelectorConfig(min=1, max=10080, step=1, mode=NumberSelectorMode.BOX)
-                ),
-                vol.Optional(
-                    CONF_BOOST_DURATION,
-                    default=DEFAULT_BOOST_DURATION,
-                ): NumberSelector(
-                    NumberSelectorConfig(min=1, max=720, step=1, mode=NumberSelectorMode.BOX)
-                ),
                 vol.Optional(
                     CONF_AWAY_TEMP,
                     default=DEFAULT_AWAY_TEMP,
@@ -168,6 +151,24 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ): NumberSelector(
                     NumberSelectorConfig(min=5.0, max=30.0, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")
                 ),
+                vol.Optional(
+                    CONF_MANUAL_DURATION,
+                    default=str(DEFAULT_MANUAL_DURATION),
+                ): SelectSelector(
+                    SelectSelectorConfig(options=DURATION_OPTIONS_SHORT, mode=SelectSelectorMode.DROPDOWN)
+                ),
+                vol.Optional(
+                    CONF_AWAY_DURATION,
+                    default=str(DEFAULT_AWAY_DURATION),
+                ): SelectSelector(
+                    SelectSelectorConfig(options=DURATION_OPTIONS_LONG, mode=SelectSelectorMode.DROPDOWN)
+                ),
+                vol.Optional(
+                    CONF_BOOST_DURATION,
+                    default=str(DEFAULT_BOOST_DURATION),
+                ): SelectSelector(
+                    SelectSelectorConfig(options=DURATION_OPTIONS_SHORT, mode=SelectSelectorMode.DROPDOWN)
+                ),
             }
         )
         return self.async_show_form(
@@ -178,14 +179,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_energy(
             self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Step 3: Configure energy settings and history import."""
+        """Step 4: Configure energy settings."""
         if user_input is not None:
             # Combine all options
             all_options = {
                 **self._override_options,
                 CONF_ENERGY_SCALE: user_input.get(CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE),
-                CONF_IMPORT_HISTORY: user_input.get(CONF_IMPORT_HISTORY, DEFAULT_IMPORT_HISTORY),
-                CONF_HISTORY_DAYS: int(user_input.get(CONF_HISTORY_DAYS, DEFAULT_HISTORY_DAYS)),
             }
 
             return self.async_create_entry(
@@ -203,11 +202,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             {"value": key, "label": label}
             for key, label in ENERGY_SCALE_OPTIONS.items()
         ]
-        # Build select options for history days
-        history_options = [
-            {"value": key, "label": label}
-            for key, label in HISTORY_DAYS_OPTIONS.items()
-        ]
 
         options_schema = vol.Schema(
             {
@@ -216,16 +210,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     default=DEFAULT_ENERGY_SCALE,
                 ): SelectSelector(
                     SelectSelectorConfig(options=energy_options, mode=SelectSelectorMode.DROPDOWN)
-                ),
-                vol.Optional(
-                    CONF_IMPORT_HISTORY,
-                    default=DEFAULT_IMPORT_HISTORY,
-                ): BooleanSelector(),
-                vol.Optional(
-                    CONF_HISTORY_DAYS,
-                    default=str(DEFAULT_HISTORY_DAYS),
-                ): SelectSelector(
-                    SelectSelectorConfig(options=history_options, mode=SelectSelectorMode.DROPDOWN)
                 ),
             }
         )
@@ -335,35 +319,20 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Step 3: Configure override durations and temperatures."""
         if user_input is not None:
+            # Convert duration strings back to integers for storage
+            user_input[CONF_MANUAL_DURATION] = int(user_input[CONF_MANUAL_DURATION])
+            user_input[CONF_AWAY_DURATION] = int(user_input[CONF_AWAY_DURATION])
+            user_input[CONF_BOOST_DURATION] = int(user_input[CONF_BOOST_DURATION])
             self._override_options.update(user_input)
             return await self.async_step_energy()
 
+        # Get current values (convert to string for dropdown)
+        manual_duration = str(self._entry.options.get(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION))
+        away_duration = str(self._entry.options.get(CONF_AWAY_DURATION, DEFAULT_AWAY_DURATION))
+        boost_duration = str(self._entry.options.get(CONF_BOOST_DURATION, DEFAULT_BOOST_DURATION))
+
         options_schema = vol.Schema(
             {
-                vol.Optional(
-                    CONF_MANUAL_DURATION,
-                    default=self._entry.options.get(
-                        CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION
-                    ),
-                ): NumberSelector(
-                    NumberSelectorConfig(min=1, max=720, step=1, mode=NumberSelectorMode.BOX)
-                ),
-                vol.Optional(
-                    CONF_AWAY_DURATION,
-                    default=self._entry.options.get(
-                        CONF_AWAY_DURATION, DEFAULT_AWAY_DURATION
-                    ),
-                ): NumberSelector(
-                    NumberSelectorConfig(min=1, max=10080, step=1, mode=NumberSelectorMode.BOX)
-                ),
-                vol.Optional(
-                    CONF_BOOST_DURATION,
-                    default=self._entry.options.get(
-                        CONF_BOOST_DURATION, DEFAULT_BOOST_DURATION
-                    ),
-                ): NumberSelector(
-                    NumberSelectorConfig(min=1, max=720, step=1, mode=NumberSelectorMode.BOX)
-                ),
                 vol.Optional(
                     CONF_AWAY_TEMP,
                     default=self._entry.options.get(
@@ -379,6 +348,24 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
                     ),
                 ): NumberSelector(
                     NumberSelectorConfig(min=5.0, max=30.0, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")
+                ),
+                vol.Optional(
+                    CONF_MANUAL_DURATION,
+                    default=manual_duration,
+                ): SelectSelector(
+                    SelectSelectorConfig(options=DURATION_OPTIONS_SHORT, mode=SelectSelectorMode.DROPDOWN)
+                ),
+                vol.Optional(
+                    CONF_AWAY_DURATION,
+                    default=away_duration,
+                ): SelectSelector(
+                    SelectSelectorConfig(options=DURATION_OPTIONS_LONG, mode=SelectSelectorMode.DROPDOWN)
+                ),
+                vol.Optional(
+                    CONF_BOOST_DURATION,
+                    default=boost_duration,
+                ): SelectSelector(
+                    SelectSelectorConfig(options=DURATION_OPTIONS_SHORT, mode=SelectSelectorMode.DROPDOWN)
                 ),
             }
         )

@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 
+import homeassistant.util.dt as dt_util
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfTemperature, UnitOfEnergy
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -11,6 +13,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .entity.intuis_entity import IntuisEntity
 from .entity.intuis_home_entity import provide_home_sensors
 from .entity.intuis_room import IntuisRoom
+from .entity.intuis_schedule import IntuisThermSchedule, IntuisThermZone
+from .timetable import MINUTES_PER_DAY
 from .utils.const import DOMAIN
 from .utils.helper import get_basic_utils
 
@@ -20,6 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up Intuis Connect sensors from a config entry."""
     coordinator, home_id, rooms, api = get_basic_utils(hass, entry)
+    intuis_home = hass.data[DOMAIN][entry.entry_id].get("intuis_home")
 
     entities: list[IntuisSensor] = []
     for room_id in rooms:
@@ -30,8 +35,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
         entities.append(IntuisEnergySensor(coordinator, home_id, room))
         entities.append(IntuisMinutesSensor(coordinator, home_id, room))
         entities.append(IntuisSetpointEndTimeSensor(coordinator, home_id, room))
+        entities.append(IntuisScheduledTempSensor(coordinator, home_id, room, intuis_home))
 
-    entities += provide_home_sensors(coordinator, home_id)
+    entities += provide_home_sensors(coordinator, home_id, intuis_home)
     async_add_entities(entities, update_before_add=True)
 
 
@@ -81,6 +87,7 @@ class IntuisMullerTypeSensor(IntuisSensor):
         )
         self._attr_icon = "mdi:device-hub"
         self._attr_available = False
+        self._attr_entity_registry_enabled_default = False
 
     @property
     def native_value(self) -> str:
@@ -107,6 +114,7 @@ class IntuisTargetTemperatureSensor(IntuisSensor):
             None,
         )
         self._attr_icon = "mdi:thermometer"
+        self._attr_entity_registry_enabled_default = False
 
     @property
     def native_value(self) -> float:
@@ -163,6 +171,7 @@ class IntuisMinutesSensor(IntuisSensor):
         self._attr_device_class = SensorDeviceClass.DURATION
         # treat it like a measurement (so it will chart properly)
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_registry_enabled_default = False
 
     @property
     def native_value(self) -> int:
@@ -206,7 +215,7 @@ class IntuisEnergySensor(IntuisSensor):
             return self._daily_max_energy
 
         current_energy = self._room.energy or 0.0
-        now = datetime.now()
+        now = dt_util.now()
 
         # Reset daily max on new day
         if self._last_reset_date is None or self._last_reset_date.date() != now.date():
@@ -242,6 +251,7 @@ class IntuisSetpointEndTimeSensor(IntuisSensor):
             device_class=SensorDeviceClass.TIMESTAMP,
         )
         self._attr_icon = "mdi:timer-sand"
+        self._attr_entity_registry_enabled_default = False
 
     @property
     def native_value(self) -> datetime | None:
@@ -255,3 +265,107 @@ class IntuisSetpointEndTimeSensor(IntuisSensor):
             return datetime.fromtimestamp(end_ts, tz=timezone.utc)
         except (ValueError, OSError):
             return None
+
+
+class IntuisScheduledTempSensor(IntuisSensor):
+    """Sensor showing the currently scheduled temperature for a room.
+
+    This shows what temperature the room SHOULD be at according to the
+    active schedule, regardless of any manual overrides.
+    """
+
+    def __init__(self, coordinator, home_id: str, room: IntuisRoom, intuis_home) -> None:
+        """Initialize the scheduled temperature sensor."""
+        super().__init__(
+            coordinator,
+            home_id,
+            room,
+            "scheduled_temp",
+            "Scheduled Temperature",
+            UnitOfTemperature.CELSIUS,
+            None,
+        )
+        self._intuis_home = intuis_home
+        self._attr_icon = "mdi:calendar-clock"
+        self._attr_entity_registry_enabled_default = False
+
+    def _get_current_zone(self) -> IntuisThermZone | None:
+        """Get the currently active zone based on the time of day."""
+        # Get the active schedule
+        intuis_home = self.coordinator.data.get("intuis_home") or self._intuis_home
+        if not intuis_home or not intuis_home.schedules:
+            return None
+
+        active_schedule = None
+        for schedule in intuis_home.schedules:
+            if isinstance(schedule, IntuisThermSchedule) and schedule.selected:
+                active_schedule = schedule
+                break
+
+        if not active_schedule:
+            return None
+
+        # Calculate current minute offset in the week
+        # m_offset: 0 = Monday 00:00, MINUTES_PER_DAY = Tuesday 00:00, etc.
+        now = dt_util.now()
+        # Python weekday: Monday = 0, Sunday = 6
+        day_of_week = now.weekday()
+        minutes_today = now.hour * 60 + now.minute
+        current_offset = day_of_week * MINUTES_PER_DAY + minutes_today
+
+        # Find the active zone for this time
+        active_zone_id = None
+        for timetable in active_schedule.timetables:
+            if timetable.m_offset <= current_offset:
+                active_zone_id = timetable.zone_id
+
+        if active_zone_id is None:
+            return None
+
+        # Find the zone object
+        for zone in active_schedule.zones:
+            if isinstance(zone, IntuisThermZone) and zone.id == active_zone_id:
+                return zone
+
+        return None
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the currently scheduled temperature for this room."""
+        zone = self._get_current_zone()
+        if not zone:
+            return None
+
+        # Find this room's temperature in the zone
+        room_id = self._room.id if self._room else None
+        if not room_id:
+            return None
+
+        for room_config in zone.rooms:
+            if room_config.id == room_id:
+                if room_config.therm_setpoint_temperature is not None:
+                    return float(room_config.therm_setpoint_temperature)
+                # If using preset mode, we can't determine exact temperature
+                return None
+
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        zone = self._get_current_zone()
+        attrs = {}
+
+        if zone:
+            attrs["zone_id"] = zone.id
+            attrs["zone_name"] = zone.name
+            attrs["zone_type"] = zone.type
+
+            # Find room preset if any
+            room_id = self._room.id if self._room else None
+            if room_id:
+                for room_config in zone.rooms:
+                    if room_config.id == room_id and room_config.therm_setpoint_fp:
+                        attrs["preset_mode"] = room_config.therm_setpoint_fp
+
+        return attrs
