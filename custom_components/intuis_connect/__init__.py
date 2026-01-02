@@ -54,7 +54,9 @@ SERVICE_SET_SCHEDULE_SLOT = "set_schedule_slot"
 # Service attributes
 ATTR_ROOM_ID = "room_id"
 ATTR_SCHEDULE_NAME = "schedule_name"
-ATTR_DAY = "day"
+ATTR_DAY = "day"  # Legacy, kept for backward compatibility
+ATTR_START_DAY = "start_day"
+ATTR_END_DAY = "end_day"
 ATTR_START_TIME = "start_time"
 ATTR_END_TIME = "end_time"
 ATTR_ZONE_NAME = "zone_name"
@@ -130,18 +132,40 @@ async def _async_generate_services_yaml(hass: HomeAssistant, intuis_home: Intuis
     This allows the Home Assistant UI to show dropdown lists populated
     with actual schedule and zone names from the user's Intuis account.
     """
-    # Collect schedule names
+    # Collect schedule names (only home-level schedules with zones and timetables)
     schedule_names: list[str] = []
     zone_names: list[str] = []
 
+    # Log all schedules for debugging
+    _LOGGER.info("=== All schedules from API ===")
     for schedule in intuis_home.schedules:
         if isinstance(schedule, IntuisThermSchedule):
-            schedule_names.append(schedule.name)
-            if schedule.selected:
-                # Get zones from active schedule
-                for zone in schedule.zones:
-                    if isinstance(zone, IntuisThermZone):
-                        zone_names.append(zone.name)
+            zone_count = len(schedule.zones) if schedule.zones else 0
+            timetable_count = len(schedule.timetables) if schedule.timetables else 0
+            # Count total rooms_temp across all zones
+            rooms_temp_count = sum(
+                len(z.rooms_temp) for z in schedule.zones
+                if isinstance(z, IntuisThermZone) and z.rooms_temp
+            ) if schedule.zones else 0
+            _LOGGER.info(
+                "Schedule: '%s' (ID: %s) - zones: %d, timetables: %d, rooms_temp: %d, selected: %s, default: %s",
+                schedule.name, schedule.id, zone_count, timetable_count, rooms_temp_count,
+                schedule.selected, schedule.default
+            )
+
+    for schedule in intuis_home.schedules:
+        if isinstance(schedule, IntuisThermSchedule):
+            # Only include schedules that have zones defined (home-level schedules)
+            has_zones = schedule.zones and len(schedule.zones) > 0
+            has_timetables = schedule.timetables and len(schedule.timetables) > 0
+
+            if has_zones and has_timetables:
+                schedule_names.append(schedule.name)
+                if schedule.selected:
+                    # Get zones from active schedule
+                    for zone in schedule.zones:
+                        if isinstance(zone, IntuisThermZone):
+                            zone_names.append(zone.name)
 
     # Build day options with French labels
     day_options = [
@@ -400,10 +424,13 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
         """Handle set_schedule_slot service call.
 
         Sets a zone for a specific time range in the active schedule.
+        Supports multi-day spans with start_day and end_day parameters.
         Creates two timetable entries: one at start_time with the target zone,
         and one at end_time to restore the previous zone.
         """
-        day_str = call.data.get(ATTR_DAY)
+        # Support both legacy 'day' and new 'start_day'/'end_day' parameters
+        start_day_str = call.data.get(ATTR_START_DAY) or call.data.get(ATTR_DAY)
+        end_day_str = call.data.get(ATTR_END_DAY) or call.data.get(ATTR_DAY)
         start_time = call.data.get(ATTR_START_TIME)
         end_time = call.data.get(ATTR_END_TIME)
         zone_name = call.data.get(ATTR_ZONE_NAME)
@@ -412,13 +439,22 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
             _LOGGER.error("zone_name must be provided")
             return
 
-        # Convert day from string to int (SelectSelector returns strings)
+        # Convert start_day from string to int
         try:
-            day = int(day_str)
-            if not (0 <= day <= 6):
-                raise ValueError("Day must be between 0 and 6")
+            start_day = int(start_day_str)
+            if not (0 <= start_day <= 6):
+                raise ValueError("start_day must be between 0 and 6")
         except (ValueError, TypeError):
-            _LOGGER.error("Invalid day value: %s (expected 0-6)", day_str)
+            _LOGGER.error("Invalid start_day value: %s (expected 0-6)", start_day_str)
+            return
+
+        # Convert end_day from string to int
+        try:
+            end_day = int(end_day_str)
+            if not (0 <= end_day <= 6):
+                raise ValueError("end_day must be between 0 and 6")
+        except (ValueError, TypeError):
+            _LOGGER.error("Invalid end_day value: %s (expected 0-6)", end_day_str)
             return
 
         # Parse start_time (TimeSelector returns HH:MM:SS string or dict)
@@ -438,6 +474,7 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
             return
 
         # Parse end_time (TimeSelector returns HH:MM:SS string or dict)
+        # Special case: 00:00 means end of day (midnight)
         try:
             if isinstance(end_time, dict):
                 end_hours = end_time.get("hours", 0)
@@ -454,11 +491,21 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
             return
 
         # Calculate m_offsets (minutes from Monday 00:00)
-        start_m_offset = day * MINUTES_PER_DAY + start_hours * 60 + start_minutes
-        end_m_offset = day * MINUTES_PER_DAY + end_hours * 60 + end_minutes
+        start_m_offset = start_day * MINUTES_PER_DAY + start_hours * 60 + start_minutes
 
-        # Validate that end_time is after start_time
-        if end_m_offset <= start_m_offset:
+        # For end offset: if end_time is 00:00, it means end of end_day (next day's 00:00)
+        if end_hours == 0 and end_minutes == 0:
+            # End at midnight = start of next day
+            end_m_offset = ((end_day + 1) % 7) * MINUTES_PER_DAY
+            # Handle week wrap: if end_day is Sunday (6), next day offset wraps to Monday (0)
+            if end_day == 6:
+                end_m_offset = 7 * MINUTES_PER_DAY  # Use 10080 for Sunday midnight
+        else:
+            end_m_offset = end_day * MINUTES_PER_DAY + end_hours * 60 + end_minutes
+
+        # Validate that end is after start (considering week wrap)
+        # For multi-day spans, end_m_offset might be less if wrapping around the week
+        if start_day == end_day and end_m_offset <= start_m_offset:
             _LOGGER.error(
                 "end_time (%s) must be after start_time (%s) on the same day",
                 end_time,
@@ -506,14 +553,25 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
                 )
                 return
 
-            _LOGGER.info(
-                "Setting zone '%s' (ID: %d) on %s from %s to %s",
-                target_zone.name,
-                target_zone.id,
-                DAYS_OF_WEEK[day],
-                start_time,
-                end_time,
-            )
+            if start_day == end_day:
+                _LOGGER.info(
+                    "Setting zone '%s' (ID: %d) on %s from %s to %s",
+                    target_zone.name,
+                    target_zone.id,
+                    DAYS_OF_WEEK[start_day],
+                    start_time,
+                    end_time,
+                )
+            else:
+                _LOGGER.info(
+                    "Setting zone '%s' (ID: %d) from %s %s to %s %s",
+                    target_zone.name,
+                    target_zone.id,
+                    DAYS_OF_WEEK[start_day],
+                    start_time,
+                    DAYS_OF_WEEK[end_day],
+                    end_time,
+                )
 
             # Build updated timetable
             timetable = [
@@ -630,13 +688,19 @@ async def _async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> N
     })
 
     set_schedule_slot_schema = vol.Schema({
-        vol.Required(ATTR_DAY): SelectSelector(
+        vol.Required(ATTR_START_DAY): SelectSelector(
             SelectSelectorConfig(
                 options=day_options,
                 mode=SelectSelectorMode.DROPDOWN,
             )
         ),
         vol.Required(ATTR_START_TIME): TimeSelector(TimeSelectorConfig()),
+        vol.Required(ATTR_END_DAY): SelectSelector(
+            SelectSelectorConfig(
+                options=day_options,
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        ),
         vol.Required(ATTR_END_TIME): TimeSelector(TimeSelectorConfig()),
         vol.Required(ATTR_ZONE_NAME): SelectSelector(
             SelectSelectorConfig(

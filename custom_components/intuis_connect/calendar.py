@@ -26,16 +26,6 @@ MINUTES_IN_DAY = 24 * 60  # 1440
 MINUTES_IN_WEEK = 7 * MINUTES_IN_DAY  # 10080
 
 
-def _get_active_schedule(intuis_home: IntuisHome) -> IntuisThermSchedule | None:
-    """Get the currently active thermostat schedule."""
-    if not intuis_home or not intuis_home.schedules:
-        return None
-    for schedule in intuis_home.schedules:
-        if isinstance(schedule, IntuisThermSchedule) and schedule.selected:
-            return schedule
-    return None
-
-
 def _minute_offset_to_datetime(m_offset: int, week_start: datetime) -> datetime:
     """Convert a minute offset to a datetime within the given week."""
     return week_start + timedelta(minutes=m_offset)
@@ -52,7 +42,7 @@ def _get_zone_by_id(schedule: IntuisThermSchedule, zone_id: int) -> IntuisThermZ
 class IntuisScheduleCalendar(
     CoordinatorEntity[IntuisDataUpdateCoordinator], CalendarEntity
 ):
-    """Expose the home's weekly schedule as a Calendar."""
+    """Expose a specific schedule as a Calendar."""
 
     _attr_has_entity_name = True
 
@@ -62,17 +52,20 @@ class IntuisScheduleCalendar(
             api: IntuisAPI,
             home_id: str,
             intuis_home: IntuisHome,
+            schedule: IntuisThermSchedule,
     ) -> None:
-        """Initialize the calendar entity."""
+        """Initialize the calendar entity for a specific schedule."""
         CoordinatorEntity.__init__(self, coordinator)
         CalendarEntity.__init__(self)
 
         self._api = api
         self._home_id = home_id
         self._intuis_home = intuis_home
+        self._schedule_id = schedule.id
+        self._schedule_name = schedule.name or f"Schedule {schedule.id}"
 
-        self._attr_name = "Heating Schedule"
-        self._attr_unique_id = f"intuis_{home_id}_schedule_calendar"
+        self._attr_name = f"Schedule {self._schedule_name}"
+        self._attr_unique_id = f"intuis_{home_id}_schedule_{schedule.id}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{home_id}_home")},
             name="Intuis Home",
@@ -83,6 +76,29 @@ class IntuisScheduleCalendar(
     def _get_home(self) -> IntuisHome:
         """Get the home data from coordinator."""
         return self.coordinator.data.get("intuis_home") or self._intuis_home
+
+    def _get_schedule(self) -> IntuisThermSchedule | None:
+        """Get the schedule this calendar represents."""
+        home = self._get_home()
+        if not home or not home.schedules:
+            return None
+        for schedule in home.schedules:
+            if isinstance(schedule, IntuisThermSchedule) and schedule.id == self._schedule_id:
+                return schedule
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        schedule = self._get_schedule()
+        if schedule:
+            return {
+                "schedule_id": schedule.id,
+                "schedule_name": schedule.name,
+                "is_active": schedule.selected,
+                "zones": [z.name for z in schedule.zones if isinstance(z, IntuisThermZone)],
+            }
+        return {}
 
     def _get_week_start(self, reference: datetime) -> datetime:
         """Get the Monday 00:00 of the week containing the reference date."""
@@ -95,8 +111,7 @@ class IntuisScheduleCalendar(
         """Build calendar events for a specific week based on the schedule timetables."""
         events: list[CalendarEvent] = []
 
-        home = self._get_home()
-        schedule = _get_active_schedule(home)
+        schedule = self._get_schedule()
         if not schedule or not schedule.timetables:
             return events
 
@@ -196,15 +211,30 @@ async def async_setup_entry(
     api: IntuisAPI = data["api"]
     intuis_home: IntuisHome = data["intuis_home"]
 
-    # Only create calendar if there are thermostat schedules
-    has_therm_schedules = any(
-        isinstance(s, IntuisThermSchedule) for s in intuis_home.schedules
-    )
-
+    # Create one calendar entity per home-level thermostat schedule
+    # Filter out room-specific schedules by checking for zones and timetables
     entities = []
-    if has_therm_schedules:
-        entities.append(
-            IntuisScheduleCalendar(coordinator, api, intuis_home.id, intuis_home)
-        )
+    for schedule in intuis_home.schedules:
+        if isinstance(schedule, IntuisThermSchedule):
+            # Only include schedules that have zones defined (home-level schedules)
+            has_zones = schedule.zones and len(schedule.zones) > 0
+            has_timetables = schedule.timetables and len(schedule.timetables) > 0
+
+            if has_zones and has_timetables:
+                _LOGGER.debug(
+                    "Creating calendar for schedule: %s (ID: %s, zones: %d)",
+                    schedule.name, schedule.id, len(schedule.zones)
+                )
+                entities.append(
+                    IntuisScheduleCalendar(coordinator, api, intuis_home.id, intuis_home, schedule)
+                )
+            else:
+                _LOGGER.debug(
+                    "Skipping calendar for schedule %s - no zones or timetables",
+                    schedule.name
+                )
+
+    if entities:
+        _LOGGER.info("Created %d schedule calendar entities", len(entities))
 
     async_add_entities(entities, update_before_add=True)
