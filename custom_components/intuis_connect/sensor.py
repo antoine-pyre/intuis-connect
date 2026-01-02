@@ -87,6 +87,7 @@ class IntuisMullerTypeSensor(IntuisSensor):
         )
         self._attr_icon = "mdi:device-hub"
         self._attr_available = False
+        self._attr_entity_registry_enabled_default = False
 
     @property
     def native_value(self) -> str:
@@ -113,6 +114,7 @@ class IntuisTargetTemperatureSensor(IntuisSensor):
             None,
         )
         self._attr_icon = "mdi:thermometer"
+        self._attr_entity_registry_enabled_default = False
 
     @property
     def native_value(self) -> float:
@@ -169,6 +171,7 @@ class IntuisMinutesSensor(IntuisSensor):
         self._attr_device_class = SensorDeviceClass.DURATION
         # treat it like a measurement (so it will chart properly)
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_registry_enabled_default = False
 
     @property
     def native_value(self) -> int:
@@ -248,6 +251,7 @@ class IntuisSetpointEndTimeSensor(IntuisSensor):
             device_class=SensorDeviceClass.TIMESTAMP,
         )
         self._attr_icon = "mdi:timer-sand"
+        self._attr_entity_registry_enabled_default = False
 
     @property
     def native_value(self) -> datetime | None:
@@ -283,6 +287,7 @@ class IntuisScheduledTempSensor(IntuisSensor):
         )
         self._intuis_home = intuis_home
         self._attr_icon = "mdi:calendar-clock"
+        self._attr_entity_registry_enabled_default = False
 
     def _get_current_zone(self) -> IntuisThermZone | None:
         """Get the currently active zone based on the time of day."""

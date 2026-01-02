@@ -75,9 +75,10 @@ class IntuisScheduleSelect(CoordinatorEntity[IntuisDataUpdateCoordinator], Selec
     def device_info(self) -> DeviceInfo:
         """Return device info for the home."""
         return DeviceInfo(
-            identifiers={(DOMAIN, self._home_id)},
+            identifiers={(DOMAIN, f"{self._home_id}_home")},
             name="Intuis Home",
-            manufacturer="Muller Intuitiv",
+            manufacturer="Muller Intuitiv (Netatmo)",
+            model="Home Controller",
         )
 
     @property
