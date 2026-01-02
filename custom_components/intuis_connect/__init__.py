@@ -29,6 +29,7 @@ from .services import (
     SERVICE_SWITCH_SCHEDULE,
     SERVICE_REFRESH_SCHEDULES,
     SERVICE_SET_SCHEDULE_SLOT,
+    SERVICE_SET_ZONE_TEMPERATURE,
     ATTR_SCHEDULE_NAME,
     ATTR_DAY,
     ATTR_START_DAY,
@@ -36,6 +37,8 @@ from .services import (
     ATTR_START_TIME,
     ATTR_END_TIME,
     ATTR_ZONE_NAME,
+    ATTR_ROOM_NAME,
+    ATTR_TEMPERATURE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,6 +53,7 @@ PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.SENSOR,
     Platform.SELECT,
+    Platform.NUMBER,
 ]
 
 
