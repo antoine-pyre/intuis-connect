@@ -353,7 +353,11 @@ class IntuisNextZoneChangeSensor(CoordinatorEntity[IntuisDataUpdateCoordinator],
 
 
 class IntuisScheduleSummarySensor(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEntity):
-    """Sensor providing a summary of the active schedule."""
+    """Sensor providing a summary of a specific schedule.
+
+    One sensor is created per schedule, allowing users to select which
+    schedule to display in the intuis-schedule-card.
+    """
 
     _attr_icon = "mdi:calendar-week"
     _attr_has_entity_name = True
@@ -362,12 +366,15 @@ class IntuisScheduleSummarySensor(CoordinatorEntity[IntuisDataUpdateCoordinator]
             self,
             coordinator: IntuisDataUpdateCoordinator,
             home_id: str,
+            schedule: IntuisThermSchedule,
     ) -> None:
-        """Initialize the schedule summary sensor."""
+        """Initialize the schedule summary sensor for a specific schedule."""
         super().__init__(coordinator)
         self._home_id = home_id
-        self._attr_name = "Schedule Summary"
-        self._attr_unique_id = f"intuis_{home_id}_schedule_summary"
+        self._schedule_id = schedule.id
+        self._schedule_name = schedule.name or f"Schedule {schedule.id}"
+        self._attr_name = f"Schedule {self._schedule_name}"
+        self._attr_unique_id = f"intuis_{home_id}_schedule_{schedule.id}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{home_id}_home")},
             name="Intuis Home",
@@ -379,24 +386,34 @@ class IntuisScheduleSummarySensor(CoordinatorEntity[IntuisDataUpdateCoordinator]
         """Get the home data from coordinator."""
         return self.coordinator.data.get("intuis_home")
 
+    def _get_schedule(self) -> IntuisThermSchedule | None:
+        """Get the specific schedule this sensor represents."""
+        home = self._get_home()
+        if not home or not home.schedules:
+            return None
+        for schedule in home.schedules:
+            if isinstance(schedule, IntuisThermSchedule) and schedule.id == self._schedule_id:
+                return schedule
+        return None
+
     @property
     def native_value(self) -> str | None:
-        """Return the active schedule name."""
-        home = self._get_home()
-        schedule = _get_active_schedule(home)
-        return schedule.name if schedule else None
+        """Return the schedule name."""
+        schedule = self._get_schedule()
+        return schedule.name if schedule else self._schedule_name
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the full schedule details as attributes."""
         attrs = {}
         home = self._get_home()
-        schedule = _get_active_schedule(home)
+        schedule = self._get_schedule()
         if not schedule:
             return attrs
 
         attrs["schedule_id"] = schedule.id
         attrs["is_default"] = schedule.default
+        attrs["is_active"] = schedule.selected
         attrs["away_temperature"] = schedule.away_temp
         attrs["frost_guard_temperature"] = schedule.hg_temp
 
@@ -439,7 +456,7 @@ class IntuisScheduleSummarySensor(CoordinatorEntity[IntuisDataUpdateCoordinator]
                 weekly_summary[day_name] = day_entries
         attrs["weekly_timetable"] = weekly_summary
 
-        # All available schedules
+        # All available schedules (for switching)
         available_schedules = []
         if home and home.schedules:
             for s in home.schedules:
@@ -457,6 +474,7 @@ class IntuisScheduleSummarySensor(CoordinatorEntity[IntuisDataUpdateCoordinator]
 def provide_home_sensors(
         coordinator: IntuisDataUpdateCoordinator,
         home_id: str,
+        intuis_home: IntuisHome | None = None,
 ) -> list[SensorEntity]:
     """Set up home-level sensor entities."""
 
@@ -489,6 +507,29 @@ def provide_home_sensors(
     # Add schedule-related sensors
     result.append(IntuisCurrentZoneSensor(coordinator, home_id))
     result.append(IntuisNextZoneChangeSensor(coordinator, home_id))
-    result.append(IntuisScheduleSummarySensor(coordinator, home_id))
+
+    # Create one schedule summary sensor per home-level thermostat schedule
+    # Filter out room-specific schedules by checking for zones and timetables
+    if intuis_home and intuis_home.schedules:
+        for schedule in intuis_home.schedules:
+            if isinstance(schedule, IntuisThermSchedule):
+                # Only include schedules that have zones defined (home-level schedules)
+                # Room-specific or backup schedules typically have no zones
+                has_zones = schedule.zones and len(schedule.zones) > 0
+                has_timetables = schedule.timetables and len(schedule.timetables) > 0
+
+                if has_zones and has_timetables:
+                    _LOGGER.debug(
+                        "Creating schedule summary sensor for: %s (ID: %s, zones: %d, timetables: %d)",
+                        schedule.name, schedule.id, len(schedule.zones), len(schedule.timetables)
+                    )
+                    result.append(IntuisScheduleSummarySensor(coordinator, home_id, schedule))
+                else:
+                    _LOGGER.debug(
+                        "Skipping schedule %s (ID: %s) - no zones or timetables (zones: %s, timetables: %s)",
+                        schedule.name, schedule.id,
+                        len(schedule.zones) if schedule.zones else 0,
+                        len(schedule.timetables) if schedule.timetables else 0
+                    )
 
     return result

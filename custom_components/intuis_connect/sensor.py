@@ -35,7 +35,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         entities.append(IntuisSetpointEndTimeSensor(coordinator, home_id, room))
         entities.append(IntuisScheduledTempSensor(coordinator, home_id, room, intuis_home))
 
-    entities += provide_home_sensors(coordinator, home_id)
+    entities += provide_home_sensors(coordinator, home_id, intuis_home)
     async_add_entities(entities, update_before_add=True)
 
 
