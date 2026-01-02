@@ -1,4 +1,42 @@
 {
+  "services": {
+    "switch_schedule": {
+      "name": "Switch Schedule",
+      "description": "Switch to a different heating schedule. The schedule applies to all rooms in the home.",
+      "fields": {
+        "schedule_name": {
+          "name": "Schedule Name",
+          "description": "The name of the schedule to activate."
+        }
+      }
+    },
+    "refresh_schedules": {
+      "name": "Refresh Schedules",
+      "description": "Force a refresh of all schedule and home data from the Intuis API."
+    },
+    "set_schedule_slot": {
+      "name": "Set Schedule Slot",
+      "description": "Set a zone for a specific time range in the active heating schedule. Creates a slot from start_time to end_time with the specified zone.",
+      "fields": {
+        "day": {
+          "name": "Day of Week",
+          "description": "Day of the week for the time slot (0=Monday, 6=Sunday)."
+        },
+        "start_time": {
+          "name": "Start Time",
+          "description": "When the zone should start (HH:MM format, 24-hour)."
+        },
+        "end_time": {
+          "name": "End Time",
+          "description": "When the zone should end and return to the previous zone (HH:MM format, 24-hour)."
+        },
+        "zone_name": {
+          "name": "Zone Name",
+          "description": "The name of the zone (e.g., Night, Day, Eco)."
+        }
+      }
+    }
+  },
   "config": {
     "step": {
       "user": {

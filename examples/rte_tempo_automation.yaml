@@ -1,0 +1,134 @@
+# RTE Tempo Red Day Automation Examples
+# ======================================
+#
+# These automations switch heating schedules based on RTE Tempo day colors.
+# Requires: RTE Tempo integration (sensor.rte_tempo_color or similar)
+#
+# Usage:
+#   1. Copy the desired automations to your automations.yaml
+#   2. Adjust schedule_name to match your Intuis schedule names
+#   3. Adjust the RTE Tempo sensor entity_id if different
+
+# ------------------------------------------------------------------------------
+# Automation 1: Switch to Red Day schedule when Tempo is RED
+# ------------------------------------------------------------------------------
+- id: intuis_tempo_red_day_activate
+  alias: "Chauffage - Activer planning Rouge (Tempo)"
+  description: "Switch to low consumption schedule when RTE Tempo day is RED"
+  trigger:
+    # Trigger when Tempo color changes to RED
+    - platform: state
+      entity_id: sensor.rte_tempo_color
+      to: "red"
+    # Also trigger at midnight if tomorrow is RED (for next-day planning)
+    - platform: time
+      at: "00:00:00"
+  condition:
+    - condition: or
+      conditions:
+        # Current day is RED
+        - condition: state
+          entity_id: sensor.rte_tempo_color
+          state: "red"
+        # Or tomorrow is RED (prepare in advance)
+        - condition: state
+          entity_id: sensor.rte_tempo_next_color
+          state: "red"
+  action:
+    - service: intuis_connect.switch_schedule
+      data:
+        schedule_name: "Rouge"  # <-- Adjust to your red day schedule name
+    - service: notify.persistent_notification
+      data:
+        title: "Chauffage Tempo Rouge"
+        message: "Planning chauffage basculé en mode économique (jour Tempo rouge)"
+
+# ------------------------------------------------------------------------------
+# Automation 2: Return to normal schedule when Tempo is BLUE or WHITE
+# ------------------------------------------------------------------------------
+- id: intuis_tempo_normal_day_activate
+  alias: "Chauffage - Activer planning Normal (Tempo)"
+  description: "Switch back to normal schedule when RTE Tempo day is BLUE or WHITE"
+  trigger:
+    - platform: state
+      entity_id: sensor.rte_tempo_color
+      to: "blue"
+    - platform: state
+      entity_id: sensor.rte_tempo_color
+      to: "white"
+    - platform: time
+      at: "00:00:00"
+  condition:
+    - condition: not
+      conditions:
+        - condition: state
+          entity_id: sensor.rte_tempo_color
+          state: "red"
+  action:
+    - service: intuis_connect.switch_schedule
+      data:
+        schedule_name: "Semaine"  # <-- Adjust to your normal schedule name
+    - service: notify.persistent_notification
+      data:
+        title: "Chauffage Normal"
+        message: "Planning chauffage revenu en mode normal"
+
+# ------------------------------------------------------------------------------
+# Automation 3: Prepare for RED day the evening before (at 6 PM)
+# ------------------------------------------------------------------------------
+- id: intuis_tempo_red_day_prepare
+  alias: "Chauffage - Préparer jour Rouge (veille)"
+  description: "Switch to red day schedule the evening before when tomorrow is RED"
+  trigger:
+    - platform: time
+      at: "18:00:00"
+  condition:
+    - condition: state
+      entity_id: sensor.rte_tempo_next_color
+      state: "red"
+  action:
+    - service: intuis_connect.switch_schedule
+      data:
+        schedule_name: "Rouge"
+    - service: notify.persistent_notification
+      data:
+        title: "Demain Tempo Rouge"
+        message: "Planning chauffage basculé en mode économique pour demain (jour Tempo rouge)"
+
+# ------------------------------------------------------------------------------
+# Script: Manual toggle for testing
+# ------------------------------------------------------------------------------
+# Add this to your scripts.yaml to test the switch manually:
+#
+# intuis_switch_to_red:
+#   alias: "Test - Activer planning Rouge"
+#   sequence:
+#     - service: intuis_connect.switch_schedule
+#       data:
+#         schedule_name: "Rouge"
+#
+# intuis_switch_to_normal:
+#   alias: "Test - Activer planning Normal"
+#   sequence:
+#     - service: intuis_connect.switch_schedule
+#       data:
+#         schedule_name: "Semaine"
+
+# ------------------------------------------------------------------------------
+# Using set_schedule_slot to modify the active schedule
+# ------------------------------------------------------------------------------
+# You can also use set_schedule_slot to temporarily change zones during peak hours:
+#
+# - service: intuis_connect.set_schedule_slot
+#   data:
+#     day: 1  # Tuesday
+#     start_time: "06:00"
+#     end_time: "22:00"
+#     zone_name: "Eco"
+#
+# This creates a slot from 06:00 to 22:00 with the Eco zone, then returns
+# to the previous zone at 22:00.
+#
+# Available zones can be found in:
+#   - Developer Tools > States > sensor.intuis_home_schedule_summary
+#   - Look for "zones" in attributes

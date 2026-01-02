@@ -12,6 +12,7 @@ services:
     volumes:
       - ./config:/config
       - ./custom_components:/config/custom_components
+      - ../intuis-schedule-card/dist/intuis-schedule-card.js:/config/www/intuis-schedule-card.js:ro
       - /etc/localtime:/etc/localtime:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8123"]
