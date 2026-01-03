@@ -22,6 +22,7 @@ from homeassistant.components.recorder.statistics import (
     async_import_statistics,
     statistics_during_period,
 )
+from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -630,6 +631,7 @@ async def async_import_energy_history(
                             unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
                             has_sum=True,
                             mean_type=StatisticMeanType.NONE,
+                            unit_class=SensorDeviceClass.ENERGY,
                         )
                     except ImportError:
                         # Fallback for older HA versions
@@ -640,6 +642,7 @@ async def async_import_energy_history(
                             unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
                             has_mean=False,
                             has_sum=True,
+                            unit_class=SensorDeviceClass.ENERGY,
                         )
 
                     async_import_statistics(hass, metadata, statistics)
