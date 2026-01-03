@@ -371,6 +371,7 @@ class TestMigration:
     async def test_migration_fallback_when_api_fails(self):
         """Migration should use fallback home_name when API fails."""
         from custom_components.intuis_connect import async_migrate_entry
+        from custom_components.intuis_connect.intuis_api.api import InvalidAuth
         from custom_components.intuis_connect.utils.const import (
             CONF_USERNAME,
             CONF_REFRESH_TOKEN,
@@ -399,7 +400,7 @@ class TestMigration:
         # Mock API to fail
         mock_api = MagicMock()
         mock_api.async_refresh_access_token = AsyncMock(
-            side_effect=Exception("API Error")
+            side_effect=InvalidAuth("API Error")
         )
 
         with patch(

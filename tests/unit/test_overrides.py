@@ -245,8 +245,9 @@ class TestIndefiniteMode:
         }
 
         # Create failing API
+        from custom_components.intuis_connect.intuis_api.api import APIError
         failing_api = MagicMock()
-        failing_api.async_set_room_state = AsyncMock(side_effect=Exception("API Error"))
+        failing_api.async_set_room_state = AsyncMock(side_effect=APIError("API Error"))
         failing_api.async_get_home_status = AsyncMock(
             return_value={"body": {"home": {"id": "home_123", "rooms": [], "modules": []}}}
         )
@@ -663,10 +664,11 @@ class TestOverrideEdgeCases:
         # API that fails on first room, succeeds on second
         call_count = [0]
 
+        from custom_components.intuis_connect.intuis_api.api import APIError
         async def mock_set_room_state(room_id, mode, temp, duration):
             call_count[0] += 1
             if room_id == "room_123":
-                raise Exception("API Error for room_123")
+                raise APIError("API Error for room_123")
             return None
 
         api = MagicMock()

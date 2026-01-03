@@ -19,7 +19,7 @@ from .entity.intuis_schedule import (
     IntuisThermZone,
     IntuisRoomTemperature,
 )
-from .intuis_api.api import IntuisAPI
+from .intuis_api.api import IntuisAPI, APIError, CannotConnect, RateLimitError
 from .utils.const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -322,7 +322,7 @@ class IntuisZoneTemperatureNumber(CoordinatorEntity[IntuisDataUpdateCoordinator]
 
             _LOGGER.info("Zone temperature updated successfully")
 
-        except Exception as err:
+        except (APIError, CannotConnect, RateLimitError) as err:
             _LOGGER.error("Failed to set zone temperature: %s", err)
             raise
 
