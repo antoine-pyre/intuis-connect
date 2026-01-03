@@ -203,7 +203,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # ---------- register services -------------------------------------------------
     await async_register_services(hass, entry)
 
-    # ---------- trigger historical import if requested ----------------------------
+    # ---------- cancel any previous import and trigger new one if requested --------
+    # Cancel any existing import from previous session to release resources
+    if "import_managers" in hass.data.get(DOMAIN, {}):
+        existing_manager = hass.data[DOMAIN]["import_managers"].get(entry.entry_id)
+        if existing_manager and existing_manager.is_running:
+            _LOGGER.info("Cancelling previous import that was still running")
+            existing_manager.cancel()
+
     import_history = entry.options.get(CONF_IMPORT_HISTORY, False)
     import_days = entry.options.get(CONF_IMPORT_HISTORY_DAYS, 0)
 
