@@ -134,28 +134,22 @@ Creating overlapping schedule slots causes unpredictable behavior. Validation be
 
 ---
 
-### 5. Anticipation Control
-
-**Status:** Needs API investigation
-
-**Interest:**
-The system pre-heats rooms to reach target temperature on time ("anticipation"). Users may want to disable this during mild weather or enable it during cold snaps manually.
-
-**Requirements:**
-- Investigation needed: Check if API supports anticipation toggle
-- Current: `anticipation` binary sensor exists (read-only)
-- May require `/syncapi/v1/setstate` with specific parameters
-
-**HA Integration:**
-- New switch: `switch.{room}_anticipation` (if API supports)
-- Alternative: Service to temporarily disable anticipation
-- If read-only, document limitation and keep binary sensor only
-
----
-
 ## Won't Implement
 
-The following features were considered but won't be implemented because they're better served by Home Assistant's native capabilities or provide marginal value given the async/cloud-polling nature of the integration.
+The following features were considered but won't be implemented because they're better served by Home Assistant's native capabilities, provide marginal value, or have API limitations.
+
+### Anticipation Control (Auto-Adapt Toggle)
+**Reason:** API limitation - read-only access.
+
+**Investigation findings:**
+- The `anticipating` boolean in homestatus indicates if pre-heating is currently active (exposed as binary sensor)
+- The `anticipation` boolean in home config indicates if Auto-Adapt is enabled
+- **No API endpoint exists to toggle this setting** - verified against:
+  - [Official Netatmo Energy API](https://dev.netatmo.com/apidocumentation/energy) - no setconfig endpoint
+  - [Home Assistant Netatmo integration](https://github.com/home-assistant/core/blob/dev/homeassistant/components/netatmo/climate.py) - no anticipation control
+  - [Intuis documentation](https://intuis.fr/en/sav/connectivity/app-functionality/how-does-the-heating-anticipation-work) - states control via mobile app only
+
+Users must use the Intuis Connect mobile app: Settings > Heating settings > Smart heating.
 
 ### Boost Status Binary Sensor
 **Reason:** Redundant with `climate.preset_mode` attribute.
@@ -222,7 +216,6 @@ template:
 | P2 | Tariff-separated energy (#2) | Medium | High |
 | P2 | Delete schedule slot (#1) | Medium | Medium |
 | P2 | Away/frost temp config (#3) | Medium | Medium |
-| P3 | Anticipation control (#5) | Medium | Low |
 
 ---
 
