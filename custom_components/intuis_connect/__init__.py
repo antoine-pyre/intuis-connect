@@ -1,4 +1,4 @@
-"""Setup for Intuis Connect (v1.9.1)."""
+"""Setup for Intuis Connect (v1.9.2)."""
 from __future__ import annotations
 
 import datetime
@@ -285,7 +285,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     home_name,
                     home_id,
                 )
-            except Exception as err:
+            except (InvalidAuth, CannotConnect) as err:
                 _LOGGER.warning(
                     "Migration: Could not fetch home name from API: %s",
                     err,

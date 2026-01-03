@@ -9,7 +9,7 @@ from typing import Any
 
 from .entity.intuis_home import IntuisHome
 from .entity.intuis_home_config import IntuisHomeConfig
-from .intuis_api.api import IntuisAPI
+from .intuis_api.api import IntuisAPI, APIError, CannotConnect, RateLimitError
 from .intuis_api.mapper import extract_modules, extract_rooms
 from .utils.const import (
     API_MODE_MANUAL,
@@ -123,7 +123,7 @@ class IntuisData:
 
         try:
             home = await self._api.async_get_home_status()
-        except Exception as err:
+        except (APIError, CannotConnect, RateLimitError) as err:
             _LOGGER.error("Failed to fetch home status from API: %s", err)
             raise
 
@@ -205,7 +205,7 @@ class IntuisData:
                         self._overrides[room_id]["end"] = now_ts + duration_min * 60
                         self._overrides[room_id]["last_reapply"] = now_ts
                         overrides_changed = True
-                    except Exception as err:
+                    except (APIError, CannotConnect, RateLimitError) as err:
                         _LOGGER.error(
                             "Failed to re-apply override for room %s: %s",
                             room_id,
@@ -258,7 +258,7 @@ class IntuisData:
         if self._success_callback:
             try:
                 await self._success_callback()
-            except Exception as err:
+            except (TypeError, ValueError, RuntimeError) as err:
                 _LOGGER.debug("Success callback error (non-fatal): %s", err)
 
         return result

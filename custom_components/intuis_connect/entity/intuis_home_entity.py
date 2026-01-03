@@ -653,7 +653,7 @@ class IntuisHomeEnergySensor(CoordinatorEntity[IntuisDataUpdateCoordinator], Sen
             entry = self.hass.config_entries.async_get_entry(entry_id)
             if entry:
                 return entry.options.get(CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR)
-        except Exception:
+        except (AttributeError, KeyError):
             pass
         return DEFAULT_ENERGY_RESET_HOUR
 

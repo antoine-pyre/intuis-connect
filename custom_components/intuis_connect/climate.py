@@ -20,7 +20,7 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.event import async_call_later
 
-from . import IntuisAPI
+from .intuis_api.api import IntuisAPI
 from .entity.intuis_room import IntuisRoom
 from .utils.const import (
     PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE, API_MODE_OFF, API_MODE_AUTO, API_MODE_MANUAL,

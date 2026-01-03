@@ -33,7 +33,7 @@ from .history_import import (
 
 from .entity.intuis_home import IntuisHome
 from .entity.intuis_schedule import IntuisThermSchedule, IntuisThermZone, IntuisTimetable
-from .intuis_api.api import IntuisAPI
+from .intuis_api.api import IntuisAPI, APIError, CannotConnect, RateLimitError
 from .timetable import (
     find_zone_at_offset,
     upsert_timetable_entry,
@@ -378,7 +378,7 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
                 # Refresh coordinator
                 if coordinator:
                     await coordinator.async_request_refresh()
-            except Exception as err:
+            except (APIError, CannotConnect, RateLimitError) as err:
                 _LOGGER.error("Failed to switch schedule: %s", err)
                 raise
 
@@ -438,7 +438,7 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
 
                 refreshed_count += 1
 
-            except Exception as err:
+            except (APIError, CannotConnect, RateLimitError) as err:
                 _LOGGER.error(
                     "Failed to refresh schedules for home %s: %s",
                     intuis_home.name or intuis_home.id,
@@ -666,7 +666,7 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
 
                 _LOGGER.info("Schedule slot updated successfully")
 
-            except Exception as err:
+            except (APIError, CannotConnect, RateLimitError) as err:
                 _LOGGER.error("Failed to set schedule slot: %s", err)
                 raise
 
@@ -825,7 +825,7 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
 
                 _LOGGER.info("Zone temperature updated successfully")
 
-            except Exception as err:
+            except (APIError, CannotConnect, RateLimitError) as err:
                 _LOGGER.error("Failed to set zone temperature: %s", err)
                 raise
 

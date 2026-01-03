@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import aiohttp
 from aiohttp import ClientSession
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -32,7 +33,7 @@ async def async_validate_api(
     except (CannotConnect, InvalidAuth) as e:
         _LOGGER.error("API validation failed: %s", e)
         raise
-    except Exception as e:
+    except aiohttp.ClientError as e:
         _LOGGER.exception("Unknown error during API validation")
         raise InvalidAuth("unknown") from e
 

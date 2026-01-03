@@ -13,7 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .entity.intuis_entity import IntuisDataUpdateCoordinator
 from .entity.intuis_schedule import IntuisSchedule, IntuisThermSchedule
-from .intuis_api.api import IntuisAPI
+from .intuis_api.api import IntuisAPI, APIError, CannotConnect, RateLimitError
 from .utils.const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -107,7 +107,7 @@ class IntuisScheduleSelect(CoordinatorEntity[IntuisDataUpdateCoordinator], Selec
 
         try:
             await self._api.async_switch_schedule(self._home_id, schedule_id)
-        except Exception as err:
+        except (APIError, CannotConnect, RateLimitError) as err:
             _LOGGER.error("Failed to switch schedule: %s", err)
             raise
 

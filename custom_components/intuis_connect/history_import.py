@@ -19,7 +19,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 
 from .utils.const import DOMAIN
-from .intuis_api.api import RateLimitError
+from .intuis_api.api import RateLimitError, APIError, CannotConnect
 
 if TYPE_CHECKING:
     from .intuis_api.api import IntuisAPI
@@ -303,7 +303,7 @@ async def async_import_energy_history(
                     # Save what we have and stop
                     break
 
-                except Exception as err:
+                except (APIError, CannotConnect, asyncio.TimeoutError) as err:
                     _LOGGER.warning(
                         "Failed to fetch energy for %s on %s: %s",
                         room_name,
@@ -350,7 +350,7 @@ async def async_import_energy_history(
                         cumulative_sum,
                     )
 
-                except Exception as err:
+                except (ValueError, TypeError) as err:
                     _LOGGER.error(
                         "Failed to import statistics for %s: %s",
                         room_name,

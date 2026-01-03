@@ -114,7 +114,7 @@ class RateLimitCircuitBreaker:
             if self._on_rate_limit_callback:
                 try:
                     self._on_rate_limit_callback()
-                except Exception as e:
+                except (TypeError, ValueError, RuntimeError) as e:
                     _LOGGER.warning("Rate limit callback failed: %s", e)
             return cooldown
         return 0
@@ -683,7 +683,7 @@ class IntuisAPI:
                     room_id, date_begin, date_end, scale
                 )
                 result[room_id] = energy
-            except Exception as e:
+            except (APIError, CannotConnect, RateLimitError, aiohttp.ClientError, asyncio.TimeoutError) as e:
                 _LOGGER.warning(
                     "Failed to get energy for room %s: %s", room_id, e
                 )
