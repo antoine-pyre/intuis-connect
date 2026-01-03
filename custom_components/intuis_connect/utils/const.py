@@ -133,3 +133,39 @@ API_MODE_AUTO = "auto"
 API_MODE_MANUAL = "manual"
 API_MODE_AWAY = "away"
 API_MODE_BOOST = "boost"
+
+# Rate limiting configuration
+CONF_RATE_LIMIT_DELAY = "rate_limit_delay"
+CONF_CIRCUIT_BREAKER_THRESHOLD = "circuit_breaker_threshold"
+CONF_MIN_REQUEST_DELAY = "min_request_delay"
+CONF_MAX_UPDATE_INTERVAL = "max_update_interval"
+
+# Rate limiting defaults
+DEFAULT_RATE_LIMIT_DELAY = 30         # seconds - initial delay on 429
+DEFAULT_CIRCUIT_THRESHOLD = 3         # consecutive 429s before circuit opens
+DEFAULT_MIN_REQUEST_DELAY = 0.5       # seconds between requests
+DEFAULT_MAX_UPDATE_INTERVAL = 10      # minutes - max polling interval when rate limited
+DEFAULT_RATE_LIMIT_MAX_DELAY = 300    # seconds - max delay (5 minutes)
+DEFAULT_RATE_LIMIT_ATTEMPTS = 5       # retry attempts for rate limited requests
+
+# Rate limit options for UI
+RATE_LIMIT_DELAY_OPTIONS = [
+    {"value": "10", "label": "10 seconds"},
+    {"value": "30", "label": "30 seconds (default)"},
+    {"value": "60", "label": "1 minute"},
+    {"value": "120", "label": "2 minutes"},
+]
+
+CIRCUIT_THRESHOLD_OPTIONS = [
+    {"value": "1", "label": "1 (aggressive)"},
+    {"value": "3", "label": "3 (default)"},
+    {"value": "5", "label": "5 (relaxed)"},
+    {"value": "10", "label": "10 (very relaxed)"},
+]
+
+MAX_UPDATE_INTERVAL_OPTIONS = [
+    {"value": "5", "label": "5 minutes"},
+    {"value": "10", "label": "10 minutes (default)"},
+    {"value": "15", "label": "15 minutes"},
+    {"value": "30", "label": "30 minutes"},
+]

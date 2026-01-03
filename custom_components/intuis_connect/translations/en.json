@@ -183,6 +183,20 @@
           "energy_scale": "How often to update energy consumption data.",
           "energy_reset_hour": "Hour when daily energy counters reset (0-23). Default is 2 AM to ensure previous day's data is finalized."
         }
+      },
+      "rate_limit": {
+        "title": "API Rate Limiting",
+        "description": "Configure how the integration handles API rate limits (429 errors).\n\nThese settings help prevent being blocked by the Intuis API during heavy usage.",
+        "data": {
+          "rate_limit_delay": "Initial retry delay",
+          "circuit_breaker_threshold": "Circuit breaker threshold",
+          "max_update_interval": "Maximum polling interval"
+        },
+        "data_description": {
+          "rate_limit_delay": "How long to wait before retrying after a rate limit error.",
+          "circuit_breaker_threshold": "Number of consecutive rate limit errors before pausing all requests.",
+          "max_update_interval": "Maximum polling interval when rate limited. Normally polls every 2 minutes."
+        }
       }
     }
   }

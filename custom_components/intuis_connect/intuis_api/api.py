@@ -4,7 +4,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
+from datetime import datetime, timedelta
+from typing import Any, Callable
 
 import aiohttp
 
@@ -32,6 +33,11 @@ from ..utils.const import (
     SWITCH_SCHEDULE_PATH,
     SYNCHOMESCHEDULE_PATH,
     CONFIG_PATH,
+    DEFAULT_RATE_LIMIT_DELAY,
+    DEFAULT_CIRCUIT_THRESHOLD,
+    DEFAULT_MIN_REQUEST_DELAY,
+    DEFAULT_RATE_LIMIT_MAX_DELAY,
+    DEFAULT_RATE_LIMIT_ATTEMPTS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,6 +55,127 @@ class APIError(Exception):
     """Generic API errors."""
 
 
+class RateLimitError(Exception):
+    """Rate limit (429) error with circuit breaker open."""
+
+
+class RateLimitCircuitBreaker:
+    """Prevents request storms when rate limited.
+
+    After a threshold of consecutive 429 errors, opens the circuit
+    to prevent further requests for an exponentially increasing cooldown period.
+    """
+
+    def __init__(
+        self,
+        threshold: int = DEFAULT_CIRCUIT_THRESHOLD,
+        base_cooldown: float = 60.0,
+        max_cooldown: float = 600.0,
+    ) -> None:
+        """Initialize the circuit breaker.
+
+        Args:
+            threshold: Number of consecutive 429s before circuit opens.
+            base_cooldown: Initial cooldown duration in seconds.
+            max_cooldown: Maximum cooldown duration in seconds.
+        """
+        self._threshold = threshold
+        self._base_cooldown = base_cooldown
+        self._max_cooldown = max_cooldown
+        self._consecutive_429s = 0
+        self._circuit_open_until: datetime | None = None
+        self._on_rate_limit_callback: Callable[[], None] | None = None
+
+    def set_rate_limit_callback(self, callback: Callable[[], None]) -> None:
+        """Set callback to invoke when rate limited."""
+        self._on_rate_limit_callback = callback
+
+    def record_429(self) -> float:
+        """Record a 429 error and return cooldown time if circuit opens.
+
+        Returns:
+            Cooldown time in seconds if circuit opened, 0 otherwise.
+        """
+        self._consecutive_429s += 1
+        _LOGGER.debug(
+            "Rate limit recorded. Consecutive 429s: %d/%d",
+            self._consecutive_429s, self._threshold
+        )
+
+        if self._consecutive_429s >= self._threshold:
+            # Calculate exponential cooldown
+            multiplier = 2 ** (self._consecutive_429s - self._threshold)
+            cooldown = min(self._base_cooldown * multiplier, self._max_cooldown)
+            self._circuit_open_until = datetime.now() + timedelta(seconds=cooldown)
+            _LOGGER.warning(
+                "Circuit breaker OPEN. Pausing all API requests for %.0f seconds",
+                cooldown
+            )
+            if self._on_rate_limit_callback:
+                try:
+                    self._on_rate_limit_callback()
+                except Exception as e:
+                    _LOGGER.warning("Rate limit callback failed: %s", e)
+            return cooldown
+        return 0
+
+    def record_success(self) -> None:
+        """Record a successful request, resetting the circuit."""
+        if self._consecutive_429s > 0:
+            _LOGGER.debug("Circuit breaker reset after successful request")
+        self._consecutive_429s = 0
+        self._circuit_open_until = None
+
+    def check(self) -> float:
+        """Check if circuit is open.
+
+        Returns:
+            Seconds to wait if circuit is open, 0 if closed.
+        """
+        if self._circuit_open_until:
+            remaining = (self._circuit_open_until - datetime.now()).total_seconds()
+            if remaining > 0:
+                return remaining
+            # Circuit has closed naturally
+            self._circuit_open_until = None
+        return 0
+
+    @property
+    def is_open(self) -> bool:
+        """Return True if circuit is currently open."""
+        return self.check() > 0
+
+    @property
+    def consecutive_429s(self) -> int:
+        """Return count of consecutive 429 errors."""
+        return self._consecutive_429s
+
+
+class RequestThrottler:
+    """Enforces minimum delay between API requests to prevent bursts."""
+
+    def __init__(self, min_delay: float = DEFAULT_MIN_REQUEST_DELAY) -> None:
+        """Initialize the throttler.
+
+        Args:
+            min_delay: Minimum seconds between requests.
+        """
+        self._min_delay = min_delay
+        self._last_request: float = 0
+        self._lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        """Wait until minimum delay has passed since last request."""
+        async with self._lock:
+            now = time.monotonic()
+            elapsed = now - self._last_request
+            if elapsed < self._min_delay and self._last_request > 0:
+                wait_time = self._min_delay - elapsed
+                _LOGGER.debug("Throttling: waiting %.2fs before next request", wait_time)
+                await asyncio.sleep(wait_time)
+            self._last_request = time.monotonic()
+
+
 class IntuisAPI:
     """Minimal client wrapping the Intuis Netatmo endpoints."""
 
@@ -57,8 +184,20 @@ class IntuisAPI:
             session: aiohttp.ClientSession,
             home_id: str | None = None,
             debug: bool = False,
+            rate_limit_delay: float = DEFAULT_RATE_LIMIT_DELAY,
+            circuit_threshold: int = DEFAULT_CIRCUIT_THRESHOLD,
+            min_request_delay: float = DEFAULT_MIN_REQUEST_DELAY,
     ) -> None:
-        """Initialize the API client."""
+        """Initialize the API client.
+
+        Args:
+            session: aiohttp client session.
+            home_id: Optional home ID to use.
+            debug: Enable debug logging.
+            rate_limit_delay: Initial delay in seconds when rate limited.
+            circuit_threshold: Number of 429s before circuit breaker opens.
+            min_request_delay: Minimum seconds between requests.
+        """
         self._session = session
         self._base_url: str = BASE_URLS[0]
         self.home_id: str | None = home_id
@@ -67,7 +206,21 @@ class IntuisAPI:
         self._refresh_token: str | None = None
         self._expiry: float | None = None
         self._debug: bool = debug
-        _LOGGER.debug("IntuisAPI initialized with home_id=%s", home_id)
+
+        # Rate limiting configuration
+        self._rate_limit_delay = rate_limit_delay
+        self._circuit_breaker = RateLimitCircuitBreaker(
+            threshold=circuit_threshold,
+            base_cooldown=60.0,
+            max_cooldown=600.0,
+        )
+        self._throttler = RequestThrottler(min_delay=min_request_delay)
+
+        _LOGGER.debug(
+            "IntuisAPI initialized with home_id=%s, rate_limit_delay=%.1fs, "
+            "circuit_threshold=%d, min_request_delay=%.2fs",
+            home_id, rate_limit_delay, circuit_threshold, min_request_delay
+        )
 
     @property
     def refresh_token(self) -> str | None:
@@ -78,6 +231,15 @@ class IntuisAPI:
     def refresh_token(self, value: str) -> None:
         """Set the refresh token."""
         self._refresh_token = value
+
+    @property
+    def circuit_breaker(self) -> RateLimitCircuitBreaker:
+        """Return the circuit breaker instance."""
+        return self._circuit_breaker
+
+    def set_rate_limit_callback(self, callback: Callable[[], None]) -> None:
+        """Set callback to invoke when rate limited."""
+        self._circuit_breaker.set_rate_limit_callback(callback)
 
     # ---------- internal helpers ------------------------------------------------
     async def _ensure_token(self) -> None:
@@ -103,31 +265,62 @@ class IntuisAPI:
         self._expiry = asyncio.get_running_loop().time() + data.get("expires_in", 10800)
 
     async def _async_request(
-            self, method: str, path: str, retry: bool = True, **kwargs: Any
+            self, method: str, path: str, retry: bool = True,
+            full_url: str | None = None, **kwargs: Any
     ) -> aiohttp.ClientResponse:
-        """Make a request and handle token refresh with limited retries and timeouts.
+        """Make a request with rate limiting, circuit breaker, and retry logic.
+
+        Rate Limit Handling:
+        - Circuit breaker: If open, waits until cooldown expires
+        - Throttler: Ensures minimum delay between requests
+        - 429 responses: Uses Retry-After header or configured delay
+        - Separate retry counts for 429 vs 5xx errors
 
         Retries:
-        - Network-level errors (CannotConnect/TimeoutError): up to 3 attempts with backoff
-        - HTTP 5xx and 429: up to 3 attempts with backoff
-        - HTTP 401: single token refresh then one retry (existing behavior)
+        - 429 rate limits: up to RATE_LIMIT_ATTEMPTS with configured delay
+        - HTTP 5xx errors: up to 3 attempts with exponential backoff
+        - Network errors: up to 3 attempts with exponential backoff
+        - HTTP 401: single token refresh then one retry
+
+        Args:
+            method: HTTP method (get, post, etc.)
+            path: API path (appended to base_url unless full_url is provided)
+            retry: Whether to retry on 401 after token refresh
+            full_url: Optional full URL to use instead of base_url + path
         """
+        # Check circuit breaker first
+        wait_time = self._circuit_breaker.check()
+        if wait_time > 0:
+            _LOGGER.warning(
+                "Circuit breaker open. Waiting %.0f seconds before request to %s",
+                wait_time, path
+            )
+            await asyncio.sleep(wait_time)
+
+        # Apply request throttling
+        await self._throttler.acquire()
+
         await self._ensure_token()
         headers = kwargs.pop("headers", {})
         headers["Authorization"] = f"Bearer {self._access_token}"
 
-        url = f"{self._base_url}{path}"
+        url = full_url if full_url else f"{self._base_url}{path}"
         if self._debug:
             _LOGGER.debug("Making API request: %s %s", method, url)
 
         # Default timeout if not provided
         timeout = kwargs.pop("timeout", 20)
 
-        attempts = 3
-        delay = 1.5
+        # Separate attempt counters for different error types
+        server_attempts = 3
+        rate_limit_attempts = DEFAULT_RATE_LIMIT_ATTEMPTS
+        server_delay = 1.5
+        rate_limit_delay = self._rate_limit_delay
         last_exc: Exception | None = None
 
-        for attempt in range(1, attempts + 1):
+        total_attempts = max(server_attempts, rate_limit_attempts)
+
+        for attempt in range(1, total_attempts + 1):
             try:
                 resp = await self._session.request(
                     method, url, headers=headers, timeout=timeout, **kwargs
@@ -141,28 +334,62 @@ class IntuisAPI:
                     await self.async_refresh_access_token()
                     return await self._async_request(method, path, retry=False, **kwargs)
 
-                # Retry on rate limiting and server errors
-                if resp.status in (429,) or 500 <= resp.status < 600:
-                    if attempt < attempts:
+                # Handle rate limiting (429) separately
+                if resp.status == 429:
+                    self._circuit_breaker.record_429()
+
+                    if attempt < rate_limit_attempts:
+                        # Check for Retry-After header
+                        retry_after = resp.headers.get("Retry-After")
+                        if retry_after:
+                            try:
+                                delay = min(float(retry_after), DEFAULT_RATE_LIMIT_MAX_DELAY)
+                            except ValueError:
+                                delay = rate_limit_delay
+                        else:
+                            # Exponential backoff with configured base
+                            delay = min(
+                                rate_limit_delay * (2 ** (attempt - 1)),
+                                DEFAULT_RATE_LIMIT_MAX_DELAY
+                            )
+
                         _LOGGER.warning(
-                            "Server responded %s for %s %s (attempt %s/%s). Retrying in %.1fs",
-                            resp.status,
-                            method,
-                            path,
-                            attempt,
-                            attempts,
-                            delay,
+                            "Rate limited (429) for %s %s (attempt %s/%s). "
+                            "Waiting %.1fs before retry",
+                            method, path, attempt, rate_limit_attempts, delay
                         )
                         try:
                             await resp.release()
                         finally:
                             await asyncio.sleep(delay)
-                            delay *= 2
                         continue
-                    # No more attempts
+
+                    # No more rate limit retries
+                    _LOGGER.error(
+                        "Rate limit exceeded for %s after %s attempts",
+                        path, attempt
+                    )
+                    raise RateLimitError(f"Rate limited for {path} after {attempt} attempts")
+
+                # Handle server errors (5xx)
+                if 500 <= resp.status < 600:
+                    if attempt < server_attempts:
+                        _LOGGER.warning(
+                            "Server error %s for %s %s (attempt %s/%s). Retrying in %.1fs",
+                            resp.status, method, path, attempt, server_attempts, server_delay
+                        )
+                        try:
+                            await resp.release()
+                        finally:
+                            await asyncio.sleep(server_delay)
+                            server_delay *= 2
+                        continue
+                    # No more server error retries
                     resp.raise_for_status()
 
+                # Success - record it and return
                 resp.raise_for_status()
+                self._circuit_breaker.record_success()
                 return resp
 
             except aiohttp.ClientResponseError as e:
@@ -171,20 +398,18 @@ class IntuisAPI:
                 raise APIError(f"Request failed for {path}: {e.status}") from e
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 last_exc = e
-                if attempt < attempts:
+                if attempt < server_attempts:
                     _LOGGER.warning(
                         "Network error on %s %s (attempt %s/%s): %s. Retrying in %.1fs",
-                        method,
-                        path,
-                        attempt,
-                        attempts,
-                        repr(e),
-                        delay,
+                        method, path, attempt, server_attempts, repr(e), server_delay
                     )
-                    await asyncio.sleep(delay)
-                    delay *= 2
+                    await asyncio.sleep(server_delay)
+                    server_delay *= 2
                     continue
-                _LOGGER.error("Cannot connect to API for %s after %s attempts: %s", path, attempts, e)
+                _LOGGER.error(
+                    "Cannot connect to API for %s after %s attempts: %s",
+                    path, server_attempts, e
+                )
                 raise CannotConnect(f"Cannot connect for {path}") from e
 
         # Should not reach here
@@ -529,18 +754,16 @@ class IntuisAPI:
     async def async_get_schedule(
             self, home_id: str, schedule_id: int
     ) -> dict[str, list[dict[str, Any]]]:
-        """
-        Fetch the full timetable for a given schedule.
+        """Fetch the full timetable for a given schedule.
 
         Returns a dict { room_id: [ { id, start, end, temp }, … ], … }.
         """
-        await self._ensure_token()
-        params = {"home_id": home_id, "schedule_id": schedule_id}
-        url = f"{ENERGY_BASE}{GET_SCHEDULE_PATH}"
-        async with self._session.get(url, params=params, timeout=10) as resp:
-            if resp.status != 200:
-                raise APIError(f"get_schedule failed (HTTP {resp.status})")
+        url = f"{ENERGY_BASE}{GET_SCHEDULE_PATH}?home_id={home_id}&schedule_id={schedule_id}"
+        async with await self._async_request(
+            "get", GET_SCHEDULE_PATH, full_url=url, timeout=10
+        ) as resp:
             body = await resp.json()
+
         rooms: dict[str, list[dict[str, Any]]] = {}
         for room in body.get("rooms", []):
             rid = room["room_id"]
@@ -557,7 +780,6 @@ class IntuisAPI:
             temperature: float,
     ) -> None:
         """Create or update a single timeslot in the given schedule."""
-        await self._ensure_token()
         payload = {
             "home_id": home_id,
             "schedule_id": schedule_id,
@@ -569,27 +791,27 @@ class IntuisAPI:
             ],
         }
         url = f"{ENERGY_BASE}{SET_SCHEDULE_PATH}"
-        async with self._session.post(url, json=payload, timeout=10) as resp:
-            if resp.status not in (200, 204):
-                raise APIError(f"set_schedule_slot failed (HTTP {resp.status})")
+        async with await self._async_request(
+            "post", SET_SCHEDULE_PATH, full_url=url, json=payload, timeout=10
+        ) as resp:
+            pass  # Success if no exception raised
 
     async def async_delete_schedule_slot(self, home_id: str, slot_id: str) -> None:
         """Delete a specific schedule slot by its ID."""
-        await self._ensure_token()
-        params = {"home_id": home_id, "slot_id": slot_id}
-        url = f"{ENERGY_BASE}{DELETE_SCHEDULE_PATH}"
-        async with self._session.delete(url, params=params, timeout=10) as resp:
-            if resp.status not in (200, 204):
-                raise APIError(f"delete_schedule_slot failed (HTTP {resp.status})")
+        url = f"{ENERGY_BASE}{DELETE_SCHEDULE_PATH}?home_id={home_id}&slot_id={slot_id}"
+        async with await self._async_request(
+            "delete", DELETE_SCHEDULE_PATH, full_url=url, timeout=10
+        ) as resp:
+            pass  # Success if no exception raised
 
     async def async_switch_schedule(self, home_id: str, schedule_id: int) -> None:
         """Switch the active weekly schedule."""
-        await self._ensure_token()
         payload = {"home_id": home_id, "schedule_id": schedule_id}
         url = f"{ENERGY_BASE}{SWITCH_SCHEDULE_PATH}"
-        async with self._session.post(url, json=payload, timeout=10) as resp:
-            if resp.status not in (200, 204):
-                raise APIError(f"switch_schedule failed (HTTP {resp.status})")
+        async with await self._async_request(
+            "post", SWITCH_SCHEDULE_PATH, full_url=url, json=payload, timeout=10
+        ) as resp:
+            pass  # Success if no exception raised
 
     async def async_sync_schedule(
         self,
@@ -644,17 +866,15 @@ class IntuisAPI:
             if hg_temp is not None:
                 payload["hg_temp"] = hg_temp
 
-        # Make direct request to handle error responses properly
-        await self._ensure_token()
-        headers = {
-            "Authorization": f"Bearer {self._access_token}",
-            "Content-Type": "application/json",
-        }
-        url = f"{self._base_url}{SYNCHOMESCHEDULE_PATH}"
-
         _LOGGER.debug("Sync schedule payload: %s", payload)
 
-        async with self._session.post(url, json=payload, headers=headers, timeout=20) as resp:
+        async with await self._async_request(
+            "post",
+            SYNCHOMESCHEDULE_PATH,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=20,
+        ) as resp:
             result = await resp.json()
             _LOGGER.debug("Sync schedule response (status=%s): %s", resp.status, result)
 
@@ -665,8 +885,5 @@ class IntuisAPI:
                     f"sync_schedule failed: {error.get('message', 'Unknown error')} "
                     f"(code: {error.get('code')})"
                 )
-
-            if resp.status not in (200, 204):
-                raise APIError(f"sync_schedule failed with status {resp.status}: {result}")
 
         _LOGGER.info("Schedule %s synced successfully", schedule_name)

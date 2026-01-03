@@ -40,6 +40,9 @@ from .utils.const import (
     CONF_ENERGY_RESET_HOUR,
     CONF_IMPORT_HISTORY,
     CONF_IMPORT_HISTORY_DAYS,
+    CONF_RATE_LIMIT_DELAY,
+    CONF_CIRCUIT_BREAKER_THRESHOLD,
+    CONF_MAX_UPDATE_INTERVAL,
     DEFAULT_MANUAL_DURATION,
     DEFAULT_AWAY_DURATION,
     DEFAULT_BOOST_DURATION,
@@ -50,10 +53,16 @@ from .utils.const import (
     DEFAULT_ENERGY_RESET_HOUR,
     DEFAULT_IMPORT_HISTORY,
     DEFAULT_IMPORT_HISTORY_DAYS,
+    DEFAULT_RATE_LIMIT_DELAY,
+    DEFAULT_CIRCUIT_THRESHOLD,
+    DEFAULT_MAX_UPDATE_INTERVAL,
     ENERGY_SCALE_OPTIONS,
     DURATION_OPTIONS_SHORT,
     DURATION_OPTIONS_LONG,
     IMPORT_DAYS_OPTIONS,
+    RATE_LIMIT_DELAY_OPTIONS,
+    CIRCUIT_THRESHOLD_OPTIONS,
+    MAX_UPDATE_INTERVAL_OPTIONS,
 )
 from .utils.helper import async_validate_api
 
@@ -523,13 +532,11 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
             if isinstance(reset_hour, str):
                 reset_hour = int(reset_hour)
 
-            # Combine all options
-            all_options = {
-                **self._override_options,
-                CONF_ENERGY_SCALE: user_input.get(CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE),
-                CONF_ENERGY_RESET_HOUR: reset_hour,
-            }
-            return self.async_create_entry(title="", data=all_options)
+            self._override_options[CONF_ENERGY_SCALE] = user_input.get(
+                CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE
+            )
+            self._override_options[CONF_ENERGY_RESET_HOUR] = reset_hour
+            return await self.async_step_rate_limit()
 
         # Build select options for energy scale
         energy_options = [
@@ -568,5 +575,84 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
         )
         return self.async_show_form(
             step_id="energy",
+            data_schema=options_schema,
+        )
+
+    async def async_step_rate_limit(
+            self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Step 4: Configure rate limiting settings."""
+        if user_input is not None:
+            # Convert values to integers
+            rate_limit_delay = user_input.get(
+                CONF_RATE_LIMIT_DELAY, str(DEFAULT_RATE_LIMIT_DELAY)
+            )
+            circuit_threshold = user_input.get(
+                CONF_CIRCUIT_BREAKER_THRESHOLD, str(DEFAULT_CIRCUIT_THRESHOLD)
+            )
+            max_update_interval = user_input.get(
+                CONF_MAX_UPDATE_INTERVAL, str(DEFAULT_MAX_UPDATE_INTERVAL)
+            )
+
+            if isinstance(rate_limit_delay, str):
+                rate_limit_delay = int(rate_limit_delay)
+            if isinstance(circuit_threshold, str):
+                circuit_threshold = int(circuit_threshold)
+            if isinstance(max_update_interval, str):
+                max_update_interval = int(max_update_interval)
+
+            # Combine all options
+            all_options = {
+                **self._override_options,
+                CONF_RATE_LIMIT_DELAY: rate_limit_delay,
+                CONF_CIRCUIT_BREAKER_THRESHOLD: circuit_threshold,
+                CONF_MAX_UPDATE_INTERVAL: max_update_interval,
+            }
+            return self.async_create_entry(title="", data=all_options)
+
+        # Get current values
+        current_rate_limit = self._entry.options.get(
+            CONF_RATE_LIMIT_DELAY, DEFAULT_RATE_LIMIT_DELAY
+        )
+        current_threshold = self._entry.options.get(
+            CONF_CIRCUIT_BREAKER_THRESHOLD, DEFAULT_CIRCUIT_THRESHOLD
+        )
+        current_max_interval = self._entry.options.get(
+            CONF_MAX_UPDATE_INTERVAL, DEFAULT_MAX_UPDATE_INTERVAL
+        )
+
+        options_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_RATE_LIMIT_DELAY,
+                    default=str(current_rate_limit),
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=RATE_LIMIT_DELAY_OPTIONS,
+                        mode=SelectSelectorMode.DROPDOWN
+                    )
+                ),
+                vol.Optional(
+                    CONF_CIRCUIT_BREAKER_THRESHOLD,
+                    default=str(current_threshold),
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=CIRCUIT_THRESHOLD_OPTIONS,
+                        mode=SelectSelectorMode.DROPDOWN
+                    )
+                ),
+                vol.Optional(
+                    CONF_MAX_UPDATE_INTERVAL,
+                    default=str(current_max_interval),
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=MAX_UPDATE_INTERVAL_OPTIONS,
+                        mode=SelectSelectorMode.DROPDOWN
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="rate_limit",
             data_schema=options_schema,
         )

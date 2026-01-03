@@ -19,6 +19,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 
 from .utils.const import DOMAIN
+from .intuis_api.api import RateLimitError
 
 if TYPE_CHECKING:
     from .intuis_api.api import IntuisAPI
@@ -244,6 +245,18 @@ async def async_import_energy_history(
                 )
 
                 try:
+                    # Check circuit breaker before each request
+                    if hasattr(api, 'circuit_breaker'):
+                        wait_time = api.circuit_breaker.check()
+                        if wait_time > 0:
+                            _LOGGER.warning(
+                                "Circuit breaker open, pausing import for %.0f seconds",
+                                wait_time,
+                            )
+                            manager.status = "rate_limited"
+                            manager.last_error = f"Circuit breaker open, retry in {int(wait_time)}s"
+                            break
+
                     # Fetch energy for this room and day
                     energy_data = await api.async_get_energy_measures(
                         [{"id": room_id, "bridge": ""}],  # bridge not needed for this endpoint
@@ -278,26 +291,27 @@ async def async_import_energy_history(
                     # Delay to avoid rate limiting
                     await asyncio.sleep(API_DELAY_SECONDS)
 
+                except RateLimitError as err:
+                    _LOGGER.warning(
+                        "Rate limited while importing %s (day %s). Saving progress. Retry after: %s",
+                        room_name,
+                        target_date.date(),
+                        getattr(err, 'retry_after', 'unknown'),
+                    )
+                    manager.status = "rate_limited"
+                    manager.last_error = f"Rate limited by API: {err}"
+                    # Save what we have and stop
+                    break
+
                 except Exception as err:
-                    error_str = str(err)
-                    if "429" in error_str:
-                        _LOGGER.warning(
-                            "Rate limited while importing %s. Saving progress.",
-                            room_name,
-                        )
-                        manager.status = "rate_limited"
-                        manager.last_error = "Rate limited by API"
-                        # Save what we have and stop
-                        break
-                    else:
-                        _LOGGER.warning(
-                            "Failed to fetch energy for %s on %s: %s",
-                            room_name,
-                            target_date.date(),
-                            err,
-                        )
-                        # Continue to next day
-                        await asyncio.sleep(API_DELAY_SECONDS)
+                    _LOGGER.warning(
+                        "Failed to fetch energy for %s on %s: %s",
+                        room_name,
+                        target_date.date(),
+                        err,
+                    )
+                    # Continue to next day
+                    await asyncio.sleep(API_DELAY_SECONDS)
 
             # Import collected statistics for this room
             if statistics:

@@ -183,6 +183,20 @@
           "energy_scale": "Fréquence de mise à jour des données de consommation.",
           "energy_reset_hour": "Heure de réinitialisation des compteurs journaliers (0-23). Par défaut 2h pour s'assurer que les données de la veille sont finalisées."
         }
+      },
+      "rate_limit": {
+        "title": "Limitation de l'API",
+        "description": "Configurez la gestion des limites de l'API (erreurs 429).\n\nCes paramètres aident à éviter d'être bloqué par l'API Intuis lors d'une utilisation intensive.",
+        "data": {
+          "rate_limit_delay": "Délai initial de réessai",
+          "circuit_breaker_threshold": "Seuil du disjoncteur",
+          "max_update_interval": "Intervalle de mise à jour maximum"
+        },
+        "data_description": {
+          "rate_limit_delay": "Temps d'attente avant de réessayer après une erreur de limitation.",
+          "circuit_breaker_threshold": "Nombre d'erreurs de limitation consécutives avant de suspendre toutes les requêtes.",
+          "max_update_interval": "Intervalle maximum entre les mises à jour quand l'API est limitée. Normalement interroge toutes les 2 minutes."
+        }
       }
     }
   }
