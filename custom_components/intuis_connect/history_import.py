@@ -171,8 +171,8 @@ async def async_import_energy_history(
     manager.status = "importing"
     manager.last_error = None
 
-    # Clamp days to valid range
-    days = max(1, min(days, MAX_HISTORY_DAYS))
+    # Clamp days to valid range and ensure integer
+    days = int(max(1, min(days, MAX_HISTORY_DAYS)))
 
     # Get the home_id from intuis_home if not provided
     if home_id is None:
