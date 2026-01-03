@@ -209,7 +209,7 @@ async def _clear_statistics_in_range(
             return deleted
 
     try:
-        deleted_count = await hass.async_add_executor_job(_do_clear)
+        deleted_count = await instance.async_add_executor_job(_do_clear)
         if deleted_count > 0:
             _LOGGER.info(
                 "Cleared %d existing statistics entries for %s in import range",
