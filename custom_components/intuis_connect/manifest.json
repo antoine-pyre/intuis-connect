@@ -11,5 +11,8 @@
   "requirements": [
     "aiohttp"
   ],
+  "after_dependencies": [
+    "recorder"
+  ],
   "version": "1.9.1"
 }
