@@ -6,11 +6,13 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
+from homeassistant.const import EntityCategory, UnitOfTime, SIGNAL_STRENGTH_DECIBELS_MILLIWATT
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 import homeassistant.util.dt as dt_util
 
 from .intuis_home import IntuisHome
+from .intuis_module import NMGIntuisModule
 from .intuis_schedule import IntuisThermSchedule, IntuisThermZone, IntuisTimetable
 from ..entity.intuis_entity import IntuisDataUpdateCoordinator
 from ..utils.const import DOMAIN
@@ -474,6 +476,143 @@ class IntuisScheduleSummarySensor(CoordinatorEntity[IntuisDataUpdateCoordinator]
         return attrs
 
 
+class GatewayWifiStrengthSensor(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEntity):
+    """Sensor showing gateway WiFi signal strength."""
+
+    _attr_icon = "mdi:wifi"
+    _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
+    _attr_native_unit_of_measurement = SIGNAL_STRENGTH_DECIBELS_MILLIWATT
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_registry_enabled_default = True
+
+    def __init__(
+            self,
+            coordinator: IntuisDataUpdateCoordinator,
+            home_id: str,
+    ) -> None:
+        """Initialize the gateway WiFi strength sensor."""
+        super().__init__(coordinator)
+        self._home_id = home_id
+        self._attr_name = "Gateway WiFi Strength"
+        self._attr_unique_id = f"intuis_{home_id}_gateway_wifi_strength"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{home_id}_home")},
+            name="Intuis Home",
+            manufacturer="Muller Intuitiv (Netatmo)",
+            model="Home Controller",
+        )
+
+    def _get_gateway(self) -> NMGIntuisModule | None:
+        """Get the gateway module from coordinator data."""
+        modules = self.coordinator.data.get("modules", [])
+        for module in modules:
+            if isinstance(module, NMGIntuisModule):
+                return module
+        return None
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the WiFi signal strength."""
+        gateway = self._get_gateway()
+        return gateway.wifi_strength if gateway else None
+
+
+class GatewayUptimeSensor(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEntity):
+    """Sensor showing gateway uptime."""
+
+    _attr_icon = "mdi:clock-check-outline"
+    _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_entity_registry_enabled_default = True
+
+    def __init__(
+            self,
+            coordinator: IntuisDataUpdateCoordinator,
+            home_id: str,
+    ) -> None:
+        """Initialize the gateway uptime sensor."""
+        super().__init__(coordinator)
+        self._home_id = home_id
+        self._attr_name = "Gateway Uptime"
+        self._attr_unique_id = f"intuis_{home_id}_gateway_uptime"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{home_id}_home")},
+            name="Intuis Home",
+            manufacturer="Muller Intuitiv (Netatmo)",
+            model="Home Controller",
+        )
+
+    def _get_gateway(self) -> NMGIntuisModule | None:
+        """Get the gateway module from coordinator data."""
+        modules = self.coordinator.data.get("modules", [])
+        for module in modules:
+            if isinstance(module, NMGIntuisModule):
+                return module
+        return None
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the uptime in seconds."""
+        gateway = self._get_gateway()
+        return gateway.uptime if gateway else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes with human-readable uptime."""
+        attrs = {}
+        gateway = self._get_gateway()
+        if gateway and gateway.uptime:
+            uptime = gateway.uptime
+            days = uptime // 86400
+            hours = (uptime % 86400) // 3600
+            minutes = (uptime % 3600) // 60
+            attrs["uptime_formatted"] = f"{days}d {hours}h {minutes}m"
+        return attrs
+
+
+class GatewayFirmwareSensor(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEntity):
+    """Sensor showing gateway firmware version."""
+
+    _attr_icon = "mdi:chip"
+    _attr_has_entity_name = True
+    _attr_entity_registry_enabled_default = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+            self,
+            coordinator: IntuisDataUpdateCoordinator,
+            home_id: str,
+    ) -> None:
+        """Initialize the gateway firmware sensor."""
+        super().__init__(coordinator)
+        self._home_id = home_id
+        self._attr_name = "Gateway Firmware"
+        self._attr_unique_id = f"intuis_{home_id}_gateway_firmware"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{home_id}_home")},
+            name="Intuis Home",
+            manufacturer="Muller Intuitiv (Netatmo)",
+            model="Home Controller",
+        )
+
+    def _get_gateway(self) -> NMGIntuisModule | None:
+        """Get the gateway module from coordinator data."""
+        modules = self.coordinator.data.get("modules", [])
+        for module in modules:
+            if isinstance(module, NMGIntuisModule):
+                return module
+        return None
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the firmware version."""
+        gateway = self._get_gateway()
+        return str(gateway.firmware_revision) if gateway else None
+
+
 def provide_home_sensors(
         coordinator: IntuisDataUpdateCoordinator,
         home_id: str,
@@ -534,5 +673,10 @@ def provide_home_sensors(
                         len(schedule.zones) if schedule.zones else 0,
                         len(schedule.timetables) if schedule.timetables else 0
                     )
+
+    # Add gateway sensors (NMG module)
+    result.append(GatewayWifiStrengthSensor(coordinator, home_id))
+    result.append(GatewayUptimeSensor(coordinator, home_id))
+    result.append(GatewayFirmwareSensor(coordinator, home_id))
 
     return result
