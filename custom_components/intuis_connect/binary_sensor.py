@@ -1,4 +1,4 @@
-"""Binary sensors (presence, window, anticipation)."""
+"""Binary sensors (presence, window, anticipation, module health)."""
 from __future__ import annotations
 
 from homeassistant.components.binary_sensor import (
@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .entity.intuis_entity import IntuisDataUpdateCoordinator, IntuisEntity
+from .entity.intuis_module import NMHIntuisModule
 from .entity.intuis_room import IntuisRoom
 from .utils.helper import get_basic_utils
 
@@ -106,6 +107,42 @@ class BoostStatusSensor(_Base):
         return self._get_room().boost_status != "disabled"
 
 
+class ModuleReachableSensor(_Base):
+    """Binary sensor for NMH module reachability."""
+
+    def __init__(
+            self,
+            coordinator: IntuisDataUpdateCoordinator,
+            home_id: str,
+            room: IntuisRoom,
+            module: NMHIntuisModule,
+    ) -> None:
+        self._module_id = module.id
+        # Use short module ID (last 6 chars) for readability
+        short_id = module.id[-6:] if len(module.id) > 6 else module.id
+        super().__init__(
+            coordinator,
+            home_id,
+            room,
+            f"{room.name} {short_id} Reachable",
+            f"module_{module.id}_reachable",
+            BinarySensorDeviceClass.CONNECTIVITY,
+        )
+        # Enable by default for proactive alerts
+        self._attr_entity_registry_enabled_default = True
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if module is reachable."""
+        room = self._get_room()
+        if not room or not room.modules:
+            return False
+        for module in room.modules:
+            if isinstance(module, NMHIntuisModule) and module.id == self._module_id:
+                return module.reachable
+        return False
+
+
 async def async_setup_entry(
         hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -121,4 +158,9 @@ async def async_setup_entry(
                 AnticipationSensor(coordinator, home_id, room),
             ]
         )
+        # Add module reachability sensors for each NMH module
+        for module in room.modules:
+            if isinstance(module, NMHIntuisModule):
+                ent.append(ModuleReachableSensor(coordinator, home_id, room, module))
+
     async_add_entities(ent, update_before_add=True)

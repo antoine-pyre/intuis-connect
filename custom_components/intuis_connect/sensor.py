@@ -7,11 +7,12 @@ from datetime import datetime, timedelta, timezone
 
 import homeassistant.util.dt as dt_util
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
-from homeassistant.const import UnitOfTemperature, UnitOfEnergy
+from homeassistant.const import UnitOfTemperature, UnitOfEnergy, EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .entity.intuis_entity import IntuisEntity
 from .entity.intuis_home_entity import provide_home_sensors
+from .entity.intuis_module import NMHIntuisModule, NMRIntuisModule, IntuisModule
 from .entity.intuis_room import IntuisRoom
 from .entity.intuis_schedule import IntuisThermSchedule, IntuisThermZone
 from .timetable import MINUTES_PER_DAY
@@ -26,7 +27,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     coordinator, home_id, rooms, api = get_basic_utils(hass, entry)
     intuis_home = hass.data[DOMAIN][entry.entry_id].get("intuis_home")
 
-    entities: list[IntuisSensor] = []
+    entities: list[SensorEntity] = []
     for room_id in rooms:
         room = rooms.get(room_id)
         entities.append(IntuisTemperatureSensor(coordinator, home_id, room))
@@ -36,6 +37,12 @@ async def async_setup_entry(hass, entry, async_add_entities):
         entities.append(IntuisMinutesSensor(coordinator, home_id, room))
         entities.append(IntuisSetpointEndTimeSensor(coordinator, home_id, room))
         entities.append(IntuisScheduledTempSensor(coordinator, home_id, room, intuis_home))
+
+        # Add module sensors for each NMH module
+        for module in room.modules:
+            if isinstance(module, NMHIntuisModule):
+                entities.append(ModuleLastSeenSensor(coordinator, home_id, room, module))
+                entities.append(ModuleFirmwareSensor(coordinator, home_id, room, module))
 
     entities += provide_home_sensors(coordinator, home_id, intuis_home)
     async_add_entities(entities, update_before_add=True)
@@ -409,3 +416,91 @@ class IntuisScheduledTempSensor(IntuisSensor):
                         attrs["preset_mode"] = room_config.therm_setpoint_fp
 
         return attrs
+
+
+class ModuleLastSeenSensor(IntuisSensor):
+    """Sensor showing when a module was last seen."""
+
+    def __init__(
+            self,
+            coordinator,
+            home_id: str,
+            room: IntuisRoom,
+            module: NMHIntuisModule,
+    ) -> None:
+        self._module_id = module.id
+        short_id = module.id[-6:] if len(module.id) > 6 else module.id
+        super().__init__(
+            coordinator,
+            home_id,
+            room,
+            f"module_{module.id}_last_seen",
+            f"{short_id} Last Seen",
+            unit=None,
+            device_class=SensorDeviceClass.TIMESTAMP,
+        )
+        self._attr_entity_registry_enabled_default = False
+        self._attr_icon = "mdi:clock-outline"
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the last seen timestamp as datetime."""
+        room = self._get_room()
+        if not room or not room.modules:
+            return None
+        for module in room.modules:
+            if isinstance(module, NMHIntuisModule) and module.id == self._module_id:
+                if module.last_seen:
+                    return datetime.fromtimestamp(module.last_seen, tz=timezone.utc)
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional attributes including stale status."""
+        attrs = {}
+        room = self._get_room()
+        if room and room.modules:
+            for module in room.modules:
+                if isinstance(module, NMHIntuisModule) and module.id == self._module_id:
+                    if module.last_seen:
+                        age_seconds = int(datetime.now(timezone.utc).timestamp() - module.last_seen)
+                        attrs["age_seconds"] = age_seconds
+                        attrs["stale"] = age_seconds > 3600  # Stale if > 1 hour
+        return attrs
+
+
+class ModuleFirmwareSensor(IntuisSensor):
+    """Sensor showing module firmware version."""
+
+    def __init__(
+            self,
+            coordinator,
+            home_id: str,
+            room: IntuisRoom,
+            module: NMHIntuisModule,
+    ) -> None:
+        self._module_id = module.id
+        short_id = module.id[-6:] if len(module.id) > 6 else module.id
+        super().__init__(
+            coordinator,
+            home_id,
+            room,
+            f"module_{module.id}_firmware",
+            f"{short_id} Firmware",
+            unit=None,
+            device_class=None,
+        )
+        self._attr_entity_registry_enabled_default = False
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:chip"
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the firmware version."""
+        room = self._get_room()
+        if not room or not room.modules:
+            return None
+        for module in room.modules:
+            if isinstance(module, NMHIntuisModule) and module.id == self._module_id:
+                return module.firmware_revision_thirdparty
+        return None
