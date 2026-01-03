@@ -24,6 +24,13 @@ from homeassistant.helpers.selector import (
     TimeSelectorConfig,
 )
 
+from .history_import import (
+    HistoryImportManager,
+    async_import_energy_history,
+    DEFAULT_HISTORY_DAYS,
+    MAX_HISTORY_DAYS,
+)
+
 from .entity.intuis_home import IntuisHome
 from .entity.intuis_schedule import IntuisThermSchedule, IntuisThermZone, IntuisTimetable
 from .intuis_api.api import IntuisAPI
@@ -48,6 +55,7 @@ SERVICE_SWITCH_SCHEDULE = "switch_schedule"
 SERVICE_REFRESH_SCHEDULES = "refresh_schedules"
 SERVICE_SET_SCHEDULE_SLOT = "set_schedule_slot"
 SERVICE_SET_ZONE_TEMPERATURE = "set_zone_temperature"
+SERVICE_IMPORT_ENERGY_HISTORY = "import_energy_history"
 
 # Service attributes
 ATTR_ROOM_ID = "room_id"
@@ -61,6 +69,7 @@ ATTR_END_TIME = "end_time"
 ATTR_ZONE_NAME = "zone_name"
 ATTR_ROOM_NAME = "room_name"
 ATTR_TEMPERATURE = "temperature"
+ATTR_DAYS = "days"
 
 # Base service schemas (dynamic schemas are built in async_register_services)
 CLEAR_OVERRIDE_SCHEMA = vol.Schema({vol.Required(ATTR_ROOM_ID): str})
@@ -257,6 +266,36 @@ async def async_generate_services_yaml(hass: HomeAssistant, intuis_home: IntuisH
                             "step": 0.5,
                             "unit_of_measurement": "°C",
                             "mode": "box"
+                        }
+                    }
+                }
+            }
+        },
+        "import_energy_history": {
+            "name": "Import Energy History",
+            "description": "Import historical energy data from Intuis cloud to existing sensor entities. Data appears on the same sensor.{room}_energy entities used in the Energy Dashboard.",
+            "fields": {
+                "days": {
+                    "name": "Days to Import",
+                    "description": "Number of days of history to import (1-730).",
+                    "required": False,
+                    "default": DEFAULT_HISTORY_DAYS,
+                    "selector": {
+                        "number": {
+                            "min": 1,
+                            "max": MAX_HISTORY_DAYS,
+                            "step": 1,
+                            "mode": "box"
+                        }
+                    }
+                },
+                "room_name": {
+                    "name": "Room (Optional)",
+                    "description": "Import only this room. Leave empty for all rooms.",
+                    "required": False,
+                    "selector": {
+                        "select": {
+                            "options": room_options,
                         }
                     }
                 }
@@ -792,6 +831,65 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
 
             break
 
+    # Store for import managers (one per entry)
+    if "import_managers" not in hass.data[DOMAIN]:
+        hass.data[DOMAIN]["import_managers"] = {}
+
+    async def async_handle_import_energy_history(call: ServiceCall) -> None:
+        """Handle import_energy_history service call.
+
+        Imports historical energy data from Intuis cloud to existing sensor entities.
+        Uses async_import_statistics with source="recorder" to merge with entity stats.
+        """
+        days = call.data.get(ATTR_DAYS, DEFAULT_HISTORY_DAYS)
+        room_name = call.data.get(ATTR_ROOM_NAME)
+
+        for entry_id, data in hass.data[DOMAIN].items():
+            if not isinstance(data, dict):
+                continue
+
+            api: IntuisAPI = data.get("api")
+            intuis_home: IntuisHome = data.get("intuis_home")
+
+            if not api or not intuis_home:
+                continue
+
+            # Get or create import manager for this entry
+            if entry_id not in hass.data[DOMAIN]["import_managers"]:
+                manager = HistoryImportManager(hass, entry_id)
+                await manager.async_load()
+                hass.data[DOMAIN]["import_managers"][entry_id] = manager
+            else:
+                manager = hass.data[DOMAIN]["import_managers"][entry_id]
+
+            if manager.is_running:
+                _LOGGER.warning(
+                    "Energy history import already running for home %s",
+                    intuis_home.name or intuis_home.id,
+                )
+                continue
+
+            _LOGGER.info(
+                "Starting energy history import for home: %s (%d days%s)",
+                intuis_home.name or intuis_home.id,
+                days,
+                f", room: {room_name}" if room_name else "",
+            )
+
+            # Run import in background task
+            hass.async_create_task(
+                async_import_energy_history(
+                    hass=hass,
+                    api=api,
+                    intuis_home=intuis_home,
+                    manager=manager,
+                    days=days,
+                    room_filter=room_name,
+                )
+            )
+
+            break
+
     # Build dynamic options from coordinator data
     intuis_home: IntuisHome = hass.data[DOMAIN][entry.entry_id].get("intuis_home")
 
@@ -905,6 +1003,26 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
         ),
     })
 
+    # Add "All rooms" option to room_options for import service
+    import_room_options = [{"value": "", "label": "All rooms"}] + room_options
+
+    import_energy_history_schema = vol.Schema({
+        vol.Optional(ATTR_DAYS, default=DEFAULT_HISTORY_DAYS): NumberSelector(
+            NumberSelectorConfig(
+                min=1,
+                max=MAX_HISTORY_DAYS,
+                step=1,
+                mode=NumberSelectorMode.BOX,
+            )
+        ),
+        vol.Optional(ATTR_ROOM_NAME): SelectSelector(
+            SelectSelectorConfig(
+                options=import_room_options if import_room_options else [{"value": "", "label": "All rooms"}],
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        ),
+    })
+
     # Register services (only once)
     if not hass.services.has_service(DOMAIN, SERVICE_SWITCH_SCHEDULE):
         hass.services.async_register(
@@ -936,4 +1054,12 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
             SERVICE_SET_ZONE_TEMPERATURE,
             async_handle_set_zone_temperature,
             schema=set_zone_temperature_schema,
+        )
+
+    if not hass.services.has_service(DOMAIN, SERVICE_IMPORT_ENERGY_HISTORY):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_IMPORT_ENERGY_HISTORY,
+            async_handle_import_energy_history,
+            schema=import_energy_history_schema,
         )
