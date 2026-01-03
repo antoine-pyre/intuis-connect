@@ -22,7 +22,27 @@ This document lists features available in the Intuis API that are not yet implem
 - Climate, Sensor, Binary Sensor, Select, Number, Calendar
 
 ### Services
-- `switch_schedule`, `set_schedule_slot`, `refresh_schedules`, `set_zone_temperature`
+- `switch_schedule`, `set_schedule_slot`, `refresh_schedules`, `set_zone_temperature`, `import_energy_history`
+
+### Recently Implemented
+
+#### Module/Gateway Health Sensors (v1.9.0)
+- `binary_sensor.{room}_{module}_reachable` - Module connectivity status
+- `sensor.{room}_{module}_last_seen` - Last communication timestamp
+- `sensor.{room}_{module}_firmware` - Module firmware version (diagnostic)
+- `sensor.gateway_wifi_strength` - Gateway WiFi signal strength
+- `sensor.gateway_uptime` - Gateway uptime with formatted attribute
+- `sensor.gateway_firmware` - Gateway firmware version (diagnostic)
+
+#### Configurable Energy Reset Time (v1.9.0)
+- Energy sensors reset at configurable hour (default 2 AM)
+- "Logical day" concept for accurate daily tracking
+- Configurable in integration options
+
+#### Historical Energy Import (v1.9.0)
+- Import historical energy data from Intuis cloud
+- Available as setup option or service call
+- Imports to existing sensor entities for Energy Dashboard
 
 ---
 
@@ -81,26 +101,7 @@ The API provides energy data split by tariff (`sum_energy_elec$0`, `$1`, `$2`) f
 
 ---
 
-### 4. Module/Gateway Health Sensors
-
-**Interest:**
-Hardware issues (disconnected gateway, unreachable radiator module) are invisible to users until heating fails. Proactive monitoring enables alerts before comfort is impacted.
-
-**Requirements:**
-- Data source: `/api/homesdata` contains module info
-- Fields: `reachable`, `last_seen`, `firmware`, `rf_strength` (if available)
-- No additional API calls needed - data already fetched
-
-**HA Integration:**
-- New binary sensors: `binary_sensor.{module}_reachable`
-- New sensors: `sensor.{module}_last_seen`, `sensor.{module}_firmware`
-- Device class: `connectivity` for reachability
-- Group under gateway device in HA device registry
-- Optional: Diagnostic sensors (hidden by default)
-
----
-
-### 5. Boost Status Binary Sensor
+### 4. Boost Status Binary Sensor
 
 **Interest:**
 Boost mode is a common heating feature but currently only visible through the climate preset. A dedicated binary sensor enables simpler automations and better visibility in dashboards.
@@ -118,7 +119,7 @@ Boost mode is a common heating feature but currently only visible through the cl
 
 ---
 
-### 6. Home Presence Aggregation Sensor
+### 5. Home Presence Aggregation Sensor
 
 **Interest:**
 Each room has a presence sensor, but users often need "is anyone home" logic. Currently requires template sensors combining all room presence states. A native sensor simplifies automations.
@@ -136,7 +137,7 @@ Each room has a presence sensor, but users often need "is anyone home" logic. Cu
 
 ---
 
-### 7. Batch Room Control Service
+### 6. Batch Room Control Service
 
 **Interest:**
 Setting multiple rooms to the same mode (e.g., all to away mode) requires multiple service calls. The API supports arrays of rooms in a single request, reducing latency and API load.
@@ -154,7 +155,7 @@ Setting multiple rooms to the same mode (e.g., all to away mode) requires multip
 
 ---
 
-### 8. Away/Frost Temperature Configuration
+### 7. Away/Frost Temperature Configuration
 
 **Interest:**
 Each schedule has `away_temp` and `hg_temp` (frost protection) settings. Users cannot modify these without the mobile app. Useful for seasonal adjustments or vacation settings.
@@ -172,7 +173,7 @@ Each schedule has `away_temp` and `hg_temp` (frost protection) settings. Users c
 
 ---
 
-### 9. Schedule Duplication Service
+### 8. Schedule Duplication Service
 
 **Interest:**
 Creating seasonal schedules (summer/winter) or backup schedules requires manual recreation. Duplicating an existing schedule saves time and reduces errors.
@@ -190,25 +191,7 @@ Creating seasonal schedules (summer/winter) or backup schedules requires manual 
 
 ---
 
-### 10. Configurable Energy Reset Time
-
-**Interest:**
-Energy sensors reset daily at 2 AM (hardcoded). Users with different utility billing cycles (midnight, 6 AM) cannot align HA data with their bills accurately.
-
-**Requirements:**
-- No API change needed
-- Modify `_check_daily_reset()` in `sensor.py`
-- Store reset hour in config entry options
-
-**HA Integration:**
-- Add option in config flow: "Daily energy reset time"
-- Default: 2:00 AM (current behavior)
-- Range: 00:00 - 23:59
-- Apply to all energy sensors for the integration
-
----
-
-### 11. Historical Energy Export Service
+### 9. Historical Energy Export Service
 
 **Interest:**
 The API supports historical data queries with scales up to `1month`. Users analyzing long-term trends or migrating data cannot easily access historical consumption.
@@ -226,7 +209,7 @@ The API supports historical data queries with scales up to `1month`. Users analy
 
 ---
 
-### 12. Heating Efficiency Metrics
+### 10. Heating Efficiency Metrics
 
 **Interest:**
 Understanding heating efficiency (energy per degree, cost per hour) helps identify problems like poor insulation or malfunctioning equipment. Currently requires manual calculations.
@@ -245,7 +228,7 @@ Understanding heating efficiency (energy per degree, cost per hour) helps identi
 
 ---
 
-### 13. Anticipation Control
+### 11. Anticipation Control
 
 **Interest:**
 The system pre-heats rooms to reach target temperature on time ("anticipation"). Users may want to disable this during mild weather or enable it during cold snaps manually.
@@ -262,7 +245,7 @@ The system pre-heats rooms to reach target temperature on time ("anticipation").
 
 ---
 
-### 14. Rate Limit Status Attributes
+### 12. Rate Limit Status Attributes
 
 **Interest:**
 Heavy automation usage can hit API rate limits. Exposing remaining quota helps users tune polling intervals and avoid service disruptions.
@@ -280,7 +263,7 @@ Heavy automation usage can hit API rate limits. Exposing remaining quota helps u
 
 ---
 
-### 15. Schedule Conflict Detection
+### 13. Schedule Conflict Detection
 
 **Interest:**
 Creating overlapping schedule slots causes unpredictable behavior. Validation before API calls prevents user errors and improves reliability.
@@ -298,7 +281,7 @@ Creating overlapping schedule slots causes unpredictable behavior. Validation be
 
 ---
 
-### 16. Multi-Home Energy Aggregation
+### 14. Multi-Home Energy Aggregation
 
 **Interest:**
 Users with multiple properties (vacation home, rental) want combined energy tracking. Currently each home is independent with no cross-home views.
@@ -320,22 +303,20 @@ Users with multiple properties (vacation home, rental) want combined energy trac
 
 | Priority | Feature | Effort | Impact |
 |----------|---------|--------|--------|
-| P1 | Home-level energy sensor | Low | High |
-| P1 | Module health sensors | Low | High |
-| P1 | Boost status binary sensor | Low | Medium |
-| P1 | Home presence aggregation | Low | Medium |
-| P2 | Tariff-separated energy | Medium | High |
-| P2 | Batch room control | Medium | Medium |
-| P2 | Delete schedule slot | Medium | Medium |
-| P2 | Away/frost temp config | Medium | Medium |
-| P3 | Configurable reset time | Low | Low |
-| P3 | Schedule duplication | Medium | Low |
-| P3 | Historical energy export | Medium | Medium |
-| P3 | Anticipation control | Medium | Low |
-| P4 | Heating efficiency metrics | High | Medium |
-| P4 | Rate limit status | Low | Low |
-| P4 | Schedule conflict detection | Medium | Low |
-| P4 | Multi-home aggregation | Low | Low |
+| P1 | Home-level energy sensor (#2) | Low | High |
+| P1 | Boost status binary sensor (#4) | Low | Medium |
+| P1 | Home presence aggregation (#5) | Low | Medium |
+| P2 | Tariff-separated energy (#3) | Medium | High |
+| P2 | Batch room control (#6) | Medium | Medium |
+| P2 | Delete schedule slot (#1) | Medium | Medium |
+| P2 | Away/frost temp config (#7) | Medium | Medium |
+| P3 | Schedule duplication (#8) | Medium | Low |
+| P3 | Historical energy export (#9) | Medium | Medium |
+| P3 | Anticipation control (#11) | Medium | Low |
+| P4 | Heating efficiency metrics (#10) | High | Medium |
+| P4 | Rate limit status (#12) | Low | Low |
+| P4 | Schedule conflict detection (#13) | Medium | Low |
+| P4 | Multi-home aggregation (#14) | Low | Low |
 
 ---
 
@@ -351,15 +332,12 @@ POST   https://connect.intuis.net/api/updatenewhomeschedule
 ## Data Available but Not Exposed
 
 From `/syncapi/v1/homestatus`:
-- `last_seen` - Module last communication timestamp
-- `muller_type` - Device hardware type
-- `boost_status` - Boost mode active flag
+- `muller_type` - Device hardware type (partially exposed via sensor)
+- `boost_status` - Boost mode active flag (could have dedicated binary sensor)
 
 From `/api/homesdata`:
-- Module firmware versions
-- Gateway connection status
 - RF signal strength (if available)
 
 ---
 
-*Generated: 2026-01-02*
+*Last updated: 2026-01-03*
