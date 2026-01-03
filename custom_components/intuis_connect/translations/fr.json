@@ -44,7 +44,7 @@
     },
     "import_energy_history": {
       "name": "Importer l'historique energetique",
-      "description": "Importe les donnees historiques de consommation d'energie depuis le cloud Intuis vers les entites capteurs existantes. Les donnees apparaissent sur les memes entites sensor.{room}_energy utilisees dans le tableau de bord Energie.",
+      "description": "Importe les donnees historiques de consommation d'energie depuis le cloud Intuis vers les entites capteurs existantes. Les donnees apparaissent sur les memes capteurs d'energie utilises dans le tableau de bord Energie.",
       "fields": {
         "days": {
           "name": "Jours a importer",
