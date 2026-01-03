@@ -26,6 +26,13 @@ This document lists features available in the Intuis API that are not yet implem
 
 ### Recently Implemented
 
+#### Rate Limit Handling (v1.9.1)
+- Circuit breaker pattern (pauses requests after consecutive 429s)
+- Request throttling (minimum delay between API calls)
+- Adaptive polling (increases interval when rate limited, recovers when stable)
+- Retry-After header support
+- User-configurable settings in integration options
+
 #### Module/Gateway Health Sensors (v1.9.0)
 - `binary_sensor.{room}_{module}_reachable` - Module connectivity status
 - `sensor.{room}_{module}_last_seen` - Last communication timestamp
@@ -52,7 +59,7 @@ This document lists features available in the Intuis API that are not yet implem
 
 ---
 
-## Missing Features
+## Planned Features
 
 ### 1. Delete Schedule Slot
 
@@ -87,63 +94,11 @@ The API provides energy data split by tariff (`sum_energy_elec$0`, `$1`, `$2`) f
 - Add utility meter integration compatibility for cost tracking
 - Include tariff metadata as attributes (if available from API)
 
----
-
-### 3. Boost Status Binary Sensor
-
-**Interest:**
-Boost mode is a common heating feature but currently only visible through the climate preset. A dedicated binary sensor enables simpler automations and better visibility in dashboards.
-
-**Requirements:**
-- Data source: `boost_status` field in `/syncapi/v1/homestatus`
-- Already fetched during coordinator updates
-- No additional API calls needed
-
-**HA Integration:**
-- New binary sensor: `binary_sensor.{room}_boost_active`
-- Device class: `running` or `heat`
-- Add attributes: `boost_end_time` if available
-- Use for automation triggers (e.g., notify when boost ends)
+**Why this can't be a template:** The API tracks which kWh were consumed during each tariff period. This data isn't derivable from the total energy sensor.
 
 ---
 
-### 4. Home Presence Aggregation Sensor
-
-**Interest:**
-Each room has a presence sensor, but users often need "is anyone home" logic. Currently requires template sensors combining all room presence states. A native sensor simplifies automations.
-
-**Requirements:**
-- Data source: Existing room presence data
-- Logic: OR operation across all room `presence` values
-- No additional API calls needed
-
-**HA Integration:**
-- New binary sensor: `binary_sensor.intuis_home_presence`
-- Device class: `occupancy`
-- Attributes: List of occupied rooms, count of occupied rooms
-- Attach to home device, not individual rooms
-
----
-
-### 5. Batch Room Control Service
-
-**Interest:**
-Setting multiple rooms to the same mode (e.g., all to away mode) requires multiple service calls. The API supports arrays of rooms in a single request, reducing latency and API load.
-
-**Requirements:**
-- API endpoint: `POST /syncapi/v1/setstate` (already used)
-- Change: Build payload with multiple room entries
-- Validate all rooms before sending
-
-**HA Integration:**
-- New service: `intuis_connect.set_rooms_state`
-- Schema: `rooms` (list), `mode`, `temperature` (optional), `duration` (optional)
-- Alternative: `intuis_connect.set_home_mode` for all rooms at once
-- Reduces API calls from N to 1 for bulk operations
-
----
-
-### 6. Away/Frost Temperature Configuration
+### 3. Away/Frost Temperature Configuration
 
 **Interest:**
 Each schedule has `away_temp` and `hg_temp` (frost protection) settings. Users cannot modify these without the mobile app. Useful for seasonal adjustments or vacation settings.
@@ -161,97 +116,7 @@ Each schedule has `away_temp` and `hg_temp` (frost protection) settings. Users c
 
 ---
 
-### 7. Schedule Duplication Service
-
-**Interest:**
-Creating seasonal schedules (summer/winter) or backup schedules requires manual recreation. Duplicating an existing schedule saves time and reduces errors.
-
-**Requirements:**
-- API endpoint: `POST /api/synchomeschedule`
-- Logic: Fetch existing schedule, modify name/ID, POST as new
-- No dedicated API endpoint - client-side duplication
-
-**HA Integration:**
-- New service: `intuis_connect.duplicate_schedule`
-- Schema: `source_schedule`, `new_name`
-- Generate new schedule ID client-side
-- Refresh schedules after creation
-
----
-
-### 8. Historical Energy Export Service
-
-**Interest:**
-The API supports historical data queries with scales up to `1month`. Users analyzing long-term trends or migrating data cannot easily access historical consumption.
-
-**Requirements:**
-- API endpoint: `POST /api/getroommeasure` with custom date range
-- Parameters: `date_begin`, `date_end`, `scale`
-- Scales: `5min`, `30min`, `1hour`, `1day`, `1week`, `1month`
-
-**HA Integration:**
-- New service: `intuis_connect.get_energy_history`
-- Schema: `room` (optional), `start_date`, `end_date`, `scale`
-- Return: Fire event with data or save to file
-- Alternative: Populate HA statistics database directly
-
----
-
-### 9. Heating Efficiency Metrics
-
-**Interest:**
-Understanding heating efficiency (energy per degree, cost per hour) helps identify problems like poor insulation or malfunctioning equipment. Currently requires manual calculations.
-
-**Requirements:**
-- Data sources: `heating_minutes`, `energy` sensors, outdoor temperature (external)
-- Logic: Calculate ratios and trends
-- No additional API calls needed
-
-**HA Integration:**
-- New sensors: `sensor.{room}_heating_efficiency`
-- Calculation: kWh per degree-hour or similar metric
-- Requires outdoor temperature entity (configurable)
-- State class: `measurement`
-- Consider as optional/advanced feature
-
----
-
-### 10. Anticipation Control
-
-**Interest:**
-The system pre-heats rooms to reach target temperature on time ("anticipation"). Users may want to disable this during mild weather or enable it during cold snaps manually.
-
-**Requirements:**
-- Investigation needed: Check if API supports anticipation toggle
-- Current: `anticipation` binary sensor exists (read-only)
-- May require `/syncapi/v1/setstate` with specific parameters
-
-**HA Integration:**
-- New switch: `switch.{room}_anticipation` (if API supports)
-- Alternative: Service to temporarily disable anticipation
-- If read-only, document limitation and keep binary sensor only
-
----
-
-### 11. Rate Limit Status Attributes
-
-**Interest:**
-Heavy automation usage can hit API rate limits. Exposing remaining quota helps users tune polling intervals and avoid service disruptions.
-
-**Requirements:**
-- Check API response headers for rate limit info
-- Common headers: `X-RateLimit-Remaining`, `X-RateLimit-Reset`
-- Store values during each API call
-
-**HA Integration:**
-- Add attributes to integration diagnostics
-- New sensor: `sensor.intuis_api_quota` (optional)
-- Emit warning log when quota low
-- Consider adaptive polling based on quota
-
----
-
-### 12. Schedule Conflict Detection
+### 4. Schedule Conflict Detection
 
 **Interest:**
 Creating overlapping schedule slots causes unpredictable behavior. Validation before API calls prevents user errors and improves reliability.
@@ -269,21 +134,83 @@ Creating overlapping schedule slots causes unpredictable behavior. Validation be
 
 ---
 
-### 13. Multi-Home Energy Aggregation
+### 5. Anticipation Control
+
+**Status:** Needs API investigation
 
 **Interest:**
-Users with multiple properties (vacation home, rental) want combined energy tracking. Currently each home is independent with no cross-home views.
+The system pre-heats rooms to reach target temperature on time ("anticipation"). Users may want to disable this during mild weather or enable it during cold snaps manually.
 
 **Requirements:**
-- Data source: Existing home-level data from each configured home
-- Logic: Sum across homes
-- No additional API calls needed
+- Investigation needed: Check if API supports anticipation toggle
+- Current: `anticipation` binary sensor exists (read-only)
+- May require `/syncapi/v1/setstate` with specific parameters
 
 **HA Integration:**
-- New sensor: `sensor.intuis_all_homes_energy`
-- Only created when multiple homes configured
-- Attributes: Breakdown per home
-- Consider as optional feature in config flow
+- New switch: `switch.{room}_anticipation` (if API supports)
+- Alternative: Service to temporarily disable anticipation
+- If read-only, document limitation and keep binary sensor only
+
+---
+
+## Won't Implement
+
+The following features were considered but won't be implemented because they're better served by Home Assistant's native capabilities or provide marginal value given the async/cloud-polling nature of the integration.
+
+### Boost Status Binary Sensor
+**Reason:** Redundant with `climate.preset_mode` attribute.
+
+Users can create a template if needed:
+```yaml
+template:
+  - binary_sensor:
+      - name: "Room Boost Active"
+        state: "{{ state_attr('climate.room', 'preset_mode') == 'boost' }}"
+```
+
+### Home Presence Aggregation Sensor
+**Reason:** Trivially done with HA's group platform.
+
+```yaml
+binary_sensor:
+  - platform: group
+    name: "Home Presence"
+    device_class: occupancy
+    entities:
+      - binary_sensor.room1_presence
+      - binary_sensor.room2_presence
+```
+
+### Batch Room Control Service
+**Reason:** Marginal benefit with rate limiting in place. Multiple service calls work fine. Atomicity isn't guaranteed anyway due to async polling (2-minute interval).
+
+### Schedule Duplication Service
+**Reason:** Rare operation (once per season). Mobile app handles this adequately. Low value vs implementation complexity.
+
+### Historical Energy Export Service
+**Reason:** Now redundant. The `import_energy_history` service populates HA statistics database. Users can export data from Home Assistant's Energy Dashboard.
+
+### Heating Efficiency Metrics
+**Reason:** Wrong abstraction layer. Requires external data (outdoor temperature) and complex calculations. Better implemented as:
+- User-created template sensors
+- Separate analytics integration
+- HA's statistics features
+
+### Rate Limit Status Sensor
+**Reason:** Mostly addressed by circuit breaker implementation. The Intuis API doesn't return rate limit headers (`X-RateLimit-Remaining`, etc.). Users don't need real-time quota visibility - the circuit breaker handles recovery automatically.
+
+### Multi-Home Energy Aggregation
+**Reason:** Niche use case + trivially templated.
+
+```yaml
+template:
+  - sensor:
+      - name: "All Homes Energy"
+        unit_of_measurement: "kWh"
+        state: >
+          {{ states('sensor.home1_energy_today') | float(0) +
+             states('sensor.home2_energy_today') | float(0) }}
+```
 
 ---
 
@@ -291,19 +218,11 @@ Users with multiple properties (vacation home, rental) want combined energy trac
 
 | Priority | Feature | Effort | Impact |
 |----------|---------|--------|--------|
-| P1 | Boost status binary sensor (#3) | Low | Medium |
-| P1 | Home presence aggregation (#4) | Low | Medium |
+| P1 | Schedule conflict detection (#4) | Low | Medium |
 | P2 | Tariff-separated energy (#2) | Medium | High |
-| P2 | Batch room control (#5) | Medium | Medium |
 | P2 | Delete schedule slot (#1) | Medium | Medium |
-| P2 | Away/frost temp config (#6) | Medium | Medium |
-| P3 | Schedule duplication (#7) | Medium | Low |
-| P3 | Historical energy export (#8) | Medium | Medium |
-| P3 | Anticipation control (#10) | Medium | Low |
-| P4 | Heating efficiency metrics (#9) | High | Medium |
-| P4 | Rate limit status (#11) | Low | Low |
-| P4 | Schedule conflict detection (#12) | Medium | Low |
-| P4 | Multi-home aggregation (#13) | Low | Low |
+| P2 | Away/frost temp config (#3) | Medium | Medium |
+| P3 | Anticipation control (#5) | Medium | Low |
 
 ---
 
@@ -320,7 +239,6 @@ POST   https://connect.intuis.net/api/updatenewhomeschedule
 
 From `/syncapi/v1/homestatus`:
 - `muller_type` - Device hardware type (partially exposed via sensor)
-- `boost_status` - Boost mode active flag (could have dedicated binary sensor)
 
 From `/api/homesdata`:
 - RF signal strength (if available)
