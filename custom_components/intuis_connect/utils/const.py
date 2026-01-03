@@ -108,6 +108,10 @@ ENERGY_SCALE_OPTIONS = {
     "1day": "1 day (daily total)",
 }
 
+# Energy reset hour (when daily counters reset)
+CONF_ENERGY_RESET_HOUR = "energy_reset_hour"
+DEFAULT_ENERGY_RESET_HOUR = 2  # 2 AM - after API has finalized previous day's data
+
 # API modes
 API_MODE_OFF = "off"
 API_MODE_HOME = "home"

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import homeassistant.util.dt as dt_util
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
@@ -15,7 +15,7 @@ from .entity.intuis_home_entity import provide_home_sensors
 from .entity.intuis_room import IntuisRoom
 from .entity.intuis_schedule import IntuisThermSchedule, IntuisThermZone
 from .timetable import MINUTES_PER_DAY
-from .utils.const import DOMAIN
+from .utils.const import DOMAIN, CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR
 from .utils.helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
@@ -187,7 +187,7 @@ class IntuisEnergySensor(IntuisSensor):
     """Specialized sensor for daily energy consumption.
 
     This sensor tracks cumulative daily energy consumption (max seen today, never decreases).
-    The value resets at midnight to start tracking the new day's consumption.
+    The value resets at the configured reset hour (default 2 AM) to start tracking the new day's consumption.
     """
 
     def __init__(self, coordinator, home_id: str, room: IntuisRoom) -> None:
@@ -206,7 +206,36 @@ class IntuisEnergySensor(IntuisSensor):
 
         # Track daily maximum energy (never decrease within a day)
         self._daily_max_energy: float = 0.0
-        self._last_reset_date: datetime | None = None
+        # Track the logical day (based on reset hour, not midnight)
+        self._last_logical_day: str | None = None
+
+    def _get_reset_hour(self) -> int:
+        """Get the configured reset hour from options."""
+        try:
+            # Access config entry options through hass.data
+            entry_id = self.coordinator.config_entry.entry_id
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry:
+                return entry.options.get(CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR)
+        except Exception:
+            pass
+        return DEFAULT_ENERGY_RESET_HOUR
+
+    def _get_logical_day(self, now: datetime, reset_hour: int) -> str:
+        """Get the logical day identifier based on reset hour.
+
+        The logical day starts at reset_hour and ends at reset_hour the next calendar day.
+        For example, with reset_hour=2:
+        - 2024-01-15 01:30 is still logical day "2024-01-14"
+        - 2024-01-15 02:00 is logical day "2024-01-15"
+        """
+        if now.hour < reset_hour:
+            # Before reset hour: still the previous logical day
+            logical_date = (now - timedelta(days=1)).date()
+        else:
+            # After reset hour: current logical day
+            logical_date = now.date()
+        return logical_date.isoformat()
 
     @property
     def native_value(self) -> float:
@@ -216,17 +245,28 @@ class IntuisEnergySensor(IntuisSensor):
 
         current_energy = self._room.energy or 0.0
         now = dt_util.now()
+        reset_hour = self._get_reset_hour()
+        current_logical_day = self._get_logical_day(now, reset_hour)
 
-        # Reset daily max on new day
-        if self._last_reset_date is None or self._last_reset_date.date() != now.date():
+        # Reset daily max on new logical day
+        if self._last_logical_day is None:
+            # First run - initialize without resetting
             self._daily_max_energy = current_energy
-            self._last_reset_date = now
+            self._last_logical_day = current_logical_day
             _LOGGER.debug(
-                "New day for %s, reset daily max to %.3f kWh",
-                self._room.name, current_energy
+                "Initializing energy for %s: %.3f kWh (logical day: %s)",
+                self._room.name, current_energy, current_logical_day
+            )
+        elif self._last_logical_day != current_logical_day:
+            # New logical day - reset to current value
+            self._daily_max_energy = current_energy
+            self._last_logical_day = current_logical_day
+            _LOGGER.info(
+                "New logical day for %s (reset hour: %02d:00), reset energy to %.3f kWh",
+                self._room.name, reset_hour, current_energy
             )
         elif current_energy > self._daily_max_energy:
-            # Update max if current is higher
+            # Same day - update max if current is higher
             self._daily_max_energy = current_energy
             _LOGGER.debug(
                 "Updated daily max for %s to %.3f kWh",

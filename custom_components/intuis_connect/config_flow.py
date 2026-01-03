@@ -37,6 +37,7 @@ from .utils.const import (
     CONF_BOOST_TEMP,
     CONF_INDEFINITE_MODE,
     CONF_ENERGY_SCALE,
+    CONF_ENERGY_RESET_HOUR,
     DEFAULT_MANUAL_DURATION,
     DEFAULT_AWAY_DURATION,
     DEFAULT_BOOST_DURATION,
@@ -44,6 +45,7 @@ from .utils.const import (
     DEFAULT_BOOST_TEMP,
     DEFAULT_INDEFINITE_MODE,
     DEFAULT_ENERGY_SCALE,
+    DEFAULT_ENERGY_RESET_HOUR,
     ENERGY_SCALE_OPTIONS,
     DURATION_OPTIONS_SHORT,
     DURATION_OPTIONS_LONG,
@@ -252,10 +254,16 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Step 4: Configure energy settings."""
         if user_input is not None:
+            # Convert reset hour to int if it's a string
+            reset_hour = user_input.get(CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR)
+            if isinstance(reset_hour, str):
+                reset_hour = int(reset_hour)
+
             # Combine all options
             all_options = {
                 **self._override_options,
                 CONF_ENERGY_SCALE: user_input.get(CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE),
+                CONF_ENERGY_RESET_HOUR: reset_hour,
             }
 
             # Use home_name in title for multi-home setups, username for single-home
@@ -281,6 +289,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             for key, label in ENERGY_SCALE_OPTIONS.items()
         ]
 
+        # Build options for reset hour (0-23)
+        reset_hour_options = [
+            {"value": str(h), "label": f"{h:02d}:00"}
+            for h in range(24)
+        ]
+
         options_schema = vol.Schema(
             {
                 vol.Optional(
@@ -288,6 +302,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     default=DEFAULT_ENERGY_SCALE,
                 ): SelectSelector(
                     SelectSelectorConfig(options=energy_options, mode=SelectSelectorMode.DROPDOWN)
+                ),
+                vol.Optional(
+                    CONF_ENERGY_RESET_HOUR,
+                    default=str(DEFAULT_ENERGY_RESET_HOUR),
+                ): SelectSelector(
+                    SelectSelectorConfig(options=reset_hour_options, mode=SelectSelectorMode.DROPDOWN)
                 ),
             }
         )
@@ -458,10 +478,16 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Step 3: Configure energy settings."""
         if user_input is not None:
+            # Convert reset hour to int if it's a string
+            reset_hour = user_input.get(CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR)
+            if isinstance(reset_hour, str):
+                reset_hour = int(reset_hour)
+
             # Combine all options
             all_options = {
                 **self._override_options,
                 CONF_ENERGY_SCALE: user_input.get(CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE),
+                CONF_ENERGY_RESET_HOUR: reset_hour,
             }
             return self.async_create_entry(title="", data=all_options)
 
@@ -470,6 +496,17 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
             {"value": key, "label": label}
             for key, label in ENERGY_SCALE_OPTIONS.items()
         ]
+
+        # Build options for reset hour (0-23)
+        reset_hour_options = [
+            {"value": str(h), "label": f"{h:02d}:00"}
+            for h in range(24)
+        ]
+
+        # Get current reset hour value
+        current_reset_hour = self._entry.options.get(
+            CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR
+        )
 
         options_schema = vol.Schema(
             {
@@ -480,6 +517,12 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
                     ),
                 ): SelectSelector(
                     SelectSelectorConfig(options=energy_options, mode=SelectSelectorMode.DROPDOWN)
+                ),
+                vol.Optional(
+                    CONF_ENERGY_RESET_HOUR,
+                    default=str(current_reset_hour),
+                ): SelectSelector(
+                    SelectSelectorConfig(options=reset_hour_options, mode=SelectSelectorMode.DROPDOWN)
                 ),
             }
         )

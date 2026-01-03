@@ -106,10 +106,12 @@
         "title": "Suivi énergétique",
         "description": "Configurez le suivi de la consommation d'énergie.",
         "data": {
-          "energy_scale": "Fréquence de mise à jour"
+          "energy_scale": "Fréquence de mise à jour",
+          "energy_reset_hour": "Heure de réinitialisation"
         },
         "data_description": {
-          "energy_scale": "Fréquence de mise à jour des données de consommation."
+          "energy_scale": "Fréquence de mise à jour des données de consommation.",
+          "energy_reset_hour": "Heure de réinitialisation des compteurs journaliers (0-23). Par défaut 2h pour s'assurer que les données de la veille sont finalisées."
         }
       },
       "reauth_confirm": {
@@ -162,10 +164,12 @@
         "title": "Suivi énergétique",
         "description": "Configurez le suivi de la consommation d'énergie.",
         "data": {
-          "energy_scale": "Fréquence de mise à jour"
+          "energy_scale": "Fréquence de mise à jour",
+          "energy_reset_hour": "Heure de réinitialisation"
         },
         "data_description": {
-          "energy_scale": "Fréquence de mise à jour des données de consommation."
+          "energy_scale": "Fréquence de mise à jour des données de consommation.",
+          "energy_reset_hour": "Heure de réinitialisation des compteurs journaliers (0-23). Par défaut 2h pour s'assurer que les données de la veille sont finalisées."
         }
       }
     }
