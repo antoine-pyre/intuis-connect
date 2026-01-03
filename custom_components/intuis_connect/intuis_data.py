@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .entity.intuis_home import IntuisHome
@@ -23,8 +23,10 @@ from .utils.const import (
     CONF_AWAY_DURATION,
     CONF_BOOST_DURATION,
     CONF_ENERGY_SCALE,
+    CONF_ENERGY_RESET_HOUR,
     DEFAULT_INDEFINITE_MODE,
     DEFAULT_ENERGY_SCALE,
+    DEFAULT_ENERGY_RESET_HOUR,
 )
 
 # Re-apply override this many seconds before it expires (when indefinite mode is on)
@@ -53,7 +55,8 @@ class IntuisData:
         self._minutes_counter: dict[str, int] = {}
         self._intuis_home = intuis_home
         self._last_update_timestamp: datetime | None = None
-        self._last_reset_date = datetime.now().date()
+        # Track the last "logical day" we processed (based on reset hour, not midnight)
+        self._last_logical_day: str | None = None
         # sticky overrides: { room_id: { mode, temp, end, sticky, last_reapply } }
         self._overrides: dict[str, dict] = overrides or {}
         # Callback to get current options from config entry
@@ -61,17 +64,51 @@ class IntuisData:
         # Callback to persist overrides to storage
         self._save_overrides = save_overrides_callback
 
+    def _get_logical_day(self, now: datetime, reset_hour: int) -> str:
+        """Get the logical day identifier based on reset hour.
+
+        The logical day starts at reset_hour and ends at reset_hour the next calendar day.
+        For example, with reset_hour=2:
+        - 2024-01-15 01:30 is still logical day "2024-01-14"
+        - 2024-01-15 02:00 is logical day "2024-01-15"
+        """
+        if now.hour < reset_hour:
+            # Before reset hour: still the previous logical day
+            logical_date = (now - timedelta(days=1)).date()
+        else:
+            # After reset hour: current logical day
+            logical_date = now.date()
+        return logical_date.isoformat()
+
     async def async_update(self) -> dict[str, Any]:
         """Fetch and process data from the API."""
         now = datetime.now()
-        is_new_day = self._last_reset_date != now.date()
-        if is_new_day:
-            _LOGGER.debug("New day detected, resetting minutes counter and energy cache")
+
+        # Get configured reset hour
+        options = self._get_options()
+        reset_hour = options.get(CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR)
+
+        # Check if we've crossed the reset hour boundary
+        current_logical_day = self._get_logical_day(now, reset_hour)
+        is_new_logical_day = (
+            self._last_logical_day is not None and
+            self._last_logical_day != current_logical_day
+        )
+
+        if is_new_logical_day:
+            _LOGGER.info(
+                "New logical day detected (reset hour: %02d:00), resetting counters. "
+                "Previous: %s, Current: %s",
+                reset_hour,
+                self._last_logical_day,
+                current_logical_day,
+            )
             self._minutes_counter.clear()
             self._energy_cache.clear()
-            self._last_reset_date = now.date()
 
-        _LOGGER.debug("Starting data update at %s", now)
+        self._last_logical_day = current_logical_day
+
+        _LOGGER.debug("Starting data update at %s (logical day: %s)", now, current_logical_day)
 
         try:
             home = await self._api.async_get_home_status()
@@ -211,14 +248,18 @@ class IntuisData:
         self, data_by_room: dict[str, Any], now: datetime
     ) -> None:
         """Fetch energy consumption data for all rooms."""
-        # Get energy scale from options (default: 1day)
+        # Get energy scale and reset hour from options
         options = self._get_options()
         scale = options.get(CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE)
+        reset_hour = options.get(CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR)
         is_realtime = scale != "1day"
 
-        # For daily scale, only fetch after 2 AM to ensure previous day's data is available
-        if not is_realtime and now.hour < 2:
-            _LOGGER.debug("Skipping energy fetch before 2 AM (daily mode)")
+        # For daily scale, only fetch after reset hour to ensure data is available
+        if not is_realtime and now.hour < reset_hour:
+            _LOGGER.debug(
+                "Skipping energy fetch before reset hour %02d:00 (daily mode)",
+                reset_hour,
+            )
             return
 
         today_iso = now.date().isoformat()
