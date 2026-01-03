@@ -1,4 +1,4 @@
-"""Setup for Intuis Connect (v1.9.2)."""
+"""Setup for Intuis Connect (v1.9.3)."""
 from __future__ import annotations
 
 import datetime
