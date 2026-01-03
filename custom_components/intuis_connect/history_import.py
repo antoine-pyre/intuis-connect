@@ -11,12 +11,8 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import TYPE_CHECKING
 
-from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
-from homeassistant.components.recorder.statistics import (
-    async_import_statistics,
-    get_last_statistics,
-)
+from homeassistant.components.recorder.statistics import async_import_statistics
 from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -103,37 +99,6 @@ class HistoryImportManager:
     def is_running(self) -> bool:
         """Check if import is currently running."""
         return self._running
-
-
-async def get_entity_last_sum(
-    hass: HomeAssistant, entity_id: str
-) -> float:
-    """Get the last sum value from existing statistics for an entity.
-
-    Returns 0.0 if no statistics exist.
-    """
-    try:
-        # Run in executor since get_last_statistics is synchronous
-        last_stats = await get_instance(hass).async_add_executor_job(
-            get_last_statistics,
-            hass,
-            1,  # number of stats to retrieve
-            entity_id,
-            True,  # convert_units
-            {"sum"},  # types to retrieve
-        )
-
-        if last_stats and entity_id in last_stats:
-            stats_list = last_stats[entity_id]
-            if stats_list:
-                return stats_list[0].get("sum", 0.0) or 0.0
-
-    except Exception as err:
-        _LOGGER.warning(
-            "Could not get last statistics for %s: %s", entity_id, err
-        )
-
-    return 0.0
 
 
 async def async_import_energy_history(
@@ -253,15 +218,13 @@ async def async_import_energy_history(
                 entity_id,
             )
 
-            # Get existing sum to continue from
-            existing_sum = await get_entity_last_sum(hass, entity_id)
-            _LOGGER.debug(
-                "Existing sum for %s: %.3f kWh", entity_id, existing_sum
-            )
+            # For historical import, start cumulative sum at 0
+            # The import creates a baseline of historical data
+            # Current sensor readings will continue with their own progression
+            cumulative_sum = 0.0
 
             # Collect daily statistics
             statistics: list[StatisticData] = []
-            cumulative_sum = existing_sum
             manager.days_imported = 0
 
             for day_offset in range(days, 0, -1):
@@ -364,13 +327,13 @@ async def async_import_energy_history(
                     async_import_statistics(hass, metadata, statistics)
 
                     results["rooms_imported"] += 1
-                    results["total_energy_kwh"] += cumulative_sum - existing_sum
+                    results["total_energy_kwh"] += cumulative_sum
 
                     _LOGGER.info(
                         "Imported %d days of energy history for %s (%.3f kWh)",
                         len(statistics),
                         room_name,
-                        cumulative_sum - existing_sum,
+                        cumulative_sum,
                     )
 
                 except Exception as err:
