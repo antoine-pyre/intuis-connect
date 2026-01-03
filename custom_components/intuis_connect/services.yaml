@@ -128,8 +128,7 @@ set_zone_temperature:
 import_energy_history:
   name: Import Energy History
   description: Import historical energy data from Intuis cloud to existing sensor
-    entities. Data appears on the same energy sensor entities used in the Energy
-    Dashboard.
+    entities. Data appears on the same energy sensor entities used in the Energy Dashboard.
   fields:
     days:
       name: Days to Import
