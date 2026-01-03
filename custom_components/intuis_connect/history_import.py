@@ -12,7 +12,10 @@ from datetime import datetime, timezone, timedelta
 from typing import TYPE_CHECKING
 
 from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
-from homeassistant.components.recorder.statistics import async_import_statistics
+from homeassistant.components.recorder.statistics import (
+    async_import_statistics,
+    statistics_during_period,
+)
 from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -35,6 +38,138 @@ STORAGE_KEY = f"{DOMAIN}.history_import"
 DEFAULT_HISTORY_DAYS = 365
 MAX_HISTORY_DAYS = 730
 API_DELAY_SECONDS = 2.0  # Delay between API calls to avoid rate limiting
+
+# Minimum discontinuity threshold to trigger adjustment (in kWh)
+DISCONTINUITY_THRESHOLD = 1.0
+
+
+async def _get_existing_statistics(
+    hass: HomeAssistant,
+    entity_id: str,
+    start_time: datetime,
+) -> list[dict]:
+    """Get existing statistics for an entity after a given time.
+
+    Args:
+        hass: Home Assistant instance.
+        entity_id: The entity ID (statistic_id) to query.
+        start_time: Only return statistics after this time.
+
+    Returns:
+        List of statistic entries with 'start', 'state', 'sum' keys.
+    """
+    try:
+        result = await hass.async_add_executor_job(
+            statistics_during_period,
+            hass,
+            start_time,
+            None,  # end_time = now
+            {entity_id},
+            "hour",
+            None,  # units (use native)
+            {"sum", "state"},
+        )
+        return result.get(entity_id, [])
+    except Exception as err:
+        _LOGGER.warning(
+            "Failed to query existing statistics for %s: %s",
+            entity_id,
+            err,
+        )
+        return []
+
+
+async def _fix_statistics_discontinuity(
+    hass: HomeAssistant,
+    entity_id: str,
+    room_name: str,
+    import_end_time: datetime,
+    import_end_sum: float,
+    metadata: StatisticMetaData,
+) -> int:
+    """Fix statistics discontinuity after importing historical data.
+
+    When importing historical data, the cumulative sum starts at 0. If there's
+    existing live sensor data after the import period, those statistics have
+    their own sum baseline that doesn't continue from the import. This function
+    detects and fixes that discontinuity.
+
+    Args:
+        hass: Home Assistant instance.
+        entity_id: The entity ID to fix.
+        room_name: Room name for logging.
+        import_end_time: The timestamp of the last imported statistic.
+        import_end_sum: The cumulative sum at the end of the import.
+        metadata: StatisticMetaData for re-importing adjusted statistics.
+
+    Returns:
+        Number of statistics entries adjusted.
+    """
+    # Query existing statistics AFTER the import period
+    query_start = import_end_time + timedelta(hours=1)
+    existing_stats = await _get_existing_statistics(hass, entity_id, query_start)
+
+    if not existing_stats:
+        _LOGGER.debug(
+            "No existing statistics found after import period for %s",
+            entity_id,
+        )
+        return 0
+
+    # Check for discontinuity: first existing sum should continue from import
+    first_existing = existing_stats[0]
+    first_existing_sum = first_existing.get("sum", 0) or 0
+    first_existing_state = first_existing.get("state", 0) or 0
+
+    # Expected: first_existing_sum ≈ import_end_sum + first_existing_state
+    # If first_existing_sum << import_end_sum, there's a discontinuity
+    expected_first_sum = import_end_sum + first_existing_state
+    discontinuity = expected_first_sum - first_existing_sum
+
+    if abs(discontinuity) <= DISCONTINUITY_THRESHOLD:
+        _LOGGER.debug(
+            "No significant discontinuity detected for %s (delta: %.3f kWh)",
+            entity_id,
+            discontinuity,
+        )
+        return 0
+
+    _LOGGER.info(
+        "Detected statistics discontinuity for %s: "
+        "import ends at %.3f kWh, first existing sum is %.3f kWh, "
+        "adjusting %d entries by %.3f kWh",
+        room_name,
+        import_end_sum,
+        first_existing_sum,
+        len(existing_stats),
+        discontinuity,
+    )
+
+    # Create adjusted statistics to overwrite the existing ones
+    adjusted_statistics = []
+    for stat in existing_stats:
+        stat_start = stat.get("start")
+        if isinstance(stat_start, (int, float)):
+            stat_start = datetime.fromtimestamp(stat_start, tz=timezone.utc)
+
+        adjusted_statistics.append(
+            StatisticData(
+                start=stat_start,
+                state=stat.get("state", 0) or 0,
+                sum=(stat.get("sum", 0) or 0) + discontinuity,
+            )
+        )
+
+    # Import the adjusted statistics (overwrites existing)
+    async_import_statistics(hass, metadata, adjusted_statistics)
+
+    _LOGGER.info(
+        "Adjusted %d statistics entries for %s",
+        len(adjusted_statistics),
+        room_name,
+    )
+
+    return len(adjusted_statistics)
 
 
 class HistoryImportManager:
@@ -349,6 +484,21 @@ async def async_import_energy_history(
                         room_name,
                         cumulative_sum,
                     )
+
+                    # Fix any discontinuity with existing live sensor data
+                    import_end_time = statistics[-1].start
+                    adjusted_count = await _fix_statistics_discontinuity(
+                        hass=hass,
+                        entity_id=entity_id,
+                        room_name=room_name,
+                        import_end_time=import_end_time,
+                        import_end_sum=cumulative_sum,
+                        metadata=metadata,
+                    )
+                    if adjusted_count > 0:
+                        results["statistics_adjusted"] = results.get(
+                            "statistics_adjusted", 0
+                        ) + adjusted_count
 
                 except (ValueError, TypeError) as err:
                     _LOGGER.error(
