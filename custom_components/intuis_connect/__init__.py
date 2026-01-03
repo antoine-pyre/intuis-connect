@@ -19,9 +19,15 @@ from .utils.const import (
     CONF_REFRESH_TOKEN,
     CONF_HOME_ID,
     CONF_HOME_NAME,
+    CONF_IMPORT_HISTORY,
+    CONF_IMPORT_HISTORY_DAYS,
     DEFAULT_UPDATE_INTERVAL,
 )
 from .entity.intuis_entity import IntuisDataUpdateCoordinator
+from .history_import import (
+    HistoryImportManager,
+    async_import_energy_history,
+)
 from .intuis_data import IntuisData
 from .services import (
     async_generate_services_yaml,
@@ -152,6 +158,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # ---------- register services -------------------------------------------------
     await async_register_services(hass, entry)
+
+    # ---------- trigger historical import if requested ----------------------------
+    import_history = entry.options.get(CONF_IMPORT_HISTORY, False)
+    import_days = entry.options.get(CONF_IMPORT_HISTORY_DAYS, 0)
+
+    if import_history and import_days > 0:
+        _LOGGER.info(
+            "Historical energy import requested for %d days, starting in background",
+            import_days,
+        )
+
+        # Create import manager
+        manager = HistoryImportManager(hass, entry.entry_id)
+        await manager.async_load()
+
+        # Store manager for potential service access
+        if "import_managers" not in hass.data[DOMAIN]:
+            hass.data[DOMAIN]["import_managers"] = {}
+        hass.data[DOMAIN]["import_managers"][entry.entry_id] = manager
+
+        # Start import in background task
+        hass.async_create_task(
+            async_import_energy_history(
+                hass=hass,
+                api=intuis_api,
+                intuis_home=intuis_home,
+                manager=manager,
+                days=import_days,
+                room_filter=None,
+            )
+        )
+
+        # Clear the import flag so it doesn't run again on reload
+        new_options = {**entry.options, CONF_IMPORT_HISTORY: False}
+        hass.config_entries.async_update_entry(entry, options=new_options)
 
     return True
 

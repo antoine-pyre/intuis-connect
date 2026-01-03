@@ -114,6 +114,18 @@
           "energy_reset_hour": "Heure de réinitialisation des compteurs journaliers (0-23). Par défaut 2h pour s'assurer que les données de la veille sont finalisées."
         }
       },
+      "history_import": {
+        "title": "Import historique énergétique",
+        "description": "Importer l'historique de consommation d'énergie depuis le cloud Intuis.\n\nCela remplira le tableau de bord Énergie avec les données passées.",
+        "data": {
+          "import_history": "Importer l'historique énergétique",
+          "import_history_days": "Période à importer"
+        },
+        "data_description": {
+          "import_history": "Activer pour importer l'historique énergétique après la configuration.",
+          "import_history_days": "Jusqu'où remonter pour importer les données. Les périodes plus longues prennent plus de temps à cause des limites de l'API (~2 secondes par jour)."
+        }
+      },
       "reauth_confirm": {
         "title": "Reconnexion au compte Intuis",
         "description": "Session expirée pour {username}. Veuillez entrer votre mot de passe."

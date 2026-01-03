@@ -38,6 +38,8 @@ from .utils.const import (
     CONF_INDEFINITE_MODE,
     CONF_ENERGY_SCALE,
     CONF_ENERGY_RESET_HOUR,
+    CONF_IMPORT_HISTORY,
+    CONF_IMPORT_HISTORY_DAYS,
     DEFAULT_MANUAL_DURATION,
     DEFAULT_AWAY_DURATION,
     DEFAULT_BOOST_DURATION,
@@ -46,9 +48,12 @@ from .utils.const import (
     DEFAULT_INDEFINITE_MODE,
     DEFAULT_ENERGY_SCALE,
     DEFAULT_ENERGY_RESET_HOUR,
+    DEFAULT_IMPORT_HISTORY,
+    DEFAULT_IMPORT_HISTORY_DAYS,
     ENERGY_SCALE_OPTIONS,
     DURATION_OPTIONS_SHORT,
     DURATION_OPTIONS_LONG,
+    IMPORT_DAYS_OPTIONS,
 )
 from .utils.helper import async_validate_api
 
@@ -259,29 +264,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if isinstance(reset_hour, str):
                 reset_hour = int(reset_hour)
 
-            # Combine all options
-            all_options = {
-                **self._override_options,
-                CONF_ENERGY_SCALE: user_input.get(CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE),
-                CONF_ENERGY_RESET_HOUR: reset_hour,
-            }
-
-            # Use home_name in title for multi-home setups, username for single-home
-            if self._home_name and len(self._homes) > 1:
-                title = f"Intuis Connect ({self._home_name})"
-            else:
-                title = f"Intuis Connect ({self._username})"
-
-            return self.async_create_entry(
-                title=title,
-                data={
-                    CONF_USERNAME: self._username,
-                    CONF_REFRESH_TOKEN: self._refresh_token,
-                    CONF_HOME_ID: self._home_id,
-                    CONF_HOME_NAME: self._home_name,
-                },
-                options=all_options,
+            self._override_options[CONF_ENERGY_SCALE] = user_input.get(
+                CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE
             )
+            self._override_options[CONF_ENERGY_RESET_HOUR] = reset_hour
+            return await self.async_step_history_import()
 
         # Build select options for energy scale
         energy_options = [
@@ -313,6 +300,59 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(
             step_id="energy",
+            data_schema=options_schema,
+        )
+
+    async def async_step_history_import(
+            self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Step 5: Configure historical energy import."""
+        if user_input is not None:
+            import_history = user_input.get(CONF_IMPORT_HISTORY, DEFAULT_IMPORT_HISTORY)
+            import_days = user_input.get(CONF_IMPORT_HISTORY_DAYS, str(DEFAULT_IMPORT_HISTORY_DAYS))
+            if isinstance(import_days, str):
+                import_days = int(import_days)
+
+            # Combine all options
+            all_options = {
+                **self._override_options,
+                CONF_IMPORT_HISTORY: import_history,
+                CONF_IMPORT_HISTORY_DAYS: import_days if import_history else 0,
+            }
+
+            # Use home_name in title for multi-home setups, username for single-home
+            if self._home_name and len(self._homes) > 1:
+                title = f"Intuis Connect ({self._home_name})"
+            else:
+                title = f"Intuis Connect ({self._username})"
+
+            return self.async_create_entry(
+                title=title,
+                data={
+                    CONF_USERNAME: self._username,
+                    CONF_REFRESH_TOKEN: self._refresh_token,
+                    CONF_HOME_ID: self._home_id,
+                    CONF_HOME_NAME: self._home_name,
+                },
+                options=all_options,
+            )
+
+        options_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_IMPORT_HISTORY,
+                    default=DEFAULT_IMPORT_HISTORY,
+                ): BooleanSelector(),
+                vol.Optional(
+                    CONF_IMPORT_HISTORY_DAYS,
+                    default=str(DEFAULT_IMPORT_HISTORY_DAYS),
+                ): SelectSelector(
+                    SelectSelectorConfig(options=IMPORT_DAYS_OPTIONS, mode=SelectSelectorMode.DROPDOWN)
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="history_import",
             data_schema=options_schema,
         )
 
