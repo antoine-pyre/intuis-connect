@@ -1,6 +1,9 @@
 {
   "domain": "intuis_connect",
   "name": "Intuis Connect (Netatmo)",
+  "after_dependencies": [
+    "recorder"
+  ],
   "codeowners": [
     "@antoine-pyre"
   ],
@@ -10,9 +13,6 @@
   "issue_tracker": "https://github.com/antoine-pyre/intuis-connect/issues",
   "requirements": [
     "aiohttp"
-  ],
-  "after_dependencies": [
-    "recorder"
   ],
   "version": "1.9.1"
 }
