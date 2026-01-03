@@ -47,13 +47,15 @@ async def _get_existing_statistics(
     hass: HomeAssistant,
     entity_id: str,
     start_time: datetime,
+    end_time: datetime | None = None,
 ) -> list[dict]:
-    """Get existing statistics for an entity after a given time.
+    """Get existing statistics for an entity in a time range.
 
     Args:
         hass: Home Assistant instance.
         entity_id: The entity ID (statistic_id) to query.
         start_time: Only return statistics after this time.
+        end_time: Only return statistics before this time (None = now).
 
     Returns:
         List of statistic entries with 'start', 'state', 'sum' keys.
@@ -63,7 +65,7 @@ async def _get_existing_statistics(
             statistics_during_period,
             hass,
             start_time,
-            None,  # end_time = now
+            end_time,
             {entity_id},
             "hour",
             None,  # units (use native)
@@ -79,97 +81,52 @@ async def _get_existing_statistics(
         return []
 
 
-async def _fix_statistics_discontinuity(
+async def _get_baseline_sum(
     hass: HomeAssistant,
     entity_id: str,
     room_name: str,
-    import_end_time: datetime,
-    import_end_sum: float,
-    metadata: StatisticMetaData,
-) -> int:
-    """Fix statistics discontinuity after importing historical data.
+    import_start_time: datetime,
+) -> float:
+    """Get the cumulative sum baseline from existing statistics before import.
 
-    When importing historical data, the cumulative sum starts at 0. If there's
-    existing live sensor data after the import period, those statistics have
-    their own sum baseline that doesn't continue from the import. This function
-    detects and fixes that discontinuity.
+    This queries existing statistics that were recorded BEFORE the import period
+    and returns the last known sum value. The import should continue from this
+    baseline to avoid discontinuity.
 
     Args:
         hass: Home Assistant instance.
-        entity_id: The entity ID to fix.
+        entity_id: The entity ID (statistic_id) to query.
         room_name: Room name for logging.
-        import_end_time: The timestamp of the last imported statistic.
-        import_end_sum: The cumulative sum at the end of the import.
-        metadata: StatisticMetaData for re-importing adjusted statistics.
+        import_start_time: The start time of the import period.
 
     Returns:
-        Number of statistics entries adjusted.
+        The last known sum value before import, or 0.0 if no prior data exists.
     """
-    # Query existing statistics AFTER the import period
-    query_start = import_end_time + timedelta(hours=1)
-    existing_stats = await _get_existing_statistics(hass, entity_id, query_start)
+    # Query statistics from a reasonable time before import (up to 2 years)
+    query_start = import_start_time - timedelta(days=730)
+
+    existing_stats = await _get_existing_statistics(
+        hass, entity_id, query_start, import_start_time
+    )
 
     if not existing_stats:
         _LOGGER.debug(
-            "No existing statistics found after import period for %s",
+            "No existing statistics found before import period for %s, starting at 0",
             entity_id,
         )
-        return 0
+        return 0.0
 
-    # Check for discontinuity: first existing sum should continue from import
-    first_existing = existing_stats[0]
-    first_existing_sum = first_existing.get("sum", 0) or 0
-    first_existing_state = first_existing.get("state", 0) or 0
-
-    # Expected: first_existing_sum ≈ import_end_sum + first_existing_state
-    # If first_existing_sum << import_end_sum, there's a discontinuity
-    expected_first_sum = import_end_sum + first_existing_state
-    discontinuity = expected_first_sum - first_existing_sum
-
-    if abs(discontinuity) <= DISCONTINUITY_THRESHOLD:
-        _LOGGER.debug(
-            "No significant discontinuity detected for %s (delta: %.3f kWh)",
-            entity_id,
-            discontinuity,
-        )
-        return 0
+    # Get the last entry's sum (statistics are ordered by time)
+    last_stat = existing_stats[-1]
+    baseline_sum = last_stat.get("sum", 0) or 0
 
     _LOGGER.info(
-        "Detected statistics discontinuity for %s: "
-        "import ends at %.3f kWh, first existing sum is %.3f kWh, "
-        "adjusting %d entries by %.3f kWh",
+        "Found existing statistics for %s before import: baseline sum = %.3f kWh",
         room_name,
-        import_end_sum,
-        first_existing_sum,
-        len(existing_stats),
-        discontinuity,
+        baseline_sum,
     )
 
-    # Create adjusted statistics to overwrite the existing ones
-    adjusted_statistics = []
-    for stat in existing_stats:
-        stat_start = stat.get("start")
-        if isinstance(stat_start, (int, float)):
-            stat_start = datetime.fromtimestamp(stat_start, tz=timezone.utc)
-
-        adjusted_statistics.append(
-            StatisticData(
-                start=stat_start,
-                state=stat.get("state", 0) or 0,
-                sum=(stat.get("sum", 0) or 0) + discontinuity,
-            )
-        )
-
-    # Import the adjusted statistics (overwrites existing)
-    async_import_statistics(hass, metadata, adjusted_statistics)
-
-    _LOGGER.info(
-        "Adjusted %d statistics entries for %s",
-        len(adjusted_statistics),
-        room_name,
-    )
-
-    return len(adjusted_statistics)
+    return baseline_sum
 
 
 class HistoryImportManager:
@@ -354,10 +311,20 @@ async def async_import_energy_history(
                 entity_id,
             )
 
-            # For historical import, start cumulative sum at 0
-            # The import creates a baseline of historical data
-            # Current sensor readings will continue with their own progression
-            cumulative_sum = 0.0
+            # Calculate import start time (first day we'll import)
+            import_start_date = now - timedelta(days=days)
+            import_start_time = datetime.combine(
+                import_start_date.date(),
+                datetime.min.time(),
+                tzinfo=timezone.utc
+            )
+
+            # Get baseline sum from existing statistics BEFORE import period
+            # This ensures imported data continues from existing baseline
+            baseline_sum = await _get_baseline_sum(
+                hass, entity_id, room_name, import_start_time
+            )
+            cumulative_sum = baseline_sum
 
             # Collect daily statistics
             statistics: list[StatisticData] = []
@@ -476,29 +443,19 @@ async def async_import_energy_history(
                     async_import_statistics(hass, metadata, statistics)
 
                     results["rooms_imported"] += 1
-                    results["total_energy_kwh"] += cumulative_sum
+                    # Track imported energy (excluding baseline)
+                    imported_energy = cumulative_sum - baseline_sum
+                    results["total_energy_kwh"] += imported_energy
 
                     _LOGGER.info(
-                        "Imported %d days of energy history for %s (%.3f kWh)",
+                        "Imported %d days of energy history for %s: "
+                        "%.3f kWh imported (baseline: %.3f, final sum: %.3f)",
                         len(statistics),
                         room_name,
+                        imported_energy,
+                        baseline_sum,
                         cumulative_sum,
                     )
-
-                    # Fix any discontinuity with existing live sensor data
-                    import_end_time = statistics[-1].start
-                    adjusted_count = await _fix_statistics_discontinuity(
-                        hass=hass,
-                        entity_id=entity_id,
-                        room_name=room_name,
-                        import_end_time=import_end_time,
-                        import_end_sum=cumulative_sum,
-                        metadata=metadata,
-                    )
-                    if adjusted_count > 0:
-                        results["statistics_adjusted"] = results.get(
-                            "statistics_adjusted", 0
-                        ) + adjusted_count
 
                 except (ValueError, TypeError) as err:
                     _LOGGER.error(
