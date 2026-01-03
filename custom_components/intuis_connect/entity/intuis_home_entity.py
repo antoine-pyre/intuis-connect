@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
-from homeassistant.const import EntityCategory, UnitOfTime, SIGNAL_STRENGTH_DECIBELS_MILLIWATT
+from homeassistant.const import EntityCategory, UnitOfTime, UnitOfEnergy, SIGNAL_STRENGTH_DECIBELS_MILLIWATT
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 import homeassistant.util.dt as dt_util
@@ -15,7 +15,7 @@ from .intuis_home import IntuisHome
 from .intuis_module import NMGIntuisModule
 from .intuis_schedule import IntuisThermSchedule, IntuisThermZone, IntuisTimetable
 from ..entity.intuis_entity import IntuisDataUpdateCoordinator
-from ..utils.const import DOMAIN
+from ..utils.const import DOMAIN, CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -613,6 +613,112 @@ class GatewayFirmwareSensor(CoordinatorEntity[IntuisDataUpdateCoordinator], Sens
         return str(gateway.firmware_revision) if gateway else None
 
 
+class IntuisHomeEnergySensor(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEntity):
+    """Sensor showing total home energy consumption aggregated from all rooms.
+
+    This sensor sums the energy consumption from all room energy sensors,
+    providing a single value for total home energy usage.
+    """
+
+    _attr_icon = "mdi:home-lightning-bolt"
+    _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+
+    def __init__(
+            self,
+            coordinator: IntuisDataUpdateCoordinator,
+            home_id: str,
+    ) -> None:
+        """Initialize the home energy sensor."""
+        super().__init__(coordinator)
+        self._home_id = home_id
+        self._attr_name = "Energy Today"
+        self._attr_unique_id = f"intuis_{home_id}_home_energy_today"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{home_id}_home")},
+            name="Intuis Home",
+            manufacturer="Muller Intuitiv (Netatmo)",
+            model="Home Controller",
+        )
+        # Daily max tracking (same logic as room sensors)
+        self._daily_max_energy: float = 0.0
+        self._last_logical_day: str | None = None
+
+    def _get_reset_hour(self) -> int:
+        """Get the configured reset hour from options."""
+        try:
+            entry_id = self.coordinator.config_entry.entry_id
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry:
+                return entry.options.get(CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR)
+        except Exception:
+            pass
+        return DEFAULT_ENERGY_RESET_HOUR
+
+    def _get_logical_day(self, now: datetime, reset_hour: int) -> str:
+        """Get the logical day identifier based on reset hour.
+
+        The logical day starts at reset_hour and ends at reset_hour the next day.
+        """
+        if now.hour < reset_hour:
+            logical_date = (now - timedelta(days=1)).date()
+        else:
+            logical_date = now.date()
+        return logical_date.isoformat()
+
+    def _get_total_energy(self) -> float:
+        """Sum energy from all rooms."""
+        rooms = self.coordinator.data.get("rooms", {})
+        total = 0.0
+        for room in rooms.values():
+            if room.energy:
+                total += room.energy
+        return total
+
+    @property
+    def native_value(self) -> float:
+        """Return the cumulative daily home energy value."""
+        current_energy = self._get_total_energy()
+        now = dt_util.now()
+        reset_hour = self._get_reset_hour()
+        current_logical_day = self._get_logical_day(now, reset_hour)
+
+        if self._last_logical_day is None:
+            self._daily_max_energy = current_energy
+            self._last_logical_day = current_logical_day
+            _LOGGER.debug(
+                "Initializing home energy: %.3f kWh (logical day: %s)",
+                current_energy, current_logical_day
+            )
+        elif self._last_logical_day != current_logical_day:
+            self._daily_max_energy = current_energy
+            self._last_logical_day = current_logical_day
+            _LOGGER.info(
+                "New logical day for home energy (reset hour: %02d:00), reset to %.3f kWh",
+                reset_hour, current_energy
+            )
+        elif current_energy > self._daily_max_energy:
+            self._daily_max_energy = current_energy
+            _LOGGER.debug("Updated home daily max to %.3f kWh", current_energy)
+
+        return self._daily_max_energy
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return room breakdown as attributes."""
+        rooms = self.coordinator.data.get("rooms", {})
+        room_breakdown = {}
+        for room in rooms.values():
+            if hasattr(room, 'name') and hasattr(room, 'energy'):
+                room_breakdown[room.name] = room.energy or 0.0
+        return {
+            "room_breakdown": room_breakdown,
+            "room_count": len(rooms),
+        }
+
+
 def provide_home_sensors(
         coordinator: IntuisDataUpdateCoordinator,
         home_id: str,
@@ -678,5 +784,8 @@ def provide_home_sensors(
     result.append(GatewayWifiStrengthSensor(coordinator, home_id))
     result.append(GatewayUptimeSensor(coordinator, home_id))
     result.append(GatewayFirmwareSensor(coordinator, home_id))
+
+    # Add home-level energy aggregation sensor
+    result.append(IntuisHomeEnergySensor(coordinator, home_id))
 
     return result

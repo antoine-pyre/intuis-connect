@@ -44,6 +44,12 @@ This document lists features available in the Intuis API that are not yet implem
 - Available as setup option or service call
 - Imports to existing sensor entities for Energy Dashboard
 
+#### Home-Level Energy Aggregation (v1.9.0)
+- `sensor.intuis_home_energy_today` - Total home energy consumption
+- Aggregates energy from all room sensors
+- Includes `room_breakdown` attribute with per-room values
+- Uses same daily reset logic as room sensors
+
 ---
 
 ## Missing Features
@@ -65,25 +71,7 @@ Users can create schedule slots but cannot delete individual slots without rewri
 
 ---
 
-### 2. Home-Level Energy Aggregation Sensor
-
-**Interest:**
-Currently only room-level energy sensors exist. Users wanting total home consumption must create template sensors manually. A native sensor simplifies energy dashboard setup and tracking.
-
-**Requirements:**
-- API endpoint: `POST /api/gethomemeasure` (already available)
-- Change: Query at home level instead of room level
-- Data: `sum_energy_elec` aggregated across all rooms
-
-**HA Integration:**
-- New sensor entity: `sensor.intuis_home_energy`
-- Add to `sensor.py` alongside room energy sensors
-- Include in energy dashboard auto-discovery
-- State class: `total_increasing`, device class: `energy`
-
----
-
-### 3. Tariff-Separated Energy Sensors
+### 2. Tariff-Separated Energy Sensors
 
 **Interest:**
 The API provides energy data split by tariff (`sum_energy_elec$0`, `$1`, `$2`) for off-peak, peak, and super-peak periods. This enables accurate cost calculations and optimization of consumption during cheaper periods.
@@ -101,7 +89,7 @@ The API provides energy data split by tariff (`sum_energy_elec$0`, `$1`, `$2`) f
 
 ---
 
-### 4. Boost Status Binary Sensor
+### 3. Boost Status Binary Sensor
 
 **Interest:**
 Boost mode is a common heating feature but currently only visible through the climate preset. A dedicated binary sensor enables simpler automations and better visibility in dashboards.
@@ -119,7 +107,7 @@ Boost mode is a common heating feature but currently only visible through the cl
 
 ---
 
-### 5. Home Presence Aggregation Sensor
+### 4. Home Presence Aggregation Sensor
 
 **Interest:**
 Each room has a presence sensor, but users often need "is anyone home" logic. Currently requires template sensors combining all room presence states. A native sensor simplifies automations.
@@ -137,7 +125,7 @@ Each room has a presence sensor, but users often need "is anyone home" logic. Cu
 
 ---
 
-### 6. Batch Room Control Service
+### 5. Batch Room Control Service
 
 **Interest:**
 Setting multiple rooms to the same mode (e.g., all to away mode) requires multiple service calls. The API supports arrays of rooms in a single request, reducing latency and API load.
@@ -155,7 +143,7 @@ Setting multiple rooms to the same mode (e.g., all to away mode) requires multip
 
 ---
 
-### 7. Away/Frost Temperature Configuration
+### 6. Away/Frost Temperature Configuration
 
 **Interest:**
 Each schedule has `away_temp` and `hg_temp` (frost protection) settings. Users cannot modify these without the mobile app. Useful for seasonal adjustments or vacation settings.
@@ -173,7 +161,7 @@ Each schedule has `away_temp` and `hg_temp` (frost protection) settings. Users c
 
 ---
 
-### 8. Schedule Duplication Service
+### 7. Schedule Duplication Service
 
 **Interest:**
 Creating seasonal schedules (summer/winter) or backup schedules requires manual recreation. Duplicating an existing schedule saves time and reduces errors.
@@ -191,7 +179,7 @@ Creating seasonal schedules (summer/winter) or backup schedules requires manual 
 
 ---
 
-### 9. Historical Energy Export Service
+### 8. Historical Energy Export Service
 
 **Interest:**
 The API supports historical data queries with scales up to `1month`. Users analyzing long-term trends or migrating data cannot easily access historical consumption.
@@ -209,7 +197,7 @@ The API supports historical data queries with scales up to `1month`. Users analy
 
 ---
 
-### 10. Heating Efficiency Metrics
+### 9. Heating Efficiency Metrics
 
 **Interest:**
 Understanding heating efficiency (energy per degree, cost per hour) helps identify problems like poor insulation or malfunctioning equipment. Currently requires manual calculations.
@@ -228,7 +216,7 @@ Understanding heating efficiency (energy per degree, cost per hour) helps identi
 
 ---
 
-### 11. Anticipation Control
+### 10. Anticipation Control
 
 **Interest:**
 The system pre-heats rooms to reach target temperature on time ("anticipation"). Users may want to disable this during mild weather or enable it during cold snaps manually.
@@ -245,7 +233,7 @@ The system pre-heats rooms to reach target temperature on time ("anticipation").
 
 ---
 
-### 12. Rate Limit Status Attributes
+### 11. Rate Limit Status Attributes
 
 **Interest:**
 Heavy automation usage can hit API rate limits. Exposing remaining quota helps users tune polling intervals and avoid service disruptions.
@@ -263,7 +251,7 @@ Heavy automation usage can hit API rate limits. Exposing remaining quota helps u
 
 ---
 
-### 13. Schedule Conflict Detection
+### 12. Schedule Conflict Detection
 
 **Interest:**
 Creating overlapping schedule slots causes unpredictable behavior. Validation before API calls prevents user errors and improves reliability.
@@ -281,7 +269,7 @@ Creating overlapping schedule slots causes unpredictable behavior. Validation be
 
 ---
 
-### 14. Multi-Home Energy Aggregation
+### 13. Multi-Home Energy Aggregation
 
 **Interest:**
 Users with multiple properties (vacation home, rental) want combined energy tracking. Currently each home is independent with no cross-home views.
@@ -303,20 +291,19 @@ Users with multiple properties (vacation home, rental) want combined energy trac
 
 | Priority | Feature | Effort | Impact |
 |----------|---------|--------|--------|
-| P1 | Home-level energy sensor (#2) | Low | High |
-| P1 | Boost status binary sensor (#4) | Low | Medium |
-| P1 | Home presence aggregation (#5) | Low | Medium |
-| P2 | Tariff-separated energy (#3) | Medium | High |
-| P2 | Batch room control (#6) | Medium | Medium |
+| P1 | Boost status binary sensor (#3) | Low | Medium |
+| P1 | Home presence aggregation (#4) | Low | Medium |
+| P2 | Tariff-separated energy (#2) | Medium | High |
+| P2 | Batch room control (#5) | Medium | Medium |
 | P2 | Delete schedule slot (#1) | Medium | Medium |
-| P2 | Away/frost temp config (#7) | Medium | Medium |
-| P3 | Schedule duplication (#8) | Medium | Low |
-| P3 | Historical energy export (#9) | Medium | Medium |
-| P3 | Anticipation control (#11) | Medium | Low |
-| P4 | Heating efficiency metrics (#10) | High | Medium |
-| P4 | Rate limit status (#12) | Low | Low |
-| P4 | Schedule conflict detection (#13) | Medium | Low |
-| P4 | Multi-home aggregation (#14) | Low | Low |
+| P2 | Away/frost temp config (#6) | Medium | Medium |
+| P3 | Schedule duplication (#7) | Medium | Low |
+| P3 | Historical energy export (#8) | Medium | Medium |
+| P3 | Anticipation control (#10) | Medium | Low |
+| P4 | Heating efficiency metrics (#9) | High | Medium |
+| P4 | Rate limit status (#11) | Low | Low |
+| P4 | Schedule conflict detection (#12) | Medium | Low |
+| P4 | Multi-home aggregation (#13) | Low | Low |
 
 ---
 
