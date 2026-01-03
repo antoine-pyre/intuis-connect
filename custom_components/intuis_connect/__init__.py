@@ -30,6 +30,7 @@ from .services import (
     SERVICE_REFRESH_SCHEDULES,
     SERVICE_SET_SCHEDULE_SLOT,
     SERVICE_SET_ZONE_TEMPERATURE,
+    SERVICE_IMPORT_ENERGY_HISTORY,
     ATTR_SCHEDULE_NAME,
     ATTR_DAY,
     ATTR_START_DAY,
@@ -39,6 +40,7 @@ from .services import (
     ATTR_ZONE_NAME,
     ATTR_ROOM_NAME,
     ATTR_TEMPERATURE,
+    ATTR_DAYS,
 )
 
 _LOGGER = logging.getLogger(__name__)

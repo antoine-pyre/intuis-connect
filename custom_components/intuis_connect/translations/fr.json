@@ -41,6 +41,20 @@
           "description": "Le nom de la zone (ex: Nuit, Jour, Eco)."
         }
       }
+    },
+    "import_energy_history": {
+      "name": "Importer l'historique energetique",
+      "description": "Importe les donnees historiques de consommation d'energie depuis le cloud Intuis vers les entites capteurs existantes. Les donnees apparaissent sur les memes entites sensor.{room}_energy utilisees dans le tableau de bord Energie.",
+      "fields": {
+        "days": {
+          "name": "Jours a importer",
+          "description": "Nombre de jours d'historique a importer (1-730). Par defaut 365 jours."
+        },
+        "room_name": {
+          "name": "Piece",
+          "description": "Importer uniquement cette piece. Laisser vide pour toutes les pieces."
+        }
+      }
     }
   },
   "config": {

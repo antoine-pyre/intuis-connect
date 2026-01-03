@@ -41,6 +41,20 @@
           "description": "The name of the zone (e.g., Night, Day, Eco)."
         }
       }
+    },
+    "import_energy_history": {
+      "name": "Import Energy History",
+      "description": "Import historical energy data from Intuis cloud to existing sensor entities. Data appears on the same sensor.{room}_energy entities used in the Energy Dashboard.",
+      "fields": {
+        "days": {
+          "name": "Days to Import",
+          "description": "Number of days of history to import (1-730). Default is 365 days."
+        },
+        "room_name": {
+          "name": "Room",
+          "description": "Import only this room. Leave empty for all rooms."
+        }
+      }
     }
   },
   "config": {
