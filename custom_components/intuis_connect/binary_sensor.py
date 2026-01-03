@@ -86,27 +86,6 @@ class AnticipationSensor(_Base):
         return self._get_room().anticipation
 
 
-class BoostStatusSensor(_Base):
-    def __init__(
-            self,
-            coordinator: IntuisDataUpdateCoordinator,
-            h: str,
-            r: IntuisRoom
-    ) -> None:
-        super().__init__(
-            coordinator,
-            h,
-            r,
-            f"{r.name} Boost Status",
-            "boost_status",
-            BinarySensorDeviceClass.HEAT,
-        )
-
-    @property
-    def is_on(self) -> bool:
-        return self._get_room().boost_status != "disabled"
-
-
 class ModuleReachableSensor(_Base):
     """Binary sensor for NMH module reachability."""
 
