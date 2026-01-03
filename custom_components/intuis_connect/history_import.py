@@ -129,6 +129,99 @@ async def _get_baseline_sum(
     return baseline_sum
 
 
+async def _fix_post_import_discontinuity(
+    hass: HomeAssistant,
+    entity_id: str,
+    room_name: str,
+    import_end_time: datetime,
+    import_end_sum: float,
+    metadata: StatisticMetaData,
+) -> int:
+    """Fix statistics discontinuity for data recorded AFTER the import period.
+
+    If the live sensor recorded statistics after the import period ends, those
+    statistics have their own sum baseline. This function detects that discontinuity
+    and adjusts post-import statistics to continue from the import's final sum.
+
+    Args:
+        hass: Home Assistant instance.
+        entity_id: The entity ID to fix.
+        room_name: Room name for logging.
+        import_end_time: The timestamp of the last imported statistic.
+        import_end_sum: The cumulative sum at the end of the import.
+        metadata: StatisticMetaData for re-importing adjusted statistics.
+
+    Returns:
+        Number of statistics entries adjusted.
+    """
+    # Query existing statistics AFTER the import period
+    query_start = import_end_time + timedelta(hours=1)
+    existing_stats = await _get_existing_statistics(hass, entity_id, query_start)
+
+    if not existing_stats:
+        _LOGGER.debug(
+            "No existing statistics found after import period for %s",
+            entity_id,
+        )
+        return 0
+
+    # Check for discontinuity: first post-import sum should continue from import
+    first_existing = existing_stats[0]
+    first_existing_sum = first_existing.get("sum", 0) or 0
+    first_existing_state = first_existing.get("state", 0) or 0
+
+    # Expected: first_existing_sum ≈ import_end_sum + first_existing_state
+    # If first_existing_sum << import_end_sum, there's a discontinuity
+    expected_first_sum = import_end_sum + first_existing_state
+    discontinuity = expected_first_sum - first_existing_sum
+
+    if abs(discontinuity) <= DISCONTINUITY_THRESHOLD:
+        _LOGGER.debug(
+            "No significant post-import discontinuity for %s (delta: %.3f kWh)",
+            entity_id,
+            discontinuity,
+        )
+        return 0
+
+    _LOGGER.info(
+        "Detected post-import discontinuity for %s: "
+        "import ends at %.3f kWh, first post-import sum is %.3f kWh (state: %.3f), "
+        "adjusting %d entries by %.3f kWh",
+        room_name,
+        import_end_sum,
+        first_existing_sum,
+        first_existing_state,
+        len(existing_stats),
+        discontinuity,
+    )
+
+    # Create adjusted statistics to overwrite the existing ones
+    adjusted_statistics = []
+    for stat in existing_stats:
+        stat_start = stat.get("start")
+        if isinstance(stat_start, (int, float)):
+            stat_start = datetime.fromtimestamp(stat_start, tz=timezone.utc)
+
+        adjusted_statistics.append(
+            StatisticData(
+                start=stat_start,
+                state=stat.get("state", 0) or 0,
+                sum=(stat.get("sum", 0) or 0) + discontinuity,
+            )
+        )
+
+    # Import the adjusted statistics (overwrites existing)
+    async_import_statistics(hass, metadata, adjusted_statistics)
+
+    _LOGGER.info(
+        "Adjusted %d post-import statistics entries for %s",
+        len(adjusted_statistics),
+        room_name,
+    )
+
+    return len(adjusted_statistics)
+
+
 class HistoryImportManager:
     """Manages persistent state for energy history import."""
 
@@ -456,6 +549,25 @@ async def async_import_energy_history(
                         baseline_sum,
                         cumulative_sum,
                     )
+
+                    # Fix any discontinuity with live sensor data recorded AFTER import
+                    import_end_time = statistics[-1]["start"]
+                    if isinstance(import_end_time, (int, float)):
+                        import_end_time = datetime.fromtimestamp(
+                            import_end_time, tz=timezone.utc
+                        )
+                    adjusted_count = await _fix_post_import_discontinuity(
+                        hass=hass,
+                        entity_id=entity_id,
+                        room_name=room_name,
+                        import_end_time=import_end_time,
+                        import_end_sum=cumulative_sum,
+                        metadata=metadata,
+                    )
+                    if adjusted_count > 0:
+                        results["statistics_adjusted"] = results.get(
+                            "statistics_adjusted", 0
+                        ) + adjusted_count
 
                 except (ValueError, TypeError) as err:
                     _LOGGER.error(
