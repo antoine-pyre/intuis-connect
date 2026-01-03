@@ -31,7 +31,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
     for room_id in rooms:
         room = rooms.get(room_id)
         entities.append(IntuisTemperatureSensor(coordinator, home_id, room))
-        entities.append(IntuisTargetTemperatureSensor(coordinator, home_id, room))
         entities.append(IntuisMullerTypeSensor(coordinator, home_id, room))
         entities.append(IntuisEnergySensor(coordinator, home_id, room))
         entities.append(IntuisMinutesSensor(coordinator, home_id, room))
@@ -104,33 +103,6 @@ class IntuisMullerTypeSensor(IntuisSensor):
         if muller_type is None:
             return ""
         return muller_type
-
-
-class IntuisTargetTemperatureSensor(IntuisSensor):
-    """Specialized sensor for target temperature."""
-
-    def __init__(self, coordinator, home_id: str, room: IntuisRoom) -> None:
-        """Initialize the target temperature sensor."""
-        super().__init__(
-            coordinator,
-            home_id,
-            room,
-            "target_temperature",
-            "Setpoint",
-            UnitOfTemperature.CELSIUS,
-            None,
-        )
-        self._attr_icon = "mdi:thermometer"
-        self._attr_entity_registry_enabled_default = False
-
-    @property
-    def native_value(self) -> float:
-        """Return the current target temperature."""
-        # Ensure we handle None values gracefully
-        target_temp = self._room.target_temperature
-        if target_temp is None:
-            return 0.0
-        return target_temp
 
 
 class IntuisTemperatureSensor(IntuisSensor):
