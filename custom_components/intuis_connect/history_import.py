@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from datetime import datetime, timezone, timedelta
 from typing import TYPE_CHECKING
 
@@ -20,6 +19,7 @@ from homeassistant.components.recorder.statistics import (
 )
 from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 
 from .utils.const import DOMAIN
@@ -38,21 +38,6 @@ STORAGE_KEY = f"{DOMAIN}.history_import"
 DEFAULT_HISTORY_DAYS = 365
 MAX_HISTORY_DAYS = 730
 API_DELAY_SECONDS = 2.0  # Delay between API calls to avoid rate limiting
-
-
-def slugify(text: str) -> str:
-    """Convert text to a slug suitable for entity IDs."""
-    # Convert to lowercase
-    text = text.lower()
-    # Replace spaces and hyphens with underscores
-    text = re.sub(r'[\s\-]+', '_', text)
-    # Remove any characters that aren't alphanumeric or underscores
-    text = re.sub(r'[^a-z0-9_]', '', text)
-    # Remove consecutive underscores
-    text = re.sub(r'_+', '_', text)
-    # Remove leading/trailing underscores
-    text = text.strip('_')
-    return text
 
 
 class HistoryImportManager:
@@ -158,6 +143,7 @@ async def async_import_energy_history(
     manager: HistoryImportManager,
     days: int = DEFAULT_HISTORY_DAYS,
     room_filter: str | None = None,
+    home_id: str | None = None,
 ) -> dict:
     """Import historical energy data into Home Assistant statistics.
 
@@ -171,6 +157,7 @@ async def async_import_energy_history(
         manager: Import manager for state persistence.
         days: Number of days of history to import (1-730).
         room_filter: Optional room name to import only that room.
+        home_id: Home ID for building entity unique_ids.
 
     Returns:
         Dict with import results: rooms_imported, total_energy, errors.
@@ -187,6 +174,13 @@ async def async_import_energy_history(
     # Clamp days to valid range
     days = max(1, min(days, MAX_HISTORY_DAYS))
 
+    # Get the home_id from intuis_home if not provided
+    if home_id is None:
+        home_id = intuis_home.id if hasattr(intuis_home, 'id') else ""
+
+    # Get entity registry to find actual entity IDs
+    ent_reg = er.async_get(hass)
+
     # Build list of rooms to import
     rooms_data = intuis_home.rooms
     rooms_to_import: list[dict] = []
@@ -198,11 +192,23 @@ async def async_import_energy_history(
         if room_filter and room_name.lower() != room_filter.lower():
             continue
 
-        # We need bridge_id for API calls - get from coordinator data
-        # For now, we'll store it when we have access to the full room objects
+        # Build the unique_id for the energy sensor: intuis_{home_id}_{room_id}_energy
+        unique_id = f"intuis_{home_id}_{room_id}_energy"
+
+        # Look up entity in registry
+        entity_entry = ent_reg.async_get_entity_id("sensor", DOMAIN, unique_id)
+        if not entity_entry:
+            _LOGGER.warning(
+                "Energy sensor with unique_id %s not found in registry, skipping room %s",
+                unique_id,
+                room_name,
+            )
+            continue
+
         rooms_to_import.append({
             "id": room_id,
             "name": room_name,
+            "entity_id": entity_entry,
         })
 
     if not rooms_to_import:
@@ -238,21 +244,8 @@ async def async_import_energy_history(
 
             room_id = room_info["id"]
             room_name = room_info["name"]
+            entity_id = room_info["entity_id"]
             manager.current_room = room_name
-
-            # Build entity_id for this room's energy sensor
-            room_slug = slugify(room_name)
-            entity_id = f"sensor.{room_slug}_energy"
-
-            # Check if entity exists
-            if not hass.states.get(entity_id):
-                _LOGGER.warning(
-                    "Energy sensor %s does not exist, skipping room %s",
-                    entity_id,
-                    room_name,
-                )
-                results["errors"].append(f"Entity {entity_id} not found")
-                continue
 
             _LOGGER.info(
                 "Importing energy history for room: %s (entity: %s)",

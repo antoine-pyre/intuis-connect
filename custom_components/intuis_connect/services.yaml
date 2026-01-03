@@ -105,7 +105,7 @@ set_zone_temperature:
       required: true
       selector:
         select:
-          options:
+          options: &id002
           - label: Salon
             value: Salon
           - label: Chambre
@@ -125,3 +125,27 @@ set_zone_temperature:
           step: 0.5
           unit_of_measurement: °C
           mode: box
+import_energy_history:
+  name: Import Energy History
+  description: Import historical energy data from Intuis cloud to existing sensor
+    entities. Data appears on the same energy sensor entities used in the Energy
+    Dashboard.
+  fields:
+    days:
+      name: Days to Import
+      description: Number of days of history to import (1-730).
+      required: false
+      default: 365
+      selector:
+        number:
+          min: 1
+          max: 730
+          step: 1
+          mode: box
+    room_name:
+      name: Room (Optional)
+      description: Import only this room. Leave empty for all rooms.
+      required: false
+      selector:
+        select:
+          options: *id002

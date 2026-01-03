@@ -273,7 +273,7 @@ async def async_generate_services_yaml(hass: HomeAssistant, intuis_home: IntuisH
         },
         "import_energy_history": {
             "name": "Import Energy History",
-            "description": "Import historical energy data from Intuis cloud to existing sensor entities. Data appears on the same sensor.{room}_energy entities used in the Energy Dashboard.",
+            "description": "Import historical energy data from Intuis cloud to existing sensor entities. Data appears on the same energy sensor entities used in the Energy Dashboard.",
             "fields": {
                 "days": {
                     "name": "Days to Import",
@@ -885,6 +885,7 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
                     manager=manager,
                     days=days,
                     room_filter=room_name,
+                    home_id=intuis_home.id,
                 )
             )
 
