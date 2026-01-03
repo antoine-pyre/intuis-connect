@@ -145,7 +145,7 @@ DEFAULT_RATE_LIMIT_DELAY = 30         # seconds - initial delay on 429
 DEFAULT_CIRCUIT_THRESHOLD = 3         # consecutive 429s before circuit opens
 DEFAULT_MIN_REQUEST_DELAY = 0.5       # seconds between requests
 DEFAULT_MAX_UPDATE_INTERVAL = 10      # minutes - max polling interval when rate limited
-DEFAULT_RATE_LIMIT_MAX_DELAY = 300    # seconds - max delay (5 minutes)
+DEFAULT_RATE_LIMIT_MAX_DELAY = 60     # seconds - max delay (reduced to avoid bootstrap timeout)
 DEFAULT_RATE_LIMIT_ATTEMPTS = 5       # retry attempts for rate limited requests
 
 # Rate limit options for UI
