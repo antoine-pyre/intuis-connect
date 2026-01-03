@@ -529,94 +529,107 @@ async def async_import_energy_history(
 
             cumulative_sum = baseline_sum
 
-            # Collect daily statistics
+            # Collect daily statistics using BULK retrieval (one API call per room)
             statistics: list[StatisticData] = []
             manager.days_imported = 0
 
-            for day_offset in range(days, 0, -1):
-                if manager._cancelled:
-                    break
-
-                target_date = now - timedelta(days=day_offset)
-                day_start = datetime.combine(
-                    target_date.date(),
-                    datetime.min.time(),
-                    tzinfo=timezone.utc
-                )
-                day_end = datetime.combine(
-                    target_date.date(),
-                    datetime.max.time(),
-                    tzinfo=timezone.utc
-                )
-
-                try:
-                    # Check circuit breaker before each request
-                    if hasattr(api, 'circuit_breaker'):
-                        wait_time = api.circuit_breaker.check()
-                        if wait_time > 0:
-                            _LOGGER.warning(
-                                "Circuit breaker open, pausing import for %.0f seconds",
-                                wait_time,
-                            )
-                            manager.status = "rate_limited"
-                            manager.last_error = f"Circuit breaker open, retry in {int(wait_time)}s"
-                            break
-
-                    # Fetch energy for this room and day
-                    energy_data = await api.async_get_energy_measures(
-                        [{"id": room_id, "bridge": ""}],  # bridge not needed for this endpoint
-                        int(day_start.timestamp()),
-                        int(day_end.timestamp()),
-                        scale="1day"
-                    )
-
-                    # API returns Wh, convert to kWh
-                    day_energy_wh = energy_data.get(room_id, 0.0)
-                    day_energy_kwh = day_energy_wh / 1000.0
-
-                    if day_energy_kwh > 0:
-                        cumulative_sum += day_energy_kwh
-                        statistics.append(
-                            StatisticData(
-                                start=day_start,
-                                state=day_energy_kwh,
-                                sum=cumulative_sum,
-                            )
-                        )
-                        _LOGGER.debug(
-                            "%s day %s: %.3f kWh (total: %.3f kWh)",
-                            room_name,
-                            target_date.date(),
-                            day_energy_kwh,
-                            cumulative_sum,
-                        )
-
-                    manager.days_imported = days - day_offset + 1
-
-                    # Delay to avoid rate limiting
-                    await asyncio.sleep(API_DELAY_SECONDS)
-
-                except RateLimitError as err:
+            # Check circuit breaker before the bulk request
+            if hasattr(api, 'circuit_breaker'):
+                wait_time = api.circuit_breaker.check()
+                if wait_time > 0:
                     _LOGGER.warning(
-                        "Rate limited while importing %s (day %s). Saving progress. Retry after: %s",
-                        room_name,
-                        target_date.date(),
-                        getattr(err, 'retry_after', 'unknown'),
+                        "Circuit breaker open, pausing import for %.0f seconds",
+                        wait_time,
                     )
                     manager.status = "rate_limited"
-                    manager.last_error = f"Rate limited by API: {err}"
-                    # Save what we have and stop
+                    manager.last_error = f"Circuit breaker open, retry in {int(wait_time)}s"
+                    manager.rooms_completed += 1
+                    await manager.async_save()
                     break
 
-                except (APIError, CannotConnect, asyncio.TimeoutError) as err:
+            try:
+                # Calculate date range for bulk fetch
+                range_start = now - timedelta(days=days)
+                date_begin = int(datetime.combine(
+                    range_start.date(),
+                    datetime.min.time(),
+                    tzinfo=timezone.utc
+                ).timestamp())
+                date_end = int(now.timestamp())
+
+                _LOGGER.info(
+                    "Fetching %d days of energy data for %s in single API call",
+                    days,
+                    room_name,
+                )
+
+                # BULK fetch: one API call returns all daily values
+                daily_values = await api.async_get_room_energy_daily(
+                    room_id, date_begin, date_end
+                )
+
+                if not daily_values:
                     _LOGGER.warning(
-                        "Failed to fetch energy for %s on %s: %s",
+                        "No energy data returned for %s, skipping",
                         room_name,
-                        target_date.date(),
-                        err,
                     )
-                    # Continue to next day
-                    await asyncio.sleep(API_DELAY_SECONDS)
+                else:
+                    # Sort by timestamp to ensure chronological order
+                    daily_values.sort(key=lambda x: x[0])
+
+                    # Build statistics from daily values
+                    for day_ts, day_energy_wh in daily_values:
+                        if manager._cancelled:
+                            break
+
+                        day_energy_kwh = day_energy_wh / 1000.0
+
+                        if day_energy_kwh > 0:
+                            cumulative_sum += day_energy_kwh
+                            day_start = datetime.fromtimestamp(day_ts, tz=timezone.utc)
+                            statistics.append(
+                                StatisticData(
+                                    start=day_start,
+                                    state=day_energy_kwh,
+                                    sum=cumulative_sum,
+                                )
+                            )
+                            _LOGGER.debug(
+                                "%s day %s: %.3f kWh (total: %.3f kWh)",
+                                room_name,
+                                day_start.date(),
+                                day_energy_kwh,
+                                cumulative_sum,
+                            )
+
+                        manager.days_imported += 1
+
+                    _LOGGER.info(
+                        "Bulk fetch completed for %s: %d days with data out of %d total",
+                        room_name,
+                        len(statistics),
+                        len(daily_values),
+                    )
+
+                # Small delay between rooms to be polite to the API
+                await asyncio.sleep(API_DELAY_SECONDS)
+
+            except RateLimitError as err:
+                _LOGGER.warning(
+                    "Rate limited while importing %s. Saving progress. Retry after: %s",
+                    room_name,
+                    getattr(err, 'retry_after', 'unknown'),
+                )
+                manager.status = "rate_limited"
+                manager.last_error = f"Rate limited by API: {err}"
+
+            except (APIError, CannotConnect, asyncio.TimeoutError) as err:
+                _LOGGER.warning(
+                    "Failed to fetch energy for %s: %s",
+                    room_name,
+                    err,
+                )
+                results["errors"].append(f"Failed to fetch {room_name}: {err}")
 
             # Import collected statistics for this room
             if statistics:

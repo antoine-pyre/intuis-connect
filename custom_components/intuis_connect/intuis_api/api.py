@@ -751,6 +751,85 @@ class IntuisAPI:
             )
             return 0.0
 
+    async def async_get_room_energy_daily(
+        self, room_id: str, date_begin: int, date_end: int
+    ) -> list[tuple[int, float]]:
+        """Get daily energy consumption for a room over a date range.
+
+        This method fetches energy data in bulk (one API call for the entire range)
+        and returns individual daily values, significantly reducing API calls needed
+        for historical imports.
+
+        Args:
+            room_id: The room ID.
+            date_begin: Unix epoch timestamp for start of period.
+            date_end: Unix epoch timestamp for end of period.
+
+        Returns:
+            List of tuples (timestamp, energy_wh) for each day in the range.
+            Empty list on error.
+        """
+        form_data = {
+            "home_id": self.home_id,
+            "room_id": room_id,
+            "scale": "1day",
+            "type": ENERGY_MEASURE_TYPES,
+            "date_begin": str(date_begin),
+            "date_end": str(date_end),
+        }
+
+        try:
+            async with await self._async_request(
+                "post",
+                ROOMMEASURE_PATH,
+                data=form_data,
+            ) as resp:
+                data = await resp.json()
+
+            if self._debug:
+                _LOGGER.debug("Room %s daily energy response: %s", room_id, data)
+
+            # Response format: {"body": [{"beg_time": ts, "step_time": 86400, "value": [[...], [...], ...]}, ...]}
+            # Each inner array in "value" represents one day's energy
+            daily_values: list[tuple[int, float]] = []
+            body = data.get("body", [])
+
+            for measure in body:
+                beg_time = measure.get("beg_time", 0)
+                step_time = measure.get("step_time", 86400)  # Default 1 day in seconds
+                values = measure.get("value", [])
+
+                for i, val_set in enumerate(values):
+                    # Calculate timestamp for this day
+                    day_ts = beg_time + (i * step_time)
+
+                    # Sum all tariff values for this day
+                    day_energy = 0.0
+                    for val in val_set:
+                        if val is not None:
+                            day_energy += float(val)
+
+                    daily_values.append((day_ts, day_energy))
+
+            _LOGGER.debug(
+                "Room %s: fetched %d daily values from %s to %s",
+                room_id,
+                len(daily_values),
+                date_begin,
+                date_end,
+            )
+
+            return daily_values
+
+        except (APIError, KeyError, ValueError, TypeError) as e:
+            _LOGGER.warning(
+                "Daily energy request failed for room %s: %s",
+                room_id,
+                e,
+                exc_info=True,
+            )
+            return []
+
     async def async_get_schedule(
             self, home_id: str, schedule_id: int
     ) -> dict[str, list[dict[str, Any]]]:
