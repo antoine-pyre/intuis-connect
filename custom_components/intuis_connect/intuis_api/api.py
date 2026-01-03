@@ -69,8 +69,8 @@ class RateLimitCircuitBreaker:
     def __init__(
         self,
         threshold: int = DEFAULT_CIRCUIT_THRESHOLD,
-        base_cooldown: float = 60.0,
-        max_cooldown: float = 600.0,
+        base_cooldown: float = 30.0,
+        max_cooldown: float = 120.0,
     ) -> None:
         """Initialize the circuit breaker.
 
@@ -211,8 +211,8 @@ class IntuisAPI:
         self._rate_limit_delay = rate_limit_delay
         self._circuit_breaker = RateLimitCircuitBreaker(
             threshold=circuit_threshold,
-            base_cooldown=60.0,
-            max_cooldown=600.0,
+            base_cooldown=30.0,
+            max_cooldown=120.0,
         )
         self._throttler = RequestThrottler(min_delay=min_request_delay)
 
