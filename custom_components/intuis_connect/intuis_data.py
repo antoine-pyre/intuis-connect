@@ -63,6 +63,17 @@ class IntuisData:
         self._get_options = get_options or (lambda: {})
         # Callback to persist overrides to storage
         self._save_overrides = save_overrides_callback
+        # Callback to invoke on successful update (for rate limit recovery)
+        self._success_callback: Callable[[], Awaitable[None]] | None = None
+
+    def set_success_callback(
+        self, callback: Callable[[], Awaitable[None]]
+    ) -> None:
+        """Set callback to invoke on successful data update.
+
+        Used by the coordinator to recover polling interval after rate limiting.
+        """
+        self._success_callback = callback
 
     def _get_logical_day(self, now: datetime, reset_hour: int) -> str:
         """Get the logical day identifier based on reset hour.
@@ -242,6 +253,14 @@ class IntuisData:
         }
 
         _LOGGER.debug("Returning data: %s", result)
+
+        # Invoke success callback for rate limit recovery
+        if self._success_callback:
+            try:
+                await self._success_callback()
+            except Exception as err:
+                _LOGGER.debug("Success callback error (non-fatal): %s", err)
+
         return result
 
     async def _fetch_energy_data(

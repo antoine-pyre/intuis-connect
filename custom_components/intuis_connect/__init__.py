@@ -22,6 +22,14 @@ from .utils.const import (
     CONF_IMPORT_HISTORY,
     CONF_IMPORT_HISTORY_DAYS,
     DEFAULT_UPDATE_INTERVAL,
+    CONF_RATE_LIMIT_DELAY,
+    CONF_CIRCUIT_BREAKER_THRESHOLD,
+    CONF_MIN_REQUEST_DELAY,
+    CONF_MAX_UPDATE_INTERVAL,
+    DEFAULT_RATE_LIMIT_DELAY,
+    DEFAULT_CIRCUIT_THRESHOLD,
+    DEFAULT_MIN_REQUEST_DELAY,
+    DEFAULT_MAX_UPDATE_INTERVAL,
 )
 from .entity.intuis_entity import IntuisDataUpdateCoordinator
 from .history_import import (
@@ -86,7 +94,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # ---------- setup API ----------------------------------------------------------
     session = async_get_clientsession(hass)
-    intuis_api = IntuisAPI(session, home_id=entry.data["home_id"])
+
+    # Get rate limit options from config
+    rate_limit_delay = entry.options.get(CONF_RATE_LIMIT_DELAY, DEFAULT_RATE_LIMIT_DELAY)
+    circuit_threshold = entry.options.get(CONF_CIRCUIT_BREAKER_THRESHOLD, DEFAULT_CIRCUIT_THRESHOLD)
+    min_request_delay = entry.options.get(CONF_MIN_REQUEST_DELAY, DEFAULT_MIN_REQUEST_DELAY)
+    max_update_interval = entry.options.get(CONF_MAX_UPDATE_INTERVAL, DEFAULT_MAX_UPDATE_INTERVAL)
+
+    intuis_api = IntuisAPI(
+        session,
+        home_id=entry.data["home_id"],
+        rate_limit_delay=rate_limit_delay,
+        circuit_threshold=circuit_threshold,
+        min_request_delay=min_request_delay,
+    )
     intuis_api.home_id = entry.data["home_id"]
     intuis_api.refresh_token = entry.data[CONF_REFRESH_TOKEN]
 
@@ -140,6 +161,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_method=intuis_data.async_update,
         update_interval=datetime.timedelta(minutes=DEFAULT_UPDATE_INTERVAL),
     )
+
+    # Set up adaptive polling callback for rate limiting
+    def on_rate_limit() -> None:
+        """Handle rate limit event by increasing update interval."""
+        current_minutes = coordinator.update_interval.total_seconds() / 60
+        new_minutes = min(current_minutes * 2, max_update_interval)
+        if new_minutes > current_minutes:
+            coordinator.update_interval = datetime.timedelta(minutes=new_minutes)
+            _LOGGER.warning(
+                "Rate limited. Increased update interval from %.0f to %.0f minutes",
+                current_minutes, new_minutes
+            )
+
+    intuis_api.set_rate_limit_callback(on_rate_limit)
+
+    # Schedule periodic recovery of update interval
+    async def recover_update_interval(_now=None) -> None:
+        """Gradually recover update interval after successful updates."""
+        if not intuis_api.circuit_breaker.is_open:
+            current_minutes = coordinator.update_interval.total_seconds() / 60
+            if current_minutes > DEFAULT_UPDATE_INTERVAL:
+                new_minutes = max(current_minutes - 1, DEFAULT_UPDATE_INTERVAL)
+                coordinator.update_interval = datetime.timedelta(minutes=new_minutes)
+                _LOGGER.info(
+                    "Recovering update interval from %.0f to %.0f minutes",
+                    current_minutes, new_minutes
+                )
+
+    # Store recovery function for later use
+    intuis_data.set_success_callback(recover_update_interval)
+
     await coordinator.async_config_entry_first_refresh()
 
     # ---------- store everything ---------------------------------------------------
