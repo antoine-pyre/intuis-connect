@@ -112,6 +112,20 @@ ENERGY_SCALE_OPTIONS = {
 CONF_ENERGY_RESET_HOUR = "energy_reset_hour"
 DEFAULT_ENERGY_RESET_HOUR = 2  # 2 AM - after API has finalized previous day's data
 
+# Historical energy import options
+CONF_IMPORT_HISTORY = "import_history"
+CONF_IMPORT_HISTORY_DAYS = "import_history_days"
+DEFAULT_IMPORT_HISTORY = False
+DEFAULT_IMPORT_HISTORY_DAYS = 365
+
+IMPORT_DAYS_OPTIONS = [
+    {"value": "30", "label": "30 days (1 month)"},
+    {"value": "90", "label": "90 days (3 months)"},
+    {"value": "180", "label": "180 days (6 months)"},
+    {"value": "365", "label": "365 days (1 year)"},
+    {"value": "730", "label": "730 days (2 years)"},
+]
+
 # API modes
 API_MODE_OFF = "off"
 API_MODE_HOME = "home"

@@ -114,6 +114,18 @@
           "energy_reset_hour": "Hour when daily energy counters reset (0-23). Default is 2 AM to ensure previous day's data is finalized."
         }
       },
+      "history_import": {
+        "title": "Historical Energy Import",
+        "description": "Import historical energy consumption data from Intuis cloud.\n\nThis will populate the Energy Dashboard with past data.",
+        "data": {
+          "import_history": "Import historical energy data",
+          "import_history_days": "Period to import"
+        },
+        "data_description": {
+          "import_history": "Enable to import historical energy data after setup completes.",
+          "import_history_days": "How far back to import energy data. Longer periods take more time due to API rate limits (~2 seconds per day)."
+        }
+      },
       "reauth_confirm": {
         "title": "Re-authenticate Intuis Account",
         "description": "Session expired for {username}. Please enter your password."
