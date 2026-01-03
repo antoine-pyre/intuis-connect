@@ -11,6 +11,12 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import TYPE_CHECKING
 
+from homeassistant.components.recorder import get_instance
+from homeassistant.components.recorder.db_schema import (
+    Statistics,
+    StatisticsShortTerm,
+    StatisticsMeta,
+)
 from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
 from homeassistant.components.recorder.statistics import (
     async_import_statistics,
@@ -19,7 +25,9 @@ from homeassistant.components.recorder.statistics import (
 from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.recorder import session_scope
 from homeassistant.helpers.storage import Store
+from sqlalchemy import delete, select, and_
 
 from .utils.const import DOMAIN
 from .intuis_api.api import RateLimitError, APIError, CannotConnect
@@ -127,6 +135,95 @@ async def _get_baseline_sum(
     )
 
     return baseline_sum
+
+
+async def _clear_statistics_in_range(
+    hass: HomeAssistant,
+    entity_id: str,
+    start_time: datetime,
+    end_time: datetime,
+) -> int:
+    """Clear ALL statistics for an entity within a time range.
+
+    This deletes statistics entries at ANY hour within the range, which is
+    necessary because:
+    - Historical import creates entries at 00:00 UTC
+    - Live sensor creates entries at various hours
+    - Both coexist if timestamps don't match exactly
+
+    By clearing before import, we ensure no conflicting entries remain.
+
+    Args:
+        hass: Home Assistant instance.
+        entity_id: The statistic_id (entity_id) to clear.
+        start_time: Start of the time range to clear (inclusive).
+        end_time: End of the time range to clear (exclusive).
+
+    Returns:
+        Number of statistics entries deleted.
+    """
+    instance = get_instance(hass)
+
+    def _do_clear() -> int:
+        with session_scope(session=instance.get_session()) as session:
+            # Get metadata_id for this entity
+            result = session.execute(
+                select(StatisticsMeta.id).where(
+                    StatisticsMeta.statistic_id == entity_id
+                )
+            ).scalar()
+
+            if not result:
+                _LOGGER.debug(
+                    "No statistics metadata found for %s, nothing to clear",
+                    entity_id,
+                )
+                return 0
+
+            metadata_id = result
+            start_ts = start_time.timestamp()
+            end_ts = end_time.timestamp()
+
+            # Delete from Statistics (long-term) table
+            deleted = session.execute(
+                delete(Statistics).where(
+                    and_(
+                        Statistics.metadata_id == metadata_id,
+                        Statistics.start_ts >= start_ts,
+                        Statistics.start_ts < end_ts,
+                    )
+                )
+            ).rowcount
+
+            # Also clear from StatisticsShortTerm table
+            session.execute(
+                delete(StatisticsShortTerm).where(
+                    and_(
+                        StatisticsShortTerm.metadata_id == metadata_id,
+                        StatisticsShortTerm.start_ts >= start_ts,
+                        StatisticsShortTerm.start_ts < end_ts,
+                    )
+                )
+            )
+
+            return deleted
+
+    try:
+        deleted_count = await hass.async_add_executor_job(_do_clear)
+        if deleted_count > 0:
+            _LOGGER.info(
+                "Cleared %d existing statistics entries for %s in import range",
+                deleted_count,
+                entity_id,
+            )
+        return deleted_count
+    except Exception as err:
+        _LOGGER.warning(
+            "Failed to clear statistics for %s: %s",
+            entity_id,
+            err,
+        )
+        return 0
 
 
 async def _fix_post_import_discontinuity(
@@ -417,6 +514,18 @@ async def async_import_energy_history(
             baseline_sum = await _get_baseline_sum(
                 hass, entity_id, room_name, import_start_time
             )
+
+            # Clear ALL existing statistics within the import range
+            # This removes both import entries (at 00:00 UTC) and live sensor
+            # entries (at various hours) to prevent coexisting conflicting data
+            cleared_count = await _clear_statistics_in_range(
+                hass, entity_id, import_start_time, now
+            )
+            if cleared_count > 0:
+                results["statistics_cleared"] = results.get(
+                    "statistics_cleared", 0
+                ) + cleared_count
+
             cumulative_sum = baseline_sum
 
             # Collect daily statistics
