@@ -313,9 +313,20 @@ class IntuisData:
 
         _LOGGER.debug("Fetching energy data for %d rooms (scale=%s)", len(rooms_for_api), scale)
 
-        energy_data = await self._api.async_get_energy_measures(
-            rooms_for_api, date_begin, date_end, scale=scale
-        )
+        try:
+            energy_data = await self._api.async_get_energy_measures(
+                rooms_for_api, date_begin, date_end, scale=scale
+            )
+        except RateLimitError:
+            _LOGGER.warning(
+                "Rate limited while fetching energy data, will retry on next update"
+            )
+            return
+        except (APIError, CannotConnect) as err:
+            _LOGGER.warning(
+                "Failed to fetch energy data: %s, will retry on next update", err
+            )
+            return
 
         # Cache the results (for daily mode) and populate room.energy
         # API returns Wh, convert to kWh for display
