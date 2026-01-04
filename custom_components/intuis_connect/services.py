@@ -1034,15 +1034,10 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
     _LOGGER.debug("Dynamic all zone options: %s", all_zone_options)
     _LOGGER.debug("Dynamic room options: %s", room_options)
 
-    # Day options with French labels
+    # Day options with English labels
     day_options = [
-        {"value": "0", "label": "Lundi"},
-        {"value": "1", "label": "Mardi"},
-        {"value": "2", "label": "Mercredi"},
-        {"value": "3", "label": "Jeudi"},
-        {"value": "4", "label": "Vendredi"},
-        {"value": "5", "label": "Samedi"},
-        {"value": "6", "label": "Dimanche"},
+        {"value": str(i), "label": label}
+        for i, label in enumerate(DAYS_OF_WEEK_LABELS)
     ]
 
     # Build dynamic schemas with SelectSelector for proper dropdown UI
