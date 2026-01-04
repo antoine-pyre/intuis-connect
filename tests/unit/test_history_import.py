@@ -26,14 +26,15 @@ class TestGetExistingStatistics:
             {"start": 1704153600, "state": 6.0, "sum": 106.0},
         ]
 
-        with patch(
-            "custom_components.intuis_connect.history_import.statistics_during_period",
-            return_value={"sensor.energy": mock_stats},
-        ):
-            mock_hass.async_add_executor_job = AsyncMock(
-                return_value={"sensor.energy": mock_stats}
-            )
+        mock_instance = MagicMock()
+        mock_instance.async_add_executor_job = AsyncMock(
+            return_value={"sensor.energy": mock_stats}
+        )
 
+        with patch(
+            "custom_components.intuis_connect.history_import.get_instance",
+            return_value=mock_instance,
+        ):
             result = await _get_existing_statistics(
                 mock_hass,
                 "sensor.energy",
@@ -46,13 +47,18 @@ class TestGetExistingStatistics:
     async def test_returns_empty_list_on_no_data(self):
         """Should return empty list when no statistics found."""
         mock_hass = MagicMock()
-        mock_hass.async_add_executor_job = AsyncMock(return_value={})
+        mock_instance = MagicMock()
+        mock_instance.async_add_executor_job = AsyncMock(return_value={})
 
-        result = await _get_existing_statistics(
-            mock_hass,
-            "sensor.energy",
-            datetime(2024, 1, 1, tzinfo=timezone.utc),
-        )
+        with patch(
+            "custom_components.intuis_connect.history_import.get_instance",
+            return_value=mock_instance,
+        ):
+            result = await _get_existing_statistics(
+                mock_hass,
+                "sensor.energy",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+            )
 
         assert result == []
 
@@ -60,13 +66,18 @@ class TestGetExistingStatistics:
     async def test_returns_empty_list_on_exception(self):
         """Should return empty list and log warning on exception."""
         mock_hass = MagicMock()
-        mock_hass.async_add_executor_job = AsyncMock(side_effect=Exception("DB error"))
+        mock_instance = MagicMock()
+        mock_instance.async_add_executor_job = AsyncMock(side_effect=Exception("DB error"))
 
-        result = await _get_existing_statistics(
-            mock_hass,
-            "sensor.energy",
-            datetime(2024, 1, 1, tzinfo=timezone.utc),
-        )
+        with patch(
+            "custom_components.intuis_connect.history_import.get_instance",
+            return_value=mock_instance,
+        ):
+            result = await _get_existing_statistics(
+                mock_hass,
+                "sensor.energy",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+            )
 
         assert result == []
 
@@ -74,15 +85,20 @@ class TestGetExistingStatistics:
     async def test_passes_end_time_parameter(self):
         """Should pass end_time to statistics_during_period."""
         mock_hass = MagicMock()
-        mock_hass.async_add_executor_job = AsyncMock(return_value={})
+        mock_instance = MagicMock()
+        mock_instance.async_add_executor_job = AsyncMock(return_value={})
 
         start = datetime(2024, 1, 1, tzinfo=timezone.utc)
         end = datetime(2024, 6, 1, tzinfo=timezone.utc)
 
-        await _get_existing_statistics(mock_hass, "sensor.energy", start, end)
+        with patch(
+            "custom_components.intuis_connect.history_import.get_instance",
+            return_value=mock_instance,
+        ):
+            await _get_existing_statistics(mock_hass, "sensor.energy", start, end)
 
         # Check that async_add_executor_job was called with the right args
-        call_args = mock_hass.async_add_executor_job.call_args
+        call_args = mock_instance.async_add_executor_job.call_args
         assert call_args is not None
         # The end_time should be passed (3rd positional arg after hass and start)
 

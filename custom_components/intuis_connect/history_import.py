@@ -70,7 +70,8 @@ async def _get_existing_statistics(
         List of statistic entries with 'start', 'state', 'sum' keys.
     """
     try:
-        result = await hass.async_add_executor_job(
+        instance = get_instance(hass)
+        result = await instance.async_add_executor_job(
             statistics_during_period,
             hass,
             start_time,
