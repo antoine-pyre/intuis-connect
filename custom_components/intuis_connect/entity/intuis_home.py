@@ -1,20 +1,31 @@
 """
-intuis_home.py – Data model for Intuis “home” objects returned by /getHomeData
+intuis_home.py – Data model for Intuis "home" objects returned by /getHomeData
 Author: Your Name • Licence: MIT
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import List, Tuple, Dict, Any
 
 from ..entity.intuis_room import IntuisRoomDefinition
 from ..entity.intuis_schedule import IntuisSchedule
 
 
+@dataclass
 class Capability:
     """Represents an item in the `capabilities` list."""
+
     name: str
     available: bool
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> Capability:
+        """Create a Capability from a dictionary."""
+        return Capability(
+            name=data.get("name", ""),
+            available=data.get("available", False),
+        )
 
 
 class IntuisHome:
@@ -103,6 +114,11 @@ class IntuisHome:
 
         schedules = [IntuisSchedule.from_dict(t) for t in raw_home.get("schedules", [])]
 
+        # Parse capabilities
+        capabilities = [
+            Capability.from_dict(c) for c in raw_home.get("capabilities", [])
+        ]
+
         raw_coordinates: List | None = raw_home.get("coordinates", None)
         coordinates: tuple[float, float] | None
         if isinstance(raw_coordinates, list) and len(raw_coordinates) == 2:
@@ -124,7 +140,7 @@ class IntuisHome:
             place_improved=raw_home.get("place_improved"),
             trust_location=raw_home.get("trust_location"),
             therm_absence_location=raw_home.get("therm_absence_location"),
-            therm_absense_autoway=raw_home.get("therm_absense_autoway"),
+            therm_absense_autoway=raw_home.get("therm_absense_autoway"),  # API typo preserved
 
             therm_setpoint_default_duration=raw_home.get("therm_setpoint_default_duration"),
             therm_heating_priority=raw_home.get("therm_heating_priority"),
@@ -132,6 +148,7 @@ class IntuisHome:
             anticipation=raw_home.get("anticipation"),
             nb_users=raw_home.get("nb_users"),
             temperature_control_mode=raw_home.get("temperature_control_mode"),
+            capabilities=capabilities,
 
             rooms=rooms_definitions,
             schedules=schedules

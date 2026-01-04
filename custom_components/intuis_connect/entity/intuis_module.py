@@ -54,15 +54,19 @@ class NMRIntuisModule(IntuisModule):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> NMRIntuisModule:
         """Create a NMR module from a dictionary."""
-        return NMRIntuisModule(
-            module_id=data["id"],
-            firmware_revision=data["firmware_revision"],
-            last_seen=data["last_seen"],
-            bridge=data["bridge"],
-            hardware_version=data.get("hardware_version"),
-            image_type=data.get("image_type"),
-            manufacturer_id=data.get("manufacturer_id"),
-        )
+        try:
+            return NMRIntuisModule(
+                module_id=data["id"],
+                firmware_revision=data.get("firmware_revision", 0),
+                last_seen=data.get("last_seen", 0),
+                bridge=data.get("bridge", ""),
+                hardware_version=data.get("hardware_version"),
+                image_type=data.get("image_type"),
+                manufacturer_id=data.get("manufacturer_id"),
+            )
+        except (KeyError, TypeError) as err:
+            _LOGGER.warning("Error parsing NMR module data: %s (error: %s)", data, err)
+            raise ValueError(f"Invalid NMR module data: {err}") from err
 
 
 class NMGIntuisModule(IntuisModule):
@@ -104,22 +108,26 @@ class NMGIntuisModule(IntuisModule):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> NMGIntuisModule:
         """Create a NMG module from a dictionary."""
-        return NMGIntuisModule(
-            module_id=data["id"],
-            firmware_revision=data["firmware_revision"],
-            hardware_version=data["hardware_version"],
-            uptime=data["uptime"],
-            wifi_strength=data["wifi_strength"],
-            subtype=data["subtype"],
-            configure=data["configure"],
-            debug_enabled=data["debug_enabled"],
-            install_progress=data["install_progress"],
-            open_zigbee=data["open_zigbee"],
-            outdoor_temperature=data["outdoor_temperature"],
-            router_id=data["router_id"],
-            therm_setpoint_day_color_type=data["therm_setpoint_day_color_type"],
-            therm_setpoint_default_duration=data["therm_setpoint_default_duration"],
-        )
+        try:
+            return NMGIntuisModule(
+                module_id=data["id"],
+                firmware_revision=data.get("firmware_revision", 0),
+                hardware_version=data.get("hardware_version", 0),
+                uptime=data.get("uptime", 0),
+                wifi_strength=data.get("wifi_strength", 0),
+                subtype=data.get("subtype", ""),
+                configure=data.get("configure", False),
+                debug_enabled=data.get("debug_enabled", False),
+                install_progress=data.get("install_progress", 0),
+                open_zigbee=data.get("open_zigbee", False),
+                outdoor_temperature=data.get("outdoor_temperature", 0.0),
+                router_id=data.get("router_id", ""),
+                therm_setpoint_day_color_type=data.get("therm_setpoint_day_color_type", ""),
+                therm_setpoint_default_duration=data.get("therm_setpoint_default_duration", 0),
+            )
+        except (KeyError, TypeError) as err:
+            _LOGGER.warning("Error parsing NMG module data: %s (error: %s)", data, err)
+            raise ValueError(f"Invalid NMG module data: {err}") from err
 
 
 class NMHIntuisModule(IntuisModule):
@@ -153,15 +161,19 @@ class NMHIntuisModule(IntuisModule):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> NMHIntuisModule:
         """Create a NMH module from a dictionary."""
-        return NMHIntuisModule(
-            module_id=data["id"],
-            last_seen=data["last_seen"],
-            bridge=data["bridge"],
-            firmware_revision_thirdparty=data["firmware_revision_thirdparty"],
-            muller_type=data["muller_type"],
-            offload=data["offload"],
-            presence_sensor=data["presence_sensor"],
-            radiator_state=data["radiator_state"],
-            reachable=data["reachable"],
-            router_id=data["router_id"],
-        )
+        try:
+            return NMHIntuisModule(
+                module_id=data["id"],
+                last_seen=data.get("last_seen", 0),
+                bridge=data.get("bridge", ""),
+                firmware_revision_thirdparty=data.get("firmware_revision_thirdparty", ""),
+                muller_type=data.get("muller_type", ""),
+                offload=data.get("offload", False),
+                presence_sensor=data.get("presence_sensor", ""),
+                radiator_state=data.get("radiator_state", ""),
+                reachable=data.get("reachable", False),
+                router_id=data.get("router_id", ""),
+            )
+        except (KeyError, TypeError) as err:
+            _LOGGER.warning("Error parsing NMH module data: %s (error: %s)", data, err)
+            raise ValueError(f"Invalid NMH module data: {err}") from err

@@ -211,7 +211,7 @@ class IntuisZoneTemperatureNumber(CoordinatorEntity[IntuisDataUpdateCoordinator]
         """Return device info - grouped by schedule."""
         return DeviceInfo(
             identifiers={(DOMAIN, f"{self._home_id}_schedule_{self._schedule_id}")},
-            name=f"Planning {self._schedule_name}",
+            name=f"Schedule {self._schedule_name}",
             manufacturer="Muller Intuitiv (Netatmo)",
             model="Heating Schedule",
             via_device=(DOMAIN, f"{self._home_id}_home"),
