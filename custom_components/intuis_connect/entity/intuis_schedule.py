@@ -91,8 +91,13 @@ class IntuisThermZone(IntuisZone):
         self.rooms = rooms
 
     @staticmethod
-    def from_dict(data: dict[str, Any], type: str) -> IntuisThermZone:
-        """Create a zone from a dictionary."""
+    def from_dict(data: dict[str, Any], type: str) -> IntuisThermZone:  # noqa: ARG004
+        """Create a zone from a dictionary.
+
+        Args:
+            data: The zone data dictionary.
+            type: The schedule type (unused, but required for interface consistency with IntuisZone.from_dict).
+        """
         rooms_temp = [IntuisRoomTemperature.from_dict(rt) for rt in data.get("rooms_temp", [])]
         rooms = [IntuisScheduleRoom.from_dict(r) for r in data.get("rooms", [])]
         return IntuisThermZone(
@@ -114,8 +119,13 @@ class IntuisElectricityZone(IntuisZone):
         self.price = price
 
     @staticmethod
-    def from_dict(data: dict[str, Any], type: str) -> IntuisElectricityZone:
-        """Create a price zone from a dictionary."""
+    def from_dict(data: dict[str, Any], type: str) -> IntuisElectricityZone:  # noqa: ARG004
+        """Create a price zone from a dictionary.
+
+        Args:
+            data: The zone data dictionary.
+            type: The schedule type (unused, but required for interface consistency with IntuisZone.from_dict).
+        """
         return IntuisElectricityZone(
             id=data["id"],
             price_type=data["price_type"],

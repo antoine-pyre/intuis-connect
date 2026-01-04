@@ -39,7 +39,7 @@ from .timetable import (
     upsert_timetable_entry,
     remove_consecutive_duplicates,
     DAYS_OF_WEEK,
-    DAYS_OF_WEEK_FR,
+    DAYS_OF_WEEK_LABELS,
     MINUTES_PER_DAY,
 )
 from .utils.const import DOMAIN
@@ -129,10 +129,10 @@ async def async_generate_services_yaml(hass: HomeAssistant, intuis_home: IntuisH
         if room_name not in room_names:
             room_names.append(room_name)
 
-    # Build day options with French labels
+    # Build day options with labels
     day_options = [
-        {"label": day_fr, "value": str(i)}
-        for i, day_fr in enumerate(DAYS_OF_WEEK_FR)
+        {"label": day_label, "value": str(i)}
+        for i, day_label in enumerate(DAYS_OF_WEEK_LABELS)
     ]
 
     # Build schedule options

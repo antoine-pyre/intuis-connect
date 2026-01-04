@@ -11,7 +11,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # Day constants for readability
 DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-DAYS_OF_WEEK_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
+DAYS_OF_WEEK_LABELS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 MINUTES_PER_DAY = 1440
 
 

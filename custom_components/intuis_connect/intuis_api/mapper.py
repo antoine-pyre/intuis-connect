@@ -13,9 +13,12 @@ def extract_modules(home: dict[str, Any]) -> List[IntuisModule]:
     # --- process modules ---
     modules: List[IntuisModule] = []
     for module in modules_raw:
-        mid = module["id"]
-        modules.append(IntuisModule.from_dict(module))
-        _LOGGER.debug("Module %s data: %s", mid, module)
+        mid = module.get("id", "unknown")
+        try:
+            modules.append(IntuisModule.from_dict(module))
+            _LOGGER.debug("Module %s data: %s", mid, module)
+        except (ValueError, KeyError, TypeError) as err:
+            _LOGGER.warning("Skipping malformed module %s: %s", mid, err)
 
     return modules
 
