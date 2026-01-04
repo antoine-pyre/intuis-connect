@@ -333,10 +333,16 @@ class IntuisScheduledTempSensor(IntuisSensor):
         current_offset = day_of_week * MINUTES_PER_DAY + minutes_today
 
         # Find the active zone for this time
+        # Timetables are sorted by m_offset, find the last one <= current_offset
         active_zone_id = None
         for timetable in active_schedule.timetables:
             if timetable.m_offset <= current_offset:
                 active_zone_id = timetable.zone_id
+
+        # Handle week wrap-around: if no zone found (e.g., Monday 00:00 before first entry),
+        # use the last zone from the previous week (which wraps from Sunday)
+        if active_zone_id is None and active_schedule.timetables:
+            active_zone_id = active_schedule.timetables[-1].zone_id
 
         if active_zone_id is None:
             return None

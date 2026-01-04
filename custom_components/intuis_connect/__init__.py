@@ -1,6 +1,7 @@
 """Setup for Intuis Connect (v1.9.6)."""
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
 
@@ -12,7 +13,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.storage import Store
 
-from .intuis_api.api import IntuisAPI, InvalidAuth, CannotConnect
+from .intuis_api.api import IntuisAPI, InvalidAuth, CannotConnect, APIError
 from .utils.const import (
     DOMAIN,
     CONF_REFRESH_TOKEN,
@@ -100,7 +101,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         circuit_threshold=circuit_threshold,
         min_request_delay=min_request_delay,
     )
-    intuis_api.home_id = entry.data["home_id"]
     intuis_api.refresh_token = entry.data[CONF_REFRESH_TOKEN]
 
     try:
@@ -292,9 +292,18 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     home_name,
                     home_id,
                 )
-            except (InvalidAuth, CannotConnect) as err:
+            except (InvalidAuth, CannotConnect, APIError) as err:
                 _LOGGER.warning(
                     "Migration: Could not fetch home name from API: %s",
+                    err,
+                )
+            except asyncio.TimeoutError:
+                _LOGGER.warning(
+                    "Migration: Timeout while fetching home name from API"
+                )
+            except Exception as err:
+                _LOGGER.warning(
+                    "Migration: Unexpected error fetching home name: %s",
                     err,
                 )
 
