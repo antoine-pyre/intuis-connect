@@ -181,7 +181,7 @@ class IntuisEnergySensor(IntuisSensor):
             SensorDeviceClass.ENERGY,
         )
         self._attr_icon = "mdi:flash"
-        self._attr_state_class = SensorStateClass.TOTAL
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
 
         # Track daily maximum energy (never decrease within a day)
         self._daily_max_energy: float = 0.0
