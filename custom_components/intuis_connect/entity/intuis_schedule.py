@@ -132,12 +132,22 @@ class IntuisTimetable:
         self.m_offset = m_offset
 
     @staticmethod
-    def from_dict(data: dict[str, Any]) -> IntuisTimetable:
-        """Create a timetable from a dictionary."""
-        return IntuisTimetable(
-            zone_id=data["zone_id"],
-            m_offset=data["m_offset"]
-        )
+    def from_dict(data: dict[str, Any]) -> IntuisTimetable | None:
+        """Create a timetable from a dictionary.
+
+        Returns None if the data is malformed (missing required fields).
+        """
+        try:
+            zone_id = data["zone_id"]
+            m_offset = data["m_offset"]
+            return IntuisTimetable(zone_id=zone_id, m_offset=m_offset)
+        except (KeyError, TypeError) as err:
+            _LOGGER.warning(
+                "Skipping malformed timetable entry: %s (error: %s)",
+                data,
+                err,
+            )
+            return None
 
 
 class IntuisSchedule:
@@ -160,11 +170,25 @@ class IntuisSchedule:
         _LOGGER.debug("Creating IntuisSchedule from data: %s", data)
         # API returns "timetable" (singular) but we store as "timetables" internally
         timetable_data = data.get("timetable", data.get("timetables", []))
-        timetables = [IntuisTimetable.from_dict(t) for t in timetable_data]
+        # Filter out None entries from malformed timetable data
+        timetables = [
+            t for t in (IntuisTimetable.from_dict(entry) for entry in timetable_data)
+            if t is not None
+        ]
 
         type = data["type"]
 
-        zones = [IntuisZone.from_dict(z, type) for z in data.get("zones", [])]
+        # Parse zones with error handling for malformed entries
+        zones = []
+        for z in data.get("zones", []):
+            try:
+                zones.append(IntuisZone.from_dict(z, type))
+            except (KeyError, TypeError, ValueError) as err:
+                _LOGGER.warning(
+                    "Skipping malformed zone entry: %s (error: %s)",
+                    z,
+                    err,
+                )
 
         if type is None:
             raise ValueError("Schedule type is required")

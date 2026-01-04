@@ -72,6 +72,19 @@ class IntuisHome:
 
     # ---------- helpers -----------------------------------------------------
 
+    def __repr__(self) -> str:
+        """Return a string representation of the home."""
+        room_count = len(self.rooms) if self.rooms else 0
+        schedule_count = len(self.schedules) if self.schedules else 0
+        return (
+            f"IntuisHome(id={self.id!r}, name={self.name!r}, "
+            f"rooms={room_count}, schedules={schedule_count}, timezone={self.timezone!r})"
+        )
+
+    def __str__(self) -> str:
+        """Return a human-readable string of the home."""
+        return f"{self.name} ({self.id})"
+
     @property
     def lon(self) -> float:  # convenience split of coordinates
         return self.coordinates[0]
