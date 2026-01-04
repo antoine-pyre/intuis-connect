@@ -38,10 +38,6 @@ class IntuisRoomDefinition:
 class IntuisRoom:
     """Class to represent a room in the Intuis Connect system."""
 
-    # Accumulated counters (updated by mapper, not from API)
-    minutes: int = 0
-    energy: float = 0.0
-
     def __init__(self, definition: IntuisRoomDefinition, id: str, name: str, mode: str, target_temperature: float,
                  temperature: float, presence: bool, open_window: bool, anticipation: bool,
                  muller_type: str, boost_status: str, modules: list[IntuisModule], therm_setpoint_end_time: int,
@@ -62,6 +58,9 @@ class IntuisRoom:
         self.therm_setpoint_end_time = therm_setpoint_end_time
         self.bridge_id = bridge_id
         self.heating = heating
+        # Accumulated counters (updated by mapper, not from API)
+        self.minutes: int = 0
+        self.energy: float = 0.0
 
     @staticmethod
     def from_dict(definition: IntuisRoomDefinition, data: dict[str, Any], modules: list[IntuisModule]) -> IntuisRoom:

@@ -478,9 +478,9 @@ class IntuisAPI:
     async def async_refresh_access_token(self) -> None:
         """Refresh the access token."""
         if self._debug:
-            _LOGGER.debug(
-                "Refreshing access token using refresh_token=%s", self._refresh_token
-            )
+            # Mask token for security - only show last 4 chars
+            masked_token = f"***{self._refresh_token[-4:]}" if self._refresh_token else "None"
+            _LOGGER.debug("Refreshing access token using refresh_token=%s", masked_token)
         if not self._refresh_token:
             _LOGGER.error("No refresh token saved, cannot refresh access token")
             raise InvalidAuth("No refresh token saved")
