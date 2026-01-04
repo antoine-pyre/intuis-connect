@@ -46,7 +46,8 @@ class PresenceSensor(_Base):
 
     @property
     def is_on(self) -> bool:
-        return self._get_room().presence
+        room = self._get_room()
+        return room.presence if room else False
 
 
 class WindowSensor(_Base):
@@ -62,7 +63,8 @@ class WindowSensor(_Base):
 
     @property
     def is_on(self) -> bool:
-        return self._get_room().open_window
+        room = self._get_room()
+        return room.open_window if room else False
 
 
 class AnticipationSensor(_Base):
@@ -83,7 +85,8 @@ class AnticipationSensor(_Base):
 
     @property
     def is_on(self) -> bool:
-        return self._get_room().anticipation
+        room = self._get_room()
+        return room.anticipation if room else False
 
 
 class ModuleReachableSensor(_Base):

@@ -1,4 +1,4 @@
-"""Constants for Intuis Connect integration (v1.9.1)."""
+"""Constants for Intuis Connect integration (v1.9.6)."""
 
 DOMAIN = "intuis_connect"
 
