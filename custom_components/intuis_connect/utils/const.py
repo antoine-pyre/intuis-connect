@@ -36,7 +36,7 @@ ROOMMEASURE_PATH = "/api/getroommeasure"
 # Energy measure types - request all tariffs to capture all consumption
 ENERGY_MEASURE_TYPES = "sum_energy_elec,sum_energy_elec$0,sum_energy_elec$1,sum_energy_elec$2"
 
-ENERGY_BASE = "https://connect.intuis.net/api"
+ENERGY_BASE = f"{BASE_URL}/api"
 GET_SCHEDULE_PATH = "/gethomeschedule"
 SET_SCHEDULE_PATH = "/updatenewhomeschedule"
 DELETE_SCHEDULE_PATH = "/deletenewhomeschedule"
