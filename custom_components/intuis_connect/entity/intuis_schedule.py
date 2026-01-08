@@ -74,6 +74,10 @@ class IntuisZone:
             return IntuisThermZone.from_dict(data, type)
         if type == "electricity":
             return IntuisElectricityZone.from_dict(data, type)
+        if type == "event":
+            return IntuisEventZone.from_dict(data, type)
+
+
         raise ValueError(f"Unknown zone type: {type}")
 
 
@@ -130,6 +134,44 @@ class IntuisElectricityZone(IntuisZone):
             id=data["id"],
             price_type=data["price_type"],
             price=data["price"]
+        )
+
+
+class IntuisEventZone(IntuisZone):
+    """Class to represent an event zone in the Intuis Connect system."""
+
+    def __init__(self, id: int, name: str,
+                 modules: list[dict[str, Any]] | None = None) -> None:
+        """Initialize the event zone."""
+        IntuisZone.__init__(self, id)
+        self.name = name
+        self.modules = modules or []
+
+    @property
+    def module_ids(self) -> list[str]:
+        """Return the module ids targeted by this zone."""
+        return [
+            m.get("id")
+            for m in self.modules
+            if isinstance(m, dict) and m.get("id") is not None
+        ]
+
+    @property
+    def dhw_states(self) -> list[str]:
+        """Return the DHW states for all modules in this zone."""
+        return [
+            m.get("dhw_state")
+            for m in self.modules
+            if isinstance(m, dict) and m.get("dhw_state") is not None
+        ]
+
+    @staticmethod
+    def from_dict(data: dict[str, Any], type: str) -> IntuisEventZone:  # noqa: ARG004
+        """Create an event zone from a dictionary."""
+        return IntuisEventZone(
+            id=data["id"],
+            name=data.get("name", f"Zone {data['id']}"),
+            modules=data.get("modules", [])
         )
 
 
@@ -202,7 +244,7 @@ class IntuisSchedule:
 
         if type is None:
             raise ValueError("Schedule type is required")
-        if type not in ["therm", "electricity"]:
+        if type not in ["therm", "electricity", "event"]:
             raise ValueError(f"Unknown schedule type: {type}")
         if type == "therm":
             return IntuisThermSchedule(
@@ -230,6 +272,16 @@ class IntuisSchedule:
                 power_threshold=data.get("power_threshold", 0),
                 contract_power_unit=data.get("contract_power_unit", ""),
                 version=data.get("version", 1)
+            )
+        if type == "event":
+            return IntuisEventSchedule(
+                timetables=timetables,
+                zones=zones,
+                name=data.get("name", f"Schedule {data['id'][-6:]}"),
+                default=data.get("default", False),
+                id=data["id"],
+                type=type,
+                selected=data.get("selected", False)
             )
         raise ValueError(f"Unknown schedule type: {type}")
 
@@ -260,3 +312,20 @@ class IntuisElectricitySchedule(IntuisSchedule):
         self.power_threshold = power_threshold
         self.contract_power_unit = contract_power_unit
         self.version = version
+
+
+class IntuisEventSchedule(IntuisSchedule):
+    """Class to represent an event schedule in the Intuis Connect system."""
+
+    def __init__(self, timetables: list[IntuisTimetable], zones: list[IntuisZone], name: str, default: bool,
+                 id: str, type: str, selected: bool) -> None:
+        """Initialize the event schedule."""
+        IntuisSchedule.__init__(self, timetables, zones, name, default, id, type, selected)
+        _LOGGER.debug("Initialized IntuisEventSchedule with id: %s, name: %s", id, name)
+
+    def get_zone_by_id(self, zone_id: int) -> IntuisEventZone | None:
+        """Return the event zone with the given id."""
+        for z in self.zones:
+            if isinstance(z, IntuisEventZone) and z.id == zone_id:
+                return z
+        return None
