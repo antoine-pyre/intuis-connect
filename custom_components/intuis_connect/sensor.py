@@ -69,6 +69,18 @@ class IntuisSensor(CoordinatorEntity, SensorEntity, IntuisEntity):
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
 
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator.
+
+        The Intuis coordinator rebuilds IntuisRoom objects on each refresh.
+        Keep our internal room reference in sync so any remaining usages of
+        ``self._room`` don't end up stuck on the initial instance.
+        """
+        room = self._get_room()
+        if room is not None:
+            self._room = room
+        super()._handle_coordinator_update()
+
     @property
     def native_value(self) -> float | int | None:
         """Return the current value of this sensor."""
@@ -99,7 +111,8 @@ class IntuisMullerTypeSensor(IntuisSensor):
     def native_value(self) -> str:
         """Return the current device type."""
         # Ensure we handle None values gracefully
-        muller_type = self._room.muller_type
+        room = self._get_room() or self._room
+        muller_type = room.muller_type
         if muller_type is None:
             return ""
         return muller_type
@@ -125,7 +138,8 @@ class IntuisTemperatureSensor(IntuisSensor):
     def native_value(self) -> float:
         """Return the current temperature value."""
         # Ensure we handle None values gracefully
-        temperature = self._room.temperature
+        room = self._get_room() or self._room
+        temperature = room.temperature
         if temperature is None:
             return 0.0
         return temperature
@@ -156,7 +170,8 @@ class IntuisMinutesSensor(IntuisSensor):
     def native_value(self) -> int:
         """Return the current heating minutes value."""
         # Ensure we handle None values gracefully
-        minutes = self._room.minutes
+        room = self._get_room() or self._room
+        minutes = room.minutes
         if minutes is None:
             return 0
         return minutes
@@ -219,10 +234,19 @@ class IntuisEnergySensor(IntuisSensor):
     @property
     def native_value(self) -> float:
         """Return the cumulative daily energy value (max seen today)."""
-        if self._room is None:
+        room = self._get_room() or self._room
+        if room is None:
             return self._daily_max_energy
 
-        current_energy = self._room.energy or 0.0
+        #current_energy = room.energy.energy or 0.0
+        # room.energy is expected to be a float (kWh) in this integration.
+        # Some variants / refactors could potentially wrap it in an object;
+        # be defensive.
+        energy_val = room.energy
+        if hasattr(energy_val, "energy"):
+            energy_val = energy_val.energy
+
+        current_energy = float(energy_val or 0.0)
         now = dt_util.now()
         reset_hour = self._get_reset_hour()
         current_logical_day = self._get_logical_day(now, reset_hour)
@@ -234,7 +258,7 @@ class IntuisEnergySensor(IntuisSensor):
             self._last_logical_day = current_logical_day
             _LOGGER.debug(
                 "Initializing energy for %s: %.3f kWh (logical day: %s)",
-                self._room.name, current_energy, current_logical_day
+                room.name, current_energy, current_logical_day
             )
         elif self._last_logical_day != current_logical_day:
             # New logical day - reset to current value
@@ -242,14 +266,14 @@ class IntuisEnergySensor(IntuisSensor):
             self._last_logical_day = current_logical_day
             _LOGGER.info(
                 "New logical day for %s (reset hour: %02d:00), reset energy to %.3f kWh",
-                self._room.name, reset_hour, current_energy
+                room.name, reset_hour, current_energy
             )
         elif current_energy > self._daily_max_energy:
             # Same day - update max if current is higher
             self._daily_max_energy = current_energy
             _LOGGER.debug(
                 "Updated daily max for %s to %.3f kWh",
-                self._room.name, current_energy
+                room.name, current_energy
             )
 
         return self._daily_max_energy
@@ -275,9 +299,10 @@ class IntuisSetpointEndTimeSensor(IntuisSensor):
     @property
     def native_value(self) -> datetime | None:
         """Return the end time of the current override as a datetime."""
-        if self._room is None:
+        room = self._get_room() or self._room
+        if room is None:
             return None
-        end_ts = self._room.therm_setpoint_end_time
+        end_ts = room.therm_setpoint_end_time
         if not end_ts or end_ts == 0:
             return None
         try:
@@ -362,7 +387,8 @@ class IntuisScheduledTempSensor(IntuisSensor):
             return None
 
         # Find this room's temperature in the zone
-        room_id = self._room.id if self._room else None
+        room = self._get_room() or self._room
+        room_id = room.id if room else None
         if not room_id:
             return None
 
@@ -387,7 +413,8 @@ class IntuisScheduledTempSensor(IntuisSensor):
             attrs["zone_type"] = zone.type
 
             # Find room preset if any
-            room_id = self._room.id if self._room else None
+            room = self._get_room() or self._room
+            room_id = room.id if room else None
             if room_id:
                 for room_config in zone.rooms:
                     if room_config.id == room_id and room_config.therm_setpoint_fp:
