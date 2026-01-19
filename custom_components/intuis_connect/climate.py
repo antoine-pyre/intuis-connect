@@ -186,12 +186,14 @@ class IntuisConnectClimate(
             if room_id in overrides:
                 overrides.pop(room_id, None)
                 overrides_changed = True
+            self._attr_hvac_mode = HVACMode.OFF
             self._attr_preset_mode = None
         elif hvac_mode == HVACMode.AUTO:
             await self._api.async_set_room_state(room_id, API_MODE_HOME)
             if room_id in overrides:
                 overrides.pop(room_id, None)
                 overrides_changed = True
+            self._attr_hvac_mode = HVACMode.AUTO
             self._attr_preset_mode = PRESET_SCHEDULE
         elif hvac_mode == HVACMode.HEAT:
             temp = float(self.target_temperature or 20.0)
@@ -210,6 +212,7 @@ class IntuisConnectClimate(
             }
             overrides_changed = True
             self._schedule_end_refresh(end_ts)
+            self._attr_hvac_mode = HVACMode.HEAT
             self._attr_preset_mode = None
 
         # Persist overrides to storage

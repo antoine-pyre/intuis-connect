@@ -31,13 +31,24 @@ class IntuisScheduleRoom:
         return self.therm_setpoint_fp is not None
 
     @staticmethod
-    def from_dict(data: dict[str, Any]) -> IntuisScheduleRoom:
-        """Create a room from a dictionary."""
-        return IntuisScheduleRoom(
-            id=data["id"],
-            therm_setpoint_temperature=data.get("therm_setpoint_temperature"),
-            therm_setpoint_fp=data.get("therm_setpoint_fp")
-        )
+    def from_dict(data: dict[str, Any]) -> IntuisScheduleRoom | None:
+        """Create a room from a dictionary.
+
+        Returns None if the data is malformed (missing required fields).
+        """
+        try:
+            return IntuisScheduleRoom(
+                id=data["id"],
+                therm_setpoint_temperature=data.get("therm_setpoint_temperature"),
+                therm_setpoint_fp=data.get("therm_setpoint_fp")
+            )
+        except (KeyError, TypeError) as err:
+            _LOGGER.warning(
+                "Skipping malformed schedule room entry: %s (error: %s)",
+                data,
+                err,
+            )
+            return None
 
 
 class IntuisRoomTemperature:
@@ -49,12 +60,23 @@ class IntuisRoomTemperature:
         self.temp = temp
 
     @staticmethod
-    def from_dict(data: dict[str, Any]) -> IntuisRoomTemperature:
-        """Create a room temperature from a dictionary."""
-        return IntuisRoomTemperature(
-            room_id=data["room_id"],
-            temp=data["temp"]
-        )
+    def from_dict(data: dict[str, Any]) -> IntuisRoomTemperature | None:
+        """Create a room temperature from a dictionary.
+
+        Returns None if the data is malformed (missing required fields).
+        """
+        try:
+            return IntuisRoomTemperature(
+                room_id=data["room_id"],
+                temp=data["temp"]
+            )
+        except (KeyError, TypeError) as err:
+            _LOGGER.warning(
+                "Skipping malformed room temperature entry: %s (error: %s)",
+                data,
+                err,
+            )
+            return None
 
 
 class IntuisZone:
@@ -95,22 +117,39 @@ class IntuisThermZone(IntuisZone):
         self.rooms = rooms
 
     @staticmethod
-    def from_dict(data: dict[str, Any], type: str) -> IntuisThermZone:  # noqa: ARG004
+    def from_dict(data: dict[str, Any], type: str) -> IntuisThermZone | None:  # noqa: ARG004
         """Create a zone from a dictionary.
 
         Args:
             data: The zone data dictionary.
             type: The schedule type (unused, but required for interface consistency with IntuisZone.from_dict).
+
+        Returns None if the data is malformed (missing required fields).
         """
-        rooms_temp = [IntuisRoomTemperature.from_dict(rt) for rt in data.get("rooms_temp", [])]
-        rooms = [IntuisScheduleRoom.from_dict(r) for r in data.get("rooms", [])]
-        return IntuisThermZone(
-            id=data["id"],
-            name=data.get("name", f"Zone {data['id']}"),
-            type=data.get("type", 0),
-            rooms_temp=rooms_temp,
-            rooms=rooms
-        )
+        try:
+            # Filter out None entries from malformed data
+            rooms_temp = [
+                rt for rt in (IntuisRoomTemperature.from_dict(rt) for rt in data.get("rooms_temp", []))
+                if rt is not None
+            ]
+            rooms = [
+                r for r in (IntuisScheduleRoom.from_dict(r) for r in data.get("rooms", []))
+                if r is not None
+            ]
+            return IntuisThermZone(
+                id=data["id"],
+                name=data.get("name", f"Zone {data['id']}"),
+                type=data.get("type", 0),
+                rooms_temp=rooms_temp,
+                rooms=rooms
+            )
+        except (KeyError, TypeError) as err:
+            _LOGGER.warning(
+                "Skipping malformed therm zone entry: %s (error: %s)",
+                data,
+                err,
+            )
+            return None
 
 
 class IntuisElectricityZone(IntuisZone):
@@ -123,18 +162,28 @@ class IntuisElectricityZone(IntuisZone):
         self.price = price
 
     @staticmethod
-    def from_dict(data: dict[str, Any], type: str) -> IntuisElectricityZone:  # noqa: ARG004
+    def from_dict(data: dict[str, Any], type: str) -> IntuisElectricityZone | None:  # noqa: ARG004
         """Create a price zone from a dictionary.
 
         Args:
             data: The zone data dictionary.
             type: The schedule type (unused, but required for interface consistency with IntuisZone.from_dict).
+
+        Returns None if the data is malformed (missing required fields).
         """
-        return IntuisElectricityZone(
-            id=data["id"],
-            price_type=data["price_type"],
-            price=data["price"]
-        )
+        try:
+            return IntuisElectricityZone(
+                id=data["id"],
+                price_type=data["price_type"],
+                price=data["price"]
+            )
+        except (KeyError, TypeError) as err:
+            _LOGGER.warning(
+                "Skipping malformed electricity zone entry: %s (error: %s)",
+                data,
+                err,
+            )
+            return None
 
 
 class IntuisEventZone(IntuisZone):
@@ -166,13 +215,24 @@ class IntuisEventZone(IntuisZone):
         ]
 
     @staticmethod
-    def from_dict(data: dict[str, Any], type: str) -> IntuisEventZone:  # noqa: ARG004
-        """Create an event zone from a dictionary."""
-        return IntuisEventZone(
-            id=data["id"],
-            name=data.get("name", f"Zone {data['id']}"),
-            modules=data.get("modules", [])
-        )
+    def from_dict(data: dict[str, Any], type: str) -> IntuisEventZone | None:  # noqa: ARG004
+        """Create an event zone from a dictionary.
+
+        Returns None if the data is malformed (missing required fields).
+        """
+        try:
+            return IntuisEventZone(
+                id=data["id"],
+                name=data.get("name", f"Zone {data['id']}"),
+                modules=data.get("modules", [])
+            )
+        except (KeyError, TypeError) as err:
+            _LOGGER.warning(
+                "Skipping malformed event zone entry: %s (error: %s)",
+                data,
+                err,
+            )
+            return None
 
 
 class IntuisTimetable:
@@ -217,9 +277,22 @@ class IntuisSchedule:
         _LOGGER.debug("Initialized IntuisSchedule with id: %s, name: %s", id, name)
 
     @staticmethod
-    def from_dict(data: dict[str, Any]) -> IntuisSchedule:
-        """Create an Intuis schedule from a dictionary."""
+    def from_dict(data: dict[str, Any]) -> IntuisSchedule | None:
+        """Create an Intuis schedule from a dictionary.
+
+        Returns None if the data is malformed (missing required fields or invalid type).
+        """
         _LOGGER.debug("Creating IntuisSchedule from data: %s", data)
+
+        # Get type first - it's required
+        schedule_type = data.get("type")
+        if schedule_type is None:
+            _LOGGER.warning("Skipping schedule with missing type: %s", data)
+            return None
+        if schedule_type not in ["therm", "electricity", "event"]:
+            _LOGGER.warning("Skipping schedule with unknown type: %s", schedule_type)
+            return None
+
         # API returns "timetable" (singular) but we store as "timetables" internally
         timetable_data = data.get("timetable", data.get("timetables", []))
         # Filter out None entries from malformed timetable data
@@ -228,13 +301,13 @@ class IntuisSchedule:
             if t is not None
         ]
 
-        type = data["type"]
-
         # Parse zones with error handling for malformed entries
         zones = []
         for z in data.get("zones", []):
             try:
-                zones.append(IntuisZone.from_dict(z, type))
+                zone = IntuisZone.from_dict(z, schedule_type)
+                if zone is not None:
+                    zones.append(zone)
             except (KeyError, TypeError, ValueError) as err:
                 _LOGGER.warning(
                     "Skipping malformed zone entry: %s (error: %s)",
@@ -242,48 +315,52 @@ class IntuisSchedule:
                     err,
                 )
 
-        if type is None:
-            raise ValueError("Schedule type is required")
-        if type not in ["therm", "electricity", "event"]:
-            raise ValueError(f"Unknown schedule type: {type}")
-        if type == "therm":
-            return IntuisThermSchedule(
-                timetables=timetables,
-                zones=zones,
-                name=data.get("name", f"Schedule {data['id'][-6:]}"),
-                default=data.get("default", False),
-                away_temp=data.get("away_temp", 12),
-                hg_temp=data.get("hg_temp", 7),
-                id=data["id"],
-                type=type,
-                selected=data.get("selected", False)
+        try:
+            if schedule_type == "therm":
+                return IntuisThermSchedule(
+                    timetables=timetables,
+                    zones=zones,
+                    name=data.get("name", f"Schedule {data['id'][-6:]}"),
+                    default=data.get("default", False),
+                    away_temp=data.get("away_temp", 12),
+                    hg_temp=data.get("hg_temp", 7),
+                    id=data["id"],
+                    type=schedule_type,
+                    selected=data.get("selected", False)
+                )
+            if schedule_type == "electricity":
+                return IntuisElectricitySchedule(
+                    timetables=timetables,
+                    zones=zones,
+                    name=data.get("name", f"Electricity {data['id'][-6:]}"),
+                    default=data.get("default", False),
+                    id=data["id"],
+                    type=schedule_type,
+                    selected=data.get("selected", False),
+                    tariff=data.get("tariff", ""),
+                    tariff_option=data.get("tariff_option", ""),
+                    power_threshold=data.get("power_threshold", 0),
+                    contract_power_unit=data.get("contract_power_unit", ""),
+                    version=data.get("version", 1)
+                )
+            if schedule_type == "event":
+                return IntuisEventSchedule(
+                    timetables=timetables,
+                    zones=zones,
+                    name=data.get("name", f"Schedule {data['id'][-6:]}"),
+                    default=data.get("default", False),
+                    id=data["id"],
+                    type=schedule_type,
+                    selected=data.get("selected", False)
+                )
+        except (KeyError, TypeError) as err:
+            _LOGGER.warning(
+                "Skipping malformed schedule entry: %s (error: %s)",
+                data,
+                err,
             )
-        if type == "electricity":
-            return IntuisElectricitySchedule(
-                timetables=timetables,
-                zones=zones,
-                name=data.get("name", f"Electricity {data['id'][-6:]}"),
-                default=data.get("default", False),
-                id=data["id"],
-                type=type,
-                selected=data.get("selected", False),
-                tariff=data.get("tariff", ""),
-                tariff_option=data.get("tariff_option", ""),
-                power_threshold=data.get("power_threshold", 0),
-                contract_power_unit=data.get("contract_power_unit", ""),
-                version=data.get("version", 1)
-            )
-        if type == "event":
-            return IntuisEventSchedule(
-                timetables=timetables,
-                zones=zones,
-                name=data.get("name", f"Schedule {data['id'][-6:]}"),
-                default=data.get("default", False),
-                id=data["id"],
-                type=type,
-                selected=data.get("selected", False)
-            )
-        raise ValueError(f"Unknown schedule type: {type}")
+            return None
+        return None
 
 
 class IntuisThermSchedule(IntuisSchedule):

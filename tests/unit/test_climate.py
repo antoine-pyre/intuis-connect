@@ -351,6 +351,39 @@ class TestAsyncSetHVACMode:
 
         mock_save_overrides.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_set_hvac_mode_off_updates_hvac_mode_attr(
+        self, climate_entity_factory
+    ):
+        """Setting HVAC mode OFF updates _attr_hvac_mode."""
+        entity = climate_entity_factory()
+
+        await entity.async_set_hvac_mode(HVACMode.OFF)
+
+        assert entity._attr_hvac_mode == HVACMode.OFF
+
+    @pytest.mark.asyncio
+    async def test_set_hvac_mode_auto_updates_hvac_mode_attr(
+        self, climate_entity_factory
+    ):
+        """Setting HVAC mode AUTO updates _attr_hvac_mode."""
+        entity = climate_entity_factory()
+
+        await entity.async_set_hvac_mode(HVACMode.AUTO)
+
+        assert entity._attr_hvac_mode == HVACMode.AUTO
+
+    @pytest.mark.asyncio
+    async def test_set_hvac_mode_heat_updates_hvac_mode_attr(
+        self, climate_entity_factory
+    ):
+        """Setting HVAC mode HEAT updates _attr_hvac_mode."""
+        entity = climate_entity_factory()
+
+        await entity.async_set_hvac_mode(HVACMode.HEAT)
+
+        assert entity._attr_hvac_mode == HVACMode.HEAT
+
 
 # ---------------------------------------------------------------------------
 # Test: async_set_preset_mode
