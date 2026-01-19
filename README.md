@@ -34,7 +34,7 @@
 1. Open **HACS → Integrations**
 2. Click **⋮** → **Custom repositories**
 3. Add:
-   - URL: `https://github.com/antoine-pyre/homeassistant-intuis-connect`
+   - URL: `https://github.com/antoine-pyre/intuis-connect`
    - Category: **Integration**
 4. Search for "Intuis Connect" → **Download** → **Restart** Home Assistant
 
