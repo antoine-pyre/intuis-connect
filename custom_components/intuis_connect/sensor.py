@@ -133,6 +133,7 @@ class IntuisTemperatureSensor(IntuisSensor):
             "temperature",
         )
         self._attr_icon = "mdi:thermometer"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> float:
@@ -509,3 +510,4 @@ class ModuleFirmwareSensor(IntuisSensor):
             if isinstance(module, NMHIntuisModule) and module.id == self._module_id:
                 return module.firmware_revision_thirdparty
         return None
+        
