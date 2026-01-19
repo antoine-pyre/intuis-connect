@@ -274,15 +274,27 @@ class IntuisData:
         reset_hour = options.get(CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR)
         is_realtime = scale != "1day"
 
+        # Calculate timestamps using the home's timezone
+        # This ensures day boundaries align with the user's local time
+        try:
+            home_tz = ZoneInfo(self._api.home_timezone)
+        except (KeyError, ValueError):
+            _LOGGER.warning(
+                "Invalid home timezone '%s', falling back to UTC",
+                self._api.home_timezone,
+            )
+            home_tz = timezone.utc
+
+        now_local = datetime.now(home_tz)
+        today_iso = now_local.date().isoformat()
+
         # For daily scale, only fetch after reset hour to ensure data is available
-        if not is_realtime and now.hour < reset_hour:
+        if not is_realtime and now_local.hour < reset_hour:
             _LOGGER.debug(
                 "Skipping energy fetch before reset hour %02d:00 (daily mode)",
                 reset_hour,
             )
             return
-
-        today_iso = now.date().isoformat()
 
         # For daily scale, use caching. For real-time scales, always fetch fresh data.
         if not is_realtime and self._energy_cache.get("_date") == today_iso:
@@ -303,18 +315,6 @@ class IntuisData:
             _LOGGER.debug("No rooms with bridge_id found, skipping energy fetch")
             return
 
-        # Calculate epoch timestamps for today using the home's timezone
-        # This ensures day boundaries align with the user's local time
-        try:
-            home_tz = ZoneInfo(self._api.home_timezone)
-        except (KeyError, ValueError):
-            _LOGGER.warning(
-                "Invalid home timezone '%s', falling back to UTC",
-                self._api.home_timezone,
-            )
-            home_tz = timezone.utc
-
-        now_local = datetime.now(home_tz)
         today_start = datetime.combine(now_local.date(), datetime.min.time(), tzinfo=home_tz)
         today_end = datetime.combine(now_local.date(), datetime.max.time(), tzinfo=home_tz)
 
