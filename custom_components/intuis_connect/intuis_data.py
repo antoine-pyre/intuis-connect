@@ -15,13 +15,16 @@ from .utils.const import (
     API_MODE_MANUAL,
     API_MODE_AWAY,
     API_MODE_BOOST,
+    API_MODE_HG,
     DEFAULT_MANUAL_DURATION,
     DEFAULT_AWAY_DURATION,
     DEFAULT_BOOST_DURATION,
+    DEFAULT_FROST_PROTECT_DURATION,
     CONF_INDEFINITE_MODE,
     CONF_MANUAL_DURATION,
     CONF_AWAY_DURATION,
     CONF_BOOST_DURATION,
+    CONF_FROST_PROTECT_DURATION,
     CONF_ENERGY_SCALE,
     CONF_ENERGY_RESET_HOUR,
     DEFAULT_INDEFINITE_MODE,
@@ -130,7 +133,7 @@ class IntuisData:
         try:
             modules = extract_modules(home)
             data_by_room = extract_rooms(home, modules, self._minutes_counter, self._intuis_home.rooms,
-                                         self._last_update_timestamp)
+                                         self._last_update_timestamp, now)
         except (KeyError, TypeError, ValueError) as err:
             _LOGGER.error("Failed to parse home data: %s", err)
             raise
@@ -174,6 +177,8 @@ class IntuisData:
                 duration_min = options.get(CONF_AWAY_DURATION, DEFAULT_AWAY_DURATION)
             elif desired_mode == API_MODE_BOOST:
                 duration_min = options.get(CONF_BOOST_DURATION, DEFAULT_BOOST_DURATION)
+            elif desired_mode == API_MODE_HG:
+                duration_min = options.get(CONF_FROST_PROTECT_DURATION, DEFAULT_FROST_PROTECT_DURATION)
 
             # Determine action based on mode
             if indefinite_mode:
@@ -238,7 +243,14 @@ class IntuisData:
         # Fetch energy data (daily kWh per room)
         await self._fetch_energy_data(data_by_room, now)
 
+        # Update timestamp for next cycle's delta calculation
+        was_first_update = self._last_update_timestamp is None
         self._last_update_timestamp = now
+        if was_first_update:
+            _LOGGER.debug(
+                "First update completed, timestamp initialized to %s. Next update will start counting heating minutes.",
+                now
+            )
 
         # return structured data
         _LOGGER.debug("Coordinator update completed")
