@@ -23,10 +23,11 @@ from homeassistant.helpers.event import async_call_later
 from .intuis_api.api import IntuisAPI
 from .entity.intuis_room import IntuisRoom
 from .utils.const import (
-    PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE, API_MODE_OFF, API_MODE_AUTO, API_MODE_MANUAL,
-    API_MODE_AWAY, API_MODE_BOOST, API_MODE_HOME, DEFAULT_AWAY_TEMP, DEFAULT_AWAY_DURATION, DEFAULT_BOOST_TEMP,
-    DEFAULT_BOOST_DURATION, DEFAULT_MANUAL_DURATION, DOMAIN, CONF_MANUAL_DURATION, CONF_AWAY_DURATION,
-    CONF_BOOST_DURATION, CONF_AWAY_TEMP, CONF_BOOST_TEMP,
+    PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE, PRESET_FROST_PROTECT, API_MODE_OFF, API_MODE_AUTO, API_MODE_MANUAL,
+    API_MODE_AWAY, API_MODE_BOOST, API_MODE_HG, API_MODE_HOME, DEFAULT_AWAY_TEMP, DEFAULT_AWAY_DURATION, DEFAULT_BOOST_TEMP,
+    DEFAULT_BOOST_DURATION, DEFAULT_FROST_PROTECT_TEMP, DEFAULT_FROST_PROTECT_DURATION, DEFAULT_MANUAL_DURATION, DOMAIN,
+    CONF_MANUAL_DURATION, CONF_AWAY_DURATION, CONF_BOOST_DURATION, CONF_FROST_PROTECT_DURATION,
+    CONF_AWAY_TEMP, CONF_BOOST_TEMP, CONF_FROST_PROTECT_TEMP,
 )
 from .entity.intuis_entity import IntuisEntity, IntuisDataUpdateCoordinator
 from .utils.helper import get_basic_utils
@@ -40,7 +41,7 @@ class IntuisConnectClimate(
     """Climate entity for an Intuis Connect-compatible device."""
 
     _attr_hvac_modes = [HVACMode.AUTO, HVACMode.HEAT, HVACMode.OFF]
-    _attr_preset_modes = [PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE]
+    _attr_preset_modes = [PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE, PRESET_FROST_PROTECT]
     _attr_supported_features = (
             ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
     )
@@ -71,6 +72,10 @@ class IntuisConnectClimate(
     def _get_overrides(self) -> dict[str, dict]:
         data = self.hass.data.get(DOMAIN, {}).get(self._entry_id, {})
         return data.get("overrides", {})
+    
+    def _get_intuis_home(self):
+        """Get the IntuisHome object from coordinator data."""
+        return self.coordinator.data.get("intuis_home")
 
     def _get_save_overrides(self):
         """Get the save_overrides callback."""
@@ -114,9 +119,9 @@ class IntuisConnectClimate(
         mode = self._get_room().mode
         if mode == API_MODE_OFF:
             return HVACMode.OFF
-        if mode == API_MODE_AUTO:
+        if mode in (API_MODE_AUTO, API_MODE_AWAY, API_MODE_HOME, API_MODE_HG):
             return HVACMode.AUTO
-        if mode in (API_MODE_MANUAL, API_MODE_AWAY, API_MODE_BOOST, API_MODE_HOME):
+        if mode in (API_MODE_MANUAL, API_MODE_BOOST):
             return HVACMode.HEAT
         _LOGGER.warning("Unhandled HVAC mode: %s", mode)
         return HVACMode.HEAT
@@ -126,11 +131,60 @@ class IntuisConnectClimate(
         """Return the current preset mode."""
         if self._attr_preset_mode is not None:
             return self._attr_preset_mode
-        mode = self._get_room().mode
+        
+        room = self._get_room()
+        if not room:
+            return None
+        
+        room_id = room.id
+        
+        # First, check overrides to see if away/boost mode is active
+        # This is more reliable than therm_setpoint_mode which only returns "auto" or "manual"
+        # Overrides are set when we programmatically set away/boost modes
+        overrides = self._get_overrides()
+        override = overrides.get(room_id)
+        
+        if override:
+            override_mode = override.get("mode")
+            if override_mode == API_MODE_AWAY:
+                return PRESET_AWAY
+            if override_mode == API_MODE_BOOST:
+                return PRESET_BOOST
+            if override_mode == API_MODE_HG:
+                return PRESET_FROST_PROTECT
+            # If override is manual, it's not a preset (user-set temperature)
+            if override_mode == API_MODE_MANUAL:
+                return None
+        
+        # Check room's boost_status (from API homestatus)
+        # boost_status indicates "in_progress" when boost is active, "disabled" otherwise
+        # This is the primary method to detect boost mode
+        if room.boost_status == "in_progress":
+            return PRESET_BOOST
+        
+        # Check home-level away mode indicators (from API homedata)
+        # therm_absense_autoway indicates if auto-away is enabled
+        # therm_absence_location might indicate if away mode is active
+        intuis_home = self._get_intuis_home()
+        if intuis_home:
+            # If auto-away is enabled and we're in auto mode, could be away
+            # But this is less reliable, so we prioritize overrides and room-level data
+            pass  # Could add logic here if needed
+        
+        # Fallback: check therm_setpoint_mode (though it may not have away/boost)
+        # This often only returns "auto" or "manual", not "away" or "boost"
+        # But it can also return "hg" for Hors-Gel (Frost Protection) mode
+        # Note: Some installations may return "boost" in therm_setpoint_mode for compatibility
+        mode = room.mode
         if mode == API_MODE_AWAY:
             return PRESET_AWAY
         if mode == API_MODE_BOOST:
+            # Fallback for installations that return boost in therm_setpoint_mode
             return PRESET_BOOST
+        if mode == API_MODE_HG:
+            return PRESET_FROST_PROTECT
+        
+        # If in AUTO mode, return schedule preset
         return PRESET_SCHEDULE if self.hvac_mode == HVACMode.AUTO else None
 
     @property
@@ -245,7 +299,7 @@ class IntuisConnectClimate(
                 away_temp,
                 away_duration,
             )
-            self._attr_hvac_mode = HVACMode.HEAT
+            self._attr_hvac_mode = HVACMode.AUTO
             now_ts = int(time.time())
             end_ts = now_ts + away_duration * 60
             overrides[room_id] = {
@@ -272,6 +326,27 @@ class IntuisConnectClimate(
             overrides[room_id] = {
                 "mode": API_MODE_BOOST,
                 "temp": float(boost_temp),
+                "end": end_ts,
+                "sticky": True,
+                "last_reapply": now_ts,
+            }
+            overrides_changed = True
+            self._schedule_end_refresh(end_ts)
+        elif preset_mode == PRESET_FROST_PROTECT:
+            frost_protect_temp = self._get_option(CONF_FROST_PROTECT_TEMP, DEFAULT_FROST_PROTECT_TEMP)
+            frost_protect_duration = self._get_option(CONF_FROST_PROTECT_DURATION, DEFAULT_FROST_PROTECT_DURATION)
+            await self._api.async_set_room_state(
+                room_id,
+                API_MODE_HG,
+                frost_protect_temp,
+                frost_protect_duration,
+            )
+            self._attr_hvac_mode = HVACMode.AUTO
+            now_ts = int(time.time())
+            end_ts = now_ts + frost_protect_duration * 60
+            overrides[room_id] = {
+                "mode": API_MODE_HG,
+                "temp": float(frost_protect_temp),
                 "end": end_ts,
                 "sticky": True,
                 "last_reapply": now_ts,
