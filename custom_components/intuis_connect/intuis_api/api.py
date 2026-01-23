@@ -627,6 +627,13 @@ class IntuisAPI:
             room_payload.update(
                 {"therm_setpoint_temperature": float(temp), "therm_setpoint_end_time": end}
             )
+        elif mode in ("away", "boost", "hg"):
+            # These modes may also accept temperature and duration
+            if temp is not None:
+                end = int(time.time()) + (duration or DEFAULT_MANUAL_DURATION) * 60
+                room_payload.update(
+                    {"therm_setpoint_temperature": float(temp), "therm_setpoint_end_time": end}
+                )
         payload = {
             "app_type": APP_TYPE,
             "app_version": APP_VERSION,
