@@ -28,11 +28,13 @@ def extract_rooms(home: dict[str, Any],
                         minutes_counter: dict[str, int],
                         rooms_definitions: dict[str, IntuisRoomDefinition],
                         last_update_timestamp: datetime | None,
+                        now: datetime | None = None,
                         ) -> dict[str, IntuisRoom]:
     """Extract rooms from the Intuis Connect system."""
     rooms_raw: list[dict[str, Any]] = home.get("rooms", [])
 
-    now = datetime.now()
+    if now is None:
+        now = datetime.now()
 
     # --- process rooms ---
     data_by_room: dict[str, IntuisRoom] = {}
@@ -48,13 +50,39 @@ def extract_rooms(home: dict[str, Any],
         if room_id not in minutes_counter:
             minutes_counter[room_id] = 0
 
-        if intuis_room.heating and last_update_timestamp is not None:
-            delta = (now - last_update_timestamp).total_seconds() / 60.0
-            delta = min(delta, DEFAULT_UPDATE_INTERVAL * 1.5)
-            if delta > 0:
-                minutes_counter[room_id] += delta
+        # Check if heating is active (either via heating status or boost mode)
+        is_heating = intuis_room.heating
+        is_boost_active = intuis_room.boost_status == "in_progress"
+        should_increment = is_heating or is_boost_active
 
-        intuis_room.minutes = minutes_counter[room_id]
+        if should_increment:
+            if last_update_timestamp is not None:
+                delta = (now - last_update_timestamp).total_seconds() / 60.0
+                delta = min(delta, DEFAULT_UPDATE_INTERVAL * 1.5)
+                if delta > 0:
+                    minutes_counter[room_id] += delta
+                    reason = "boost" if is_boost_active and not is_heating else "heating"
+                    _LOGGER.debug(
+                        "Room %s %s: added %.2f minutes (total: %.2f)",
+                        room_id, reason, delta, minutes_counter[room_id]
+                    )
+                else:
+                    _LOGGER.debug(
+                        "Room %s %s but delta <= 0 (%.2f), skipping increment",
+                        room_id, "boost" if is_boost_active else "heating", delta
+                    )
+            else:
+                _LOGGER.debug(
+                    "Room %s is %s but last_update_timestamp is None (first update), skipping increment",
+                    room_id, "boost" if is_boost_active else "heating"
+                )
+        else:
+            _LOGGER.debug(
+                "Room %s not heating (heating=%s, boost=%s), minutes counter: %.2f",
+                room_id, intuis_room.heating, intuis_room.boost_status, minutes_counter[room_id]
+            )
+
+        intuis_room.minutes = int(minutes_counter[room_id])
 
         _LOGGER.debug("Room %s data compiled: %s", room_id, intuis_room)
 
