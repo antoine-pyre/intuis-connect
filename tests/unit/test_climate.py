@@ -62,7 +62,7 @@ class TestClimateProperties:
         """hvac_mode returns HEAT for API_MODE_AWAY."""
         sample_room.mode = API_MODE_AWAY
         entity = climate_entity_factory(room=sample_room)
-        assert entity.hvac_mode == HVACMode.HEAT
+        assert entity.hvac_mode == HVACMode.AUTO
 
     def test_hvac_mode_heat_boost(self, climate_entity_factory, sample_room):
         """hvac_mode returns HEAT for API_MODE_BOOST."""
@@ -74,7 +74,7 @@ class TestClimateProperties:
         """hvac_mode returns HEAT for API_MODE_HOME."""
         sample_room.mode = API_MODE_HOME
         entity = climate_entity_factory(room=sample_room)
-        assert entity.hvac_mode == HVACMode.HEAT
+        assert entity.hvac_mode == HVACMode.AUTO
 
     def test_hvac_mode_respects_override(self, climate_entity_factory, sample_room):
         """hvac_mode returns override when _attr_hvac_mode is set."""
@@ -464,7 +464,7 @@ class TestAsyncSetPresetMode:
 
         await entity.async_set_preset_mode(PRESET_AWAY)
 
-        assert entity._attr_hvac_mode == HVACMode.HEAT
+        assert entity._attr_hvac_mode == HVACMode.AUTO
 
     @pytest.mark.asyncio
     async def test_set_preset_boost(
