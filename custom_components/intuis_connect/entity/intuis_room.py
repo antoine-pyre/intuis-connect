@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ..entity.intuis_module import IntuisModule, NMHIntuisModule
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class IntuisRoomDefinition:
@@ -78,11 +81,56 @@ class IntuisRoom:
 
         # Determine heating status from NMH modules' radiator_state
         # A room is heating if any of its NMH modules has radiator_state == "heating"
+        # Also check if temperature is below target (heating should be active)
         heating = False
+        target_temp = data.get("therm_setpoint_temperature", 0.0)
+        current_temp = data.get("therm_measured_temperature", 0.0)
+        
+        # Log all NMH modules' radiator_state for debugging
+        nmh_modules_found = []
         for module in filtered_modules:
-            if isinstance(module, NMHIntuisModule) and module.radiator_state == "heating":
-                heating = True
-                break
+            if isinstance(module, NMHIntuisModule):
+                nmh_modules_found.append({
+                    "id": module.id,
+                    "radiator_state": module.radiator_state,
+                    "reachable": module.reachable
+                })
+                # Check for "heating" state (case-insensitive)
+                if module.radiator_state and module.radiator_state.lower() == "heating":
+                    heating = True
+                    _LOGGER.debug(
+                        "Room %s: NMH module %s has radiator_state='heating'",
+                        data["id"], module.id
+                    )
+                # Also check for "auto" state - if temp is below target, heating is likely active
+                elif (module.radiator_state and module.radiator_state.lower() == "auto" 
+                      and target_temp > 0 and current_temp < target_temp - 0.5):
+                    heating = True
+                    _LOGGER.debug(
+                        "Room %s: NMH module %s has radiator_state='auto' and temp (%.1f) < target (%.1f) - assuming heating",
+                        data["id"], module.id, current_temp, target_temp
+                    )
+        
+        if nmh_modules_found:
+            _LOGGER.debug(
+                "Room %s: Found %d NMH module(s): %s. Heating detected: %s",
+                data["id"], len(nmh_modules_found), nmh_modules_found, heating
+            )
+        else:
+            _LOGGER.debug(
+                "Room %s: No NMH modules found. Filtered modules: %s",
+                data["id"], [m.id for m in filtered_modules]
+            )
+        
+        # Fallback: if no NMH modules or radiator_state doesn't indicate heating,
+        # check if temperature is below target (heating should be active)
+        if not heating and target_temp > 0 and current_temp < target_temp - 0.5:
+            # Temperature is significantly below target, likely heating
+            _LOGGER.debug(
+                "Room %s: No heating detected from radiator_state, but temp (%.1f) < target (%.1f) - assuming heating",
+                data["id"], current_temp, target_temp
+            )
+            heating = True
 
         return IntuisRoom(
             definition=definition,
