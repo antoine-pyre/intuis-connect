@@ -6,6 +6,7 @@ import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .entity.intuis_home import IntuisHome
 from .entity.intuis_home_config import IntuisHomeConfig
@@ -285,15 +286,27 @@ class IntuisData:
         reset_hour = options.get(CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR)
         is_realtime = scale != "1day"
 
+        # Calculate timestamps using the home's timezone
+        # This ensures day boundaries align with the user's local time
+        try:
+            home_tz = ZoneInfo(self._api.home_timezone)
+        except (KeyError, ValueError):
+            _LOGGER.warning(
+                "Invalid home timezone '%s', falling back to UTC",
+                self._api.home_timezone,
+            )
+            home_tz = timezone.utc
+
+        now_local = datetime.now(home_tz)
+        today_iso = now_local.date().isoformat()
+
         # For daily scale, only fetch after reset hour to ensure data is available
-        if not is_realtime and now.hour < reset_hour:
+        if not is_realtime and now_local.hour < reset_hour:
             _LOGGER.debug(
                 "Skipping energy fetch before reset hour %02d:00 (daily mode)",
                 reset_hour,
             )
             return
-
-        today_iso = now.date().isoformat()
 
         # For daily scale, use caching. For real-time scales, always fetch fresh data.
         if not is_realtime and self._energy_cache.get("_date") == today_iso:
@@ -314,16 +327,25 @@ class IntuisData:
             _LOGGER.debug("No rooms with bridge_id found, skipping energy fetch")
             return
 
-        # Calculate epoch timestamps for today (midnight to now for real-time, midnight to midnight for daily)
-        today_start = datetime.combine(now.date(), datetime.min.time(), tzinfo=timezone.utc)
+        today_start = datetime.combine(now_local.date(), datetime.min.time(), tzinfo=home_tz)
+        today_end = datetime.combine(now_local.date(), datetime.max.time(), tzinfo=home_tz)
+
         if is_realtime:
-            date_end = int(now.timestamp())
+            date_end = int(now_local.timestamp())
+            end_display = now_local.isoformat()
         else:
-            today_end = datetime.combine(now.date(), datetime.max.time(), tzinfo=timezone.utc)
             date_end = int(today_end.timestamp())
+            end_display = today_end.isoformat()
         date_begin = int(today_start.timestamp())
 
-        _LOGGER.debug("Fetching energy data for %d rooms (scale=%s)", len(rooms_for_api), scale)
+        _LOGGER.debug(
+            "Fetching energy data for %d rooms (scale=%s, tz=%s, range=%s to %s)",
+            len(rooms_for_api),
+            scale,
+            home_tz,
+            today_start.isoformat(),
+            end_display,
+        )
 
         try:
             energy_data = await self._api.async_get_energy_measures(

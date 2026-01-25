@@ -723,8 +723,16 @@ class IntuisAPI:
             ) as resp:
                 data = await resp.json()
 
+            # Always log raw response structure at DEBUG level for diagnostics
+            _LOGGER.debug(
+                "Room %s energy response (scale=%s, types=%d): body has %d entries",
+                room_id,
+                scale,
+                len(ENERGY_MEASURE_TYPES.split(",")),
+                len(data.get("body", [])),
+            )
             if self._debug:
-                _LOGGER.debug("Room %s energy response: %s", room_id, data)
+                _LOGGER.debug("Room %s full energy response: %s", room_id, data)
 
             # Sum all non-null values from all measure entries
             # Response format: {"body": [{"beg_time": ..., "value": [[v1, v2, v3, v4], ...]}, ...]}
