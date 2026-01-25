@@ -116,6 +116,11 @@ class IntuisConnectClimate(
         """Return hvac operation ie. heat, cool mode."""
         if self._attr_hvac_mode is not None:
             return self._attr_hvac_mode
+        
+        # Check if boost is active first (detected via boost_status, not therm_setpoint_mode)
+        if self._is_boost_active():
+            return HVACMode.HEAT
+        
         mode = self._get_room().mode
         if mode == API_MODE_OFF:
             return HVACMode.OFF
@@ -187,11 +192,44 @@ class IntuisConnectClimate(
         # If in AUTO mode, return schedule preset
         return PRESET_SCHEDULE if self.hvac_mode == HVACMode.AUTO else None
 
+    def _is_boost_active(self) -> bool:
+        """Check if boost preset is currently active."""
+        room = self._get_room()
+        if not room:
+            return False
+        
+        # Check if boost_status indicates boost is in progress
+        if room.boost_status == "in_progress":
+            return True
+        
+        # Check overrides
+        room_id = room.id
+        overrides = self._get_overrides()
+        override = overrides.get(room_id)
+        if override and override.get("mode") == API_MODE_BOOST:
+            return True
+        
+        # Check therm_setpoint_mode as fallback
+        if room.mode == API_MODE_BOOST:
+            return True
+        
+        return False
+
     @property
     def hvac_action(self) -> HVACAction | None:
         """Return the current running hvac operation."""
         if self.hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
+        
+        room = self._get_room()
+        if not room:
+            return HVACAction.IDLE
+        
+        # If boost is active, always return HEATING
+        if self._is_boost_active():
+            return HVACAction.HEATING
+        
+        # Otherwise, use the room's heating status
         return (
             HVACAction.HEATING
             if self._get_room().heating
