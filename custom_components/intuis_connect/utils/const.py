@@ -14,8 +14,10 @@ DEFAULT_UPDATE_INTERVAL = 2 # minutes
 DEFAULT_MANUAL_DURATION = 60  # minutes (1 hour)
 DEFAULT_AWAY_DURATION = 240  # minutes (4 hours)
 DEFAULT_BOOST_DURATION = 30  # minutes
+DEFAULT_FROST_PROTECT_DURATION = 525600  # minutes (24 hours) - typically indefinite for frost protection
 DEFAULT_AWAY_TEMP = 16.0  # °C
 DEFAULT_BOOST_TEMP = 22.0  # °C
+DEFAULT_FROST_PROTECT_TEMP = 7.0  # °C - typical frost protection temperature
 
 # API clusters
 BASE_URLS: list[str] = [
@@ -63,17 +65,20 @@ APP_TYPE = "app_muller"
 APP_VERSION = "1108100"
 
 # Presets
-PRESET_SCHEDULE = "schedule"
+PRESET_SCHEDULE = "home" #schedule is not recognized / translated by HA
 PRESET_AWAY = "away"
 PRESET_BOOST = "boost"
-SUPPORTED_PRESETS: list[str] = [PRESET_SCHEDULE, PRESET_AWAY, PRESET_BOOST]
+PRESET_FROST_PROTECT = "eco" #frost_protect is not recognized / translated by HA. PR on going on core to add this preset on native climate entity
+SUPPORTED_PRESETS: list[str] = [PRESET_SCHEDULE, PRESET_AWAY, PRESET_BOOST, PRESET_FROST_PROTECT]
 
 # Options
 CONF_MANUAL_DURATION = "manual_duration"
 CONF_AWAY_DURATION = "away_duration"
 CONF_BOOST_DURATION = "boost_duration"
+CONF_FROST_PROTECT_DURATION = "frost_protect_duration"
 CONF_AWAY_TEMP = "away_temp"
 CONF_BOOST_TEMP = "boost_temp"
+CONF_FROST_PROTECT_TEMP = "frost_protect_temp"
 CONF_INDEFINITE_MODE = "indefinite_mode"
 DEFAULT_INDEFINITE_MODE = False
 
@@ -137,6 +142,7 @@ API_MODE_AUTO = "auto"
 API_MODE_MANUAL = "manual"
 API_MODE_AWAY = "away"
 API_MODE_BOOST = "boost"
+API_MODE_HG = "hg"  # Hors-Gel (Frost Protection)
 
 # Rate limiting configuration
 CONF_RATE_LIMIT_DELAY = "rate_limit_delay"
