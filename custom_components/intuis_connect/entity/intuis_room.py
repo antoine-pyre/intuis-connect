@@ -5,6 +5,10 @@ from typing import Any
 
 from ..entity.intuis_module import IntuisModule, NMHIntuisModule
 
+from ..utils.const import (
+    HEATING_THRESHOLD_DELTA,
+)
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -62,7 +66,7 @@ class IntuisRoom:
         self.bridge_id = bridge_id
         self.heating = heating
         # Accumulated counters (updated by mapper, not from API)
-        self.minutes: int = 0
+        self.minutes: float = 0.0
         self.energy: float = 0.0
 
     @staticmethod
@@ -104,7 +108,7 @@ class IntuisRoom:
                     )
                 # Also check for "auto" state - if temp is below target, heating is likely active
                 elif (module.radiator_state and module.radiator_state.lower() == "auto" 
-                      and target_temp > 0 and current_temp < target_temp - 0.5):
+                      and target_temp > 0 and current_temp < target_temp - HEATING_THRESHOLD_DELTA):
                     heating = True
                     _LOGGER.debug(
                         "Room %s: NMH module %s has radiator_state='auto' and temp (%.1f) < target (%.1f) - assuming heating",
@@ -124,7 +128,7 @@ class IntuisRoom:
         
         # Fallback: if no NMH modules or radiator_state doesn't indicate heating,
         # check if temperature is below target (heating should be active)
-        if not heating and target_temp > 0 and current_temp < target_temp - 0.5:
+        if not heating and target_temp > 0 and current_temp < target_temp - HEATING_THRESHOLD_DELTA:
             # Temperature is significantly below target, likely heating
             _LOGGER.debug(
                 "Room %s: No heating detected from radiator_state, but temp (%.1f) < target (%.1f) - assuming heating",
