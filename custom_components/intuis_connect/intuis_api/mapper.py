@@ -25,7 +25,7 @@ def extract_modules(home: dict[str, Any]) -> List[IntuisModule]:
 
 def extract_rooms(home: dict[str, Any],
                         modules: list[IntuisModule],
-                        minutes_counter: dict[str, int],
+                        minutes_counter: dict[str, float],
                         rooms_definitions: dict[str, IntuisRoomDefinition],
                         last_update_timestamp: datetime | None,
                         now: datetime | None = None,
@@ -48,7 +48,7 @@ def extract_rooms(home: dict[str, Any],
 
         # ---- heating-minutes counter ---
         if room_id not in minutes_counter:
-            minutes_counter[room_id] = 0
+            minutes_counter[room_id] = 0.0
 
         # Check if heating is active (either via heating status or boost mode)
         is_heating = intuis_room.heating
@@ -59,7 +59,7 @@ def extract_rooms(home: dict[str, Any],
             if last_update_timestamp is not None:
                 delta = (now - last_update_timestamp).total_seconds() / 60.0
                 delta = min(delta, DEFAULT_UPDATE_INTERVAL * 1.5)
-                if delta > 0:
+                if delta > 0.0:
                     minutes_counter[room_id] += delta
                     reason = "boost" if is_boost_active and not is_heating else "heating"
                     _LOGGER.debug(
@@ -82,7 +82,7 @@ def extract_rooms(home: dict[str, Any],
                 room_id, intuis_room.heating, intuis_room.boost_status, minutes_counter[room_id]
             )
 
-        intuis_room.minutes = int(minutes_counter[room_id])
+        intuis_room.minutes = minutes_counter[room_id]
 
         _LOGGER.debug("Room %s data compiled: %s", room_id, intuis_room)
 
