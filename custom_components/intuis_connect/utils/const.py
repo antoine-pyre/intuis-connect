@@ -14,10 +14,11 @@ DEFAULT_UPDATE_INTERVAL = 2 # minutes
 DEFAULT_MANUAL_DURATION = 60  # minutes (1 hour)
 DEFAULT_AWAY_DURATION = 240  # minutes (4 hours)
 DEFAULT_BOOST_DURATION = 30  # minutes
-DEFAULT_FROST_PROTECT_DURATION = 525600  # minutes (24 hours) - typically indefinite for frost protection
+DEFAULT_FROST_PROTECT_DURATION = 525600  # minutes (365 days) - typically indefinite for frost protection
 DEFAULT_AWAY_TEMP = 16.0  # °C
 DEFAULT_BOOST_TEMP = 22.0  # °C
 DEFAULT_FROST_PROTECT_TEMP = 7.0  # °C - typical frost protection temperature
+HEATING_THRESHOLD_DELTA = 0.5 # thrreshold for "heating" detection compared to current room temperature
 
 # API clusters
 BASE_URLS: list[str] = [
