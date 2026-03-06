@@ -167,15 +167,6 @@ class IntuisConnectClimate(
         if room.boost_status == "in_progress":
             return PRESET_BOOST
         
-        # Check home-level away mode indicators (from API homedata)
-        # therm_absense_autoway indicates if auto-away is enabled
-        # therm_absence_location might indicate if away mode is active
-        intuis_home = self._get_intuis_home()
-        if intuis_home:
-            # If auto-away is enabled and we're in auto mode, could be away
-            # But this is less reliable, so we prioritize overrides and room-level data
-            pass  # Could add logic here if needed
-        
         # Fallback: check therm_setpoint_mode (though it may not have away/boost)
         # This often only returns "auto" or "manual", not "away" or "boost"
         # But it can also return "hg" for Hors-Gel (Frost Protection) mode
