@@ -365,7 +365,7 @@ class IntuisScheduleSummarySensor(CoordinatorEntity[IntuisDataUpdateCoordinator]
 
     _attr_icon = "mdi:calendar-week"
     _attr_has_entity_name = True
-    _attr_entity_registry_enabled_default = False
+    _attr_entity_registry_enabled_default = True
 
     def __init__(
             self,
