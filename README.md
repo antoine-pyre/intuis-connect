@@ -95,11 +95,12 @@
 
 ### Presets
 
-| Preset | Description |
-|--------|-------------|
-| **Schedule** | Return to automatic schedule |
-| **Away** | Reduced temperature for extended absence |
+| Preset    | Description |
+|-----------|-------------|
+| **Home**  | Return to automatic schedule (mapped to HA Home preset) |
+| **Away**  | Reduced temperature for extended absence |
 | **Boost** | Maximum heating for quick warmup |
+| **Eco**   | Minimum temperature for frost protection (mapped to HA Eco preset) |
 
 All preset durations and temperatures are configurable in the integration options.
 
