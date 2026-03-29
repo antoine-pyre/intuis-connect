@@ -6,6 +6,7 @@ from typing import Any
 from ..entity.intuis_module import IntuisModule, NMHIntuisModule
 
 from ..utils.const import (
+    API_MODE_OFF,
     HEATING_THRESHOLD_DELTA,
 )
 
@@ -89,6 +90,7 @@ class IntuisRoom:
         heating = False
         target_temp = data.get("therm_setpoint_temperature", 0.0)
         current_temp = data.get("therm_measured_temperature", 0.0)
+        mode = data.get("therm_setpoint_mode", "unknown")
         
         # Log all NMH modules' radiator_state for debugging
         nmh_modules_found = []
@@ -106,8 +108,9 @@ class IntuisRoom:
                         "Room %s: NMH module %s has radiator_state='heating'",
                         data["id"], module.id
                     )
-                # Also check for "auto" state - if temp is below target, heating is likely active
-                elif (module.radiator_state and module.radiator_state.lower() == "auto" 
+                # Also check for "auto" state - if temp is below target and mode is active, heating is likely active
+                elif (module.radiator_state and module.radiator_state.lower() == "auto"
+                      and mode != API_MODE_OFF
                       and target_temp > 0 and current_temp < target_temp - HEATING_THRESHOLD_DELTA):
                     heating = True
                     _LOGGER.debug(
@@ -127,8 +130,8 @@ class IntuisRoom:
             )
         
         # Fallback: if no NMH modules or radiator_state doesn't indicate heating,
-        # check if temperature is below target (heating should be active)
-        if not heating and target_temp > 0 and current_temp < target_temp - HEATING_THRESHOLD_DELTA:
+        # check if temperature is below target and mode is not OFF (heating should be active)
+        if not heating and mode != API_MODE_OFF and target_temp > 0 and current_temp < target_temp - HEATING_THRESHOLD_DELTA:
             # Temperature is significantly below target, likely heating
             _LOGGER.debug(
                 "Room %s: No heating detected from radiator_state, but temp (%.1f) < target (%.1f) - assuming heating",

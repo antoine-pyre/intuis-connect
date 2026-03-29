@@ -14,9 +14,11 @@ from custom_components.intuis_connect.utils.const import (
     API_MODE_AWAY,
     API_MODE_BOOST,
     API_MODE_HOME,
+    API_MODE_HG,
     PRESET_AWAY,
     PRESET_BOOST,
     PRESET_SCHEDULE,
+    PRESET_FROST_PROTECT,
     DOMAIN,
 )
 
@@ -62,7 +64,7 @@ class TestClimateProperties:
         """hvac_mode returns HEAT for API_MODE_AWAY."""
         sample_room.mode = API_MODE_AWAY
         entity = climate_entity_factory(room=sample_room)
-        assert entity.hvac_mode == HVACMode.AUTO
+        assert entity.hvac_mode == HVACMode.HEAT
 
     def test_hvac_mode_heat_boost(self, climate_entity_factory, sample_room):
         """hvac_mode returns HEAT for API_MODE_BOOST."""
@@ -464,7 +466,7 @@ class TestAsyncSetPresetMode:
 
         await entity.async_set_preset_mode(PRESET_AWAY)
 
-        assert entity._attr_hvac_mode == HVACMode.AUTO
+        assert entity._attr_hvac_mode == HVACMode.HEAT
 
     @pytest.mark.asyncio
     async def test_set_preset_boost(
@@ -709,3 +711,155 @@ class TestClimateEdgeCases:
         result = entity.device_info
 
         assert result == entity._attr_device_info
+
+
+# ---------------------------------------------------------------------------
+# Test: Frost-Protect (HG) Preset
+# ---------------------------------------------------------------------------
+
+class TestFrostProtectPreset:
+    """Tests for the Hors-Gel (Frost-Protect) preset mode."""
+
+    def test_hvac_mode_hg_returns_auto(self, climate_entity_factory, sample_room):
+        """hvac_mode returns AUTO for API_MODE_HG."""
+        sample_room.mode = API_MODE_HG
+        sample_room.boost_status = "disabled"
+        entity = climate_entity_factory(room=sample_room)
+        assert entity.hvac_mode == HVACMode.AUTO
+
+    def test_preset_mode_hg_from_api(self, climate_entity_factory, sample_room):
+        """preset_mode returns PRESET_FROST_PROTECT when API mode is HG."""
+        sample_room.mode = API_MODE_HG
+        sample_room.boost_status = "disabled"
+        entity = climate_entity_factory(room=sample_room)
+        assert entity.preset_mode == PRESET_FROST_PROTECT
+
+    def test_preset_mode_hg_from_override(self, climate_entity_factory, sample_room):
+        """preset_mode returns PRESET_FROST_PROTECT from override."""
+        sample_room.mode = API_MODE_HOME
+        sample_room.boost_status = "disabled"
+        now = int(time.time())
+        overrides = {
+            "room_123": {
+                "mode": API_MODE_HG,
+                "temp": 7.0,
+                "end": now + 300,
+                "sticky": True,
+                "last_reapply": now,
+            }
+        }
+        entity = climate_entity_factory(room=sample_room, overrides=overrides)
+        assert entity.preset_mode == PRESET_FROST_PROTECT
+
+
+# ---------------------------------------------------------------------------
+# Test: Heating Detection Edge Cases
+# ---------------------------------------------------------------------------
+
+class TestHeatingDetection:
+    """Tests for the heating detection logic in IntuisRoom."""
+
+    def test_heating_false_when_mode_off(self):
+        """Heating should NOT be detected when mode is OFF, even if temp < target."""
+        from custom_components.intuis_connect.entity.intuis_room import IntuisRoom, IntuisRoomDefinition
+
+        definition = IntuisRoomDefinition(
+            id="room_1", name="Test Room", type="custom",
+            module_ids=[], modules=[]
+        )
+        data = {
+            "id": "room_1",
+            "therm_setpoint_mode": "off",
+            "therm_setpoint_temperature": 22.0,
+            "therm_measured_temperature": 18.0,  # well below target
+            "presence": False,
+            "open_window": False,
+            "anticipation": False,
+            "muller_type": "",
+            "boost_status": "disabled",
+            "therm_setpoint_end_time": 0,
+        }
+        room = IntuisRoom.from_dict(definition, data, modules=[])
+        assert room.heating is False
+
+    def test_heating_true_when_mode_home_and_temp_below_target(self):
+        """Heating should be detected when mode is home and temp is below target (fallback)."""
+        from custom_components.intuis_connect.entity.intuis_room import IntuisRoom, IntuisRoomDefinition
+
+        definition = IntuisRoomDefinition(
+            id="room_1", name="Test Room", type="custom",
+            module_ids=[], modules=[]
+        )
+        data = {
+            "id": "room_1",
+            "therm_setpoint_mode": "home",
+            "therm_setpoint_temperature": 22.0,
+            "therm_measured_temperature": 18.0,
+            "presence": False,
+            "open_window": False,
+            "anticipation": False,
+            "muller_type": "",
+            "boost_status": "disabled",
+            "therm_setpoint_end_time": 0,
+        }
+        room = IntuisRoom.from_dict(definition, data, modules=[])
+        assert room.heating is True
+
+    def test_heating_false_when_temp_within_threshold(self):
+        """Heating should NOT be detected when temp is within threshold of target."""
+        from custom_components.intuis_connect.entity.intuis_room import IntuisRoom, IntuisRoomDefinition
+
+        definition = IntuisRoomDefinition(
+            id="room_1", name="Test Room", type="custom",
+            module_ids=[], modules=[]
+        )
+        data = {
+            "id": "room_1",
+            "therm_setpoint_mode": "home",
+            "therm_setpoint_temperature": 22.0,
+            "therm_measured_temperature": 21.8,  # within 0.5 threshold
+            "presence": False,
+            "open_window": False,
+            "anticipation": False,
+            "muller_type": "",
+            "boost_status": "disabled",
+            "therm_setpoint_end_time": 0,
+        }
+        room = IntuisRoom.from_dict(definition, data, modules=[])
+        assert room.heating is False
+
+    def test_heating_from_nmh_module_radiator_state(self):
+        """Heating detected from NMH module radiator_state even when temp is near target."""
+        from custom_components.intuis_connect.entity.intuis_room import IntuisRoom, IntuisRoomDefinition
+        from custom_components.intuis_connect.entity.intuis_module import NMHIntuisModule
+
+        definition = IntuisRoomDefinition(
+            id="room_1", name="Test Room", type="custom",
+            module_ids=["nmh_1"], modules=[]
+        )
+        nmh = NMHIntuisModule(
+            module_id="nmh_1",
+            last_seen=0,
+            bridge="bridge_1",
+            firmware_revision_thirdparty="1.0",
+            muller_type="radiator",
+            offload=False,
+            presence_sensor="",
+            radiator_state="heating",
+            reachable=True,
+            router_id="",
+        )
+        data = {
+            "id": "room_1",
+            "therm_setpoint_mode": "home",
+            "therm_setpoint_temperature": 22.0,
+            "therm_measured_temperature": 22.0,  # at target
+            "presence": False,
+            "open_window": False,
+            "anticipation": False,
+            "muller_type": "",
+            "boost_status": "disabled",
+            "therm_setpoint_end_time": 0,
+        }
+        room = IntuisRoom.from_dict(definition, data, modules=[nmh])
+        assert room.heating is True

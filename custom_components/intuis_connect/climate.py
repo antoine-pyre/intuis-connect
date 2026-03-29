@@ -124,9 +124,9 @@ class IntuisConnectClimate(
         mode = self._get_room().mode
         if mode == API_MODE_OFF:
             return HVACMode.OFF
-        if mode in (API_MODE_AUTO, API_MODE_AWAY, API_MODE_HOME, API_MODE_HG):
+        if mode in (API_MODE_AUTO, API_MODE_HOME, API_MODE_HG):
             return HVACMode.AUTO
-        if mode in (API_MODE_MANUAL, API_MODE_BOOST):
+        if mode in (API_MODE_MANUAL, API_MODE_BOOST, API_MODE_AWAY):
             return HVACMode.HEAT
         _LOGGER.warning("Unhandled HVAC mode: %s", mode)
         return HVACMode.HEAT
@@ -328,7 +328,7 @@ class IntuisConnectClimate(
                 away_temp,
                 away_duration,
             )
-            self._attr_hvac_mode = HVACMode.AUTO
+            self._attr_hvac_mode = HVACMode.HEAT
             now_ts = int(time.time())
             end_ts = now_ts + away_duration * 60
             overrides[room_id] = {
