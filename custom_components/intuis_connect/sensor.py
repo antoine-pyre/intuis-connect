@@ -16,7 +16,11 @@ from .entity.intuis_module import NMHIntuisModule, NMRIntuisModule, IntuisModule
 from .entity.intuis_room import IntuisRoom
 from .entity.intuis_schedule import IntuisThermSchedule, IntuisThermZone
 from .timetable import MINUTES_PER_DAY
-from .utils.const import DOMAIN, CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR
+from .utils.const import (
+    DOMAIN,
+    CONF_ENERGY_COST_ENABLED,
+    DEFAULT_ENERGY_COST_ENABLED,
+)
 from .utils.helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,6 +37,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
         entities.append(IntuisTemperatureSensor(coordinator, home_id, room))
         entities.append(IntuisMullerTypeSensor(coordinator, home_id, room))
         entities.append(IntuisEnergySensor(coordinator, home_id, room))
+        # Add cost sensor if enabled
+        if entry.options.get(CONF_ENERGY_COST_ENABLED, DEFAULT_ENERGY_COST_ENABLED):
+            entities.append(IntuisEnergyCostSensor(coordinator, home_id, room))
         entities.append(IntuisMinutesSensor(coordinator, home_id, room))
         entities.append(IntuisSetpointEndTimeSensor(coordinator, home_id, room))
         entities.append(IntuisScheduledTempSensor(coordinator, home_id, room, intuis_home))
@@ -44,6 +51,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
                 entities.append(ModuleFirmwareSensor(coordinator, home_id, room, module))
 
     entities += provide_home_sensors(coordinator, home_id, intuis_home)
+    
+    # Add schedule data sensor for UI integration (summary only)
+    # Note: Individual schedule sensors are created in provide_home_sensors
+    # via IntuisScheduleSummarySensor to avoid duplicate entity IDs
+    if intuis_home and intuis_home.schedules:
+        entities.append(IntuisScheduleDataSensor(coordinator, home_id, intuis_home))
+    
     async_add_entities(entities, update_before_add=True)
 
 
@@ -179,10 +193,20 @@ class IntuisMinutesSensor(IntuisSensor):
 
 
 class IntuisEnergySensor(IntuisSensor):
-    """Specialized sensor for daily energy consumption.
+    """Sensor exposing the cumulative total energy consumption.
 
-    This sensor tracks cumulative daily energy consumption (max seen today, never decreases).
-    The value resets at the configured reset hour (default 2 AM) to start tracking the new day's consumption.
+    Mirrors the Node-RED sensor.conso_X_hourly behavior:
+      native_value = base_kwh + daily_energy
+    where base_kwh is the cumulative total at the start of today (from
+    hourly_stats persistent storage), and daily_energy is the current
+    day's consumption from the Intuis API.
+
+    NO state_class: hourly_stats is the sole writer of statistics via
+    recorder.async_import_statistics.  The recorder must NOT auto-generate
+    competing LTS from sensor states (state_class would cause double-writing
+    since both the recorder STS→LTS compilation and hourly_stats import with
+    source="recorder" would write to the same statistics row, causing
+    cumulative sum corruption on every HA restart).
     """
 
     def __init__(self, coordinator, home_id: str, room: IntuisRoom) -> None:
@@ -197,87 +221,175 @@ class IntuisEnergySensor(IntuisSensor):
             SensorDeviceClass.ENERGY,
         )
         self._attr_icon = "mdi:flash"
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        # NO state_class intentionally: hourly_stats is the sole writer of
+        # sum statistics via async_import_statistics. Any state_class causes
+        # either double-writing (TOTAL_INCREASING) or dashboard warnings
+        # (MEASUREMENT needs last_reset). Spook warnings can be ignored.
 
-        # Track daily maximum energy (never decrease within a day)
+        # Track daily max to prevent API glitch causing decreases
         self._daily_max_energy: float = 0.0
-        # Track the logical day (based on reset hour, not midnight)
         self._last_logical_day: str | None = None
 
-    def _get_reset_hour(self) -> int:
-        """Get the configured reset hour from options."""
-        try:
-            # Access config entry options through hass.data
-            entry_id = self.coordinator.config_entry.entry_id
-            entry = self.hass.config_entries.async_get_entry(entry_id)
-            if entry:
-                return entry.options.get(CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR)
-        except (AttributeError, KeyError):
-            pass
-        return DEFAULT_ENERGY_RESET_HOUR
+    def _get_base_kwh(self) -> float | None:
+        """Read sensor_base for this entity from hourly_stats shared data.
 
-    def _get_logical_day(self, now: datetime, reset_hour: int) -> str:
-        """Get the logical day identifier based on reset hour.
+        sensor_base = cumulative sum at TODAY midnight (00:00 local)
+        Published by hourly_stats into hass.data[DOMAIN]["sensor_base"]
 
-        The logical day starts at reset_hour and ends at reset_hour the next calendar day.
-        For example, with reset_hour=2:
-        - 2024-01-15 01:30 is still logical day "2024-01-14"
-        - 2024-01-15 02:00 is logical day "2024-01-15"
+        Returns None if not yet published (startup: hourly_stats not yet
+        initialized). native_value returns None in that case so the sensor
+        stays unavailable rather than briefly showing 0 + daily_energy.
         """
-        if now.hour < reset_hour:
-            # Before reset hour: still the previous logical day
-            logical_date = (now - timedelta(days=1)).date()
-        else:
-            # After reset hour: current logical day
-            logical_date = now.date()
-        return logical_date.isoformat()
+        try:
+            if not self.hass or not self.entity_id:
+                return None
+            base_all = self.hass.data.get(DOMAIN, {}).get("sensor_base", {})
+            val = base_all.get(self.entity_id)
+            if val is None:
+                return None  # hourly_stats not yet published
+            return float(val)
+        except (TypeError, ValueError, AttributeError):
+            return None
 
     @property
-    def native_value(self) -> float:
-        """Return the cumulative daily energy value (max seen today)."""
+    def native_value(self) -> float | None:
+        """Return cumulative total energy = sensor_base + daily consumption.
+
+        sensor_base = sum at TODAY midnight (from hourly_stats)
+        daily = consumption since midnight (from API)
+
+        Returns None (unavailable) until hourly_stats has published sensor_base,
+        preventing a false low value being recorded at startup.
+
+        At midnight (day change), the sensor self-advances sensor_base
+        by adding yesterday's daily max, preventing a gap until hourly_stats
+        updates sensor_base with the correct value from imported data.
+        """
         room = self._get_room() or self._room
         if room is None:
-            return self._daily_max_energy
+            return None
 
-        #current_energy = room.energy.energy or 0.0
-        # room.energy is expected to be a float (kWh) in this integration.
-        # Some variants / refactors could potentially wrap it in an object;
-        # be defensive.
         energy_val = room.energy
         if hasattr(energy_val, "energy"):
             energy_val = energy_val.energy
+        # If energy_val is None the coordinator hasn't polled yet.
+        # Return None (unavailable) to avoid recording sensor_base+0 as a state,
+        # which would appear as a downward spike in state_history on every restart.
+        if energy_val is None:
+            return None
+        current_energy = float(energy_val)
 
-        current_energy = float(energy_val or 0.0)
+        # Track daily max (prevent API glitch causing decreases)
         now = dt_util.now()
-        reset_hour = self._get_reset_hour()
-        current_logical_day = self._get_logical_day(now, reset_hour)
+        logical_day = now.date().isoformat()
 
-        # Reset daily max on new logical day
         if self._last_logical_day is None:
-            # First run - initialize without resetting
             self._daily_max_energy = current_energy
-            self._last_logical_day = current_logical_day
-            _LOGGER.debug(
-                "Initializing energy for %s: %.3f kWh (logical day: %s)",
-                room.name, current_energy, current_logical_day
-            )
-        elif self._last_logical_day != current_logical_day:
-            # New logical day - reset to current value
+            self._last_logical_day = logical_day
+        elif self._last_logical_day != logical_day:
+            # New day: self-advance sensor_base by yesterday's consumption
+            # This prevents the glitch between midnight and first hourly_stats cycle
+            try:
+                if self.hass and self.entity_id:
+                    base_all = self.hass.data.get(DOMAIN, {}).get("sensor_base", {})
+                    old_base = float(base_all.get(self.entity_id, 0.0))
+                    if old_base > 0 and self._daily_max_energy > 0:
+                        new_base = round(old_base + self._daily_max_energy, 3)
+                        base_all[self.entity_id] = new_base
+                        _LOGGER.info(
+                            "Midnight advance %s: sensor_base %.3f + daily %.3f = %.3f",
+                            self.entity_id, old_base, self._daily_max_energy, new_base,
+                        )
+            except (TypeError, ValueError, AttributeError):
+                pass
+            # Reset daily max for new day
             self._daily_max_energy = current_energy
-            self._last_logical_day = current_logical_day
-            _LOGGER.info(
-                "New logical day for %s (reset hour: %02d:00), reset energy to %.3f kWh",
-                room.name, reset_hour, current_energy
-            )
+            self._last_logical_day = logical_day
         elif current_energy > self._daily_max_energy:
-            # Same day - update max if current is higher
             self._daily_max_energy = current_energy
-            _LOGGER.debug(
-                "Updated daily max for %s to %.3f kWh",
-                room.name, current_energy
-            )
 
-        return self._daily_max_energy
+        # Cumulative total = base + daily
+        # None = hourly_stats not yet ready → sensor stays unavailable
+        # We wait for hourly_stats_ready flag (set after first LTS write) to avoid
+        # recording a high current value that creates a spike relative to the last
+        # LTS point (which can be 6h+ behind due to API data lag).
+        if not self.hass.data.get(DOMAIN, {}).get("hourly_stats_ready", False):
+            return None
+        base = self._get_base_kwh()
+        if base is None:
+            return None
+
+        return round(base + self._daily_max_energy, 3)
+
+
+class IntuisEnergyCostSensor(IntuisSensor):
+    """Sensor exposing cumulative energy cost.
+
+    Mirrors IntuisEnergySensor but for cost in the configured currency.
+    The state reflects the LTS cumulative cost written by CostStatsUpdater.
+
+    Cost sensor for a single room. Written exclusively via async_import_statistics.
+    cost picker (Settings > Energy > cost sensor selector).
+    cost_stats writes LTS via async_import_statistics (UPSERT), which
+    overwrites any recorder auto-compiled entries on each import cycle.
+    """
+
+    def __init__(self, coordinator, home_id: str, room: IntuisRoom) -> None:
+        """Initialize the energy cost sensor."""
+        super().__init__(
+            coordinator,
+            home_id,
+            room,
+            "cost",
+            "Cost",
+            unit=None,   # Set dynamically via native_unit_of_measurement
+            device_class=SensorDeviceClass.MONETARY,
+        )
+        self._attr_icon = "mdi:cash"
+        # state_class=TOTAL is required for two reasons:
+        # 1. The Energy Dashboard "total cost entity" mode uses the entity
+        #    state for the current partial-hour value. Without state_class,
+        #    HA has no fresh "current" value and falls back to stale data.
+        # 2. native_value now publishes prev_sum (lifetime cumulative, e.g.
+        #    212 CHF) — the same value as the LTS sum — so short-term stats
+        #    compiled by HA from entity states are CORRECT and coherent with
+        #    our hourly LTS import. No more divergence.
+        # Previous issue (negatives) was caused by publishing midnight_base
+        # (~3 CHF) instead of lifetime cumulative — now fixed in _publish_cost_base.
+        self._attr_state_class = SensorStateClass.TOTAL
+
+    @property
+    def native_unit_of_measurement(self) -> str:
+        """Return the configured currency."""
+        try:
+            return self.hass.config.currency or "EUR"
+        except AttributeError:
+            return "EUR"
+
+    @property
+    def native_value(self) -> float | None:
+        """Always return None.
+
+        The Energy Dashboard reads cost data exclusively from the LTS written
+        by CostStatsUpdater via async_import_statistics (source="recorder").
+
+        If this property returned a real value, HA's recorder would compile
+        entity states into statistics_short_term, then promote them into the
+        hourly Statistics table.  Because our LTS sum and the compiled sum are
+        computed independently and can diverge (especially across restarts,
+        recalculate runs, or timezone edge cases), HA ends up with two sets of
+        rows for the same (metadata_id, start_ts) key.  The last writer wins
+        and the loser creates a negative-delta spike visible in the dashboard.
+
+        Returning None means HA never writes short-term stats for this entity,
+        so async_import_statistics is the sole writer — no conflicts.
+
+        state_class=TOTAL is still declared (on self._attr_state_class) so
+        the entity appears in the Energy Dashboard "total cost" selector.
+        """
+        return None
+
+
 
 
 class IntuisSetpointEndTimeSensor(IntuisSensor):
@@ -510,4 +622,241 @@ class ModuleFirmwareSensor(IntuisSensor):
             if isinstance(module, NMHIntuisModule) and module.id == self._module_id:
                 return module.firmware_revision_thirdparty
         return None
+
+
+class IntuisScheduleDataSensor(CoordinatorEntity, SensorEntity):
+    """Sensor exposing complete schedule data for UI integration.
+    
+    This sensor exposes the full timetable, zones, and room temperatures
+    for the currently selected schedule, making it accessible to custom
+    UI components like the Intuis Planning page.
+    """
+
+    def __init__(
+            self,
+            coordinator,
+            home_id: str,
+            intuis_home,
+    ) -> None:
+        """Initialize the schedule data sensor."""
+        super().__init__(coordinator)
+        self._home_id = home_id
+        self._intuis_home = intuis_home
+        self._attr_unique_id = f"intuis_{home_id}_schedule_data"
+        self._attr_name = "Intuis Schedule Data"
+        self._attr_icon = "mdi:calendar-clock"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def device_info(self):
+        """Return device info for this entity."""
+        return {
+            "identifiers": {(DOMAIN, self._home_id)},
+            "name": "Intuis Home",
+            "manufacturer": "Muller / Netatmo",
+            "model": "Intuis",
+        }
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the name of the active schedule."""
+        home = self.coordinator.data.get("intuis_home") if isinstance(self.coordinator.data, dict) else self.coordinator.data
+        if not home or not hasattr(home, 'schedules') or not home.schedules:
+            return None
+        for schedule in home.schedules:
+            if isinstance(schedule, IntuisThermSchedule) and schedule.selected:
+                return schedule.name
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return schedule summary data as attributes.
         
+        Note: To avoid exceeding the 16KB attribute limit, we only include
+        essential data here. Full schedule details are available via individual
+        schedule sensors or the sync_schedule service.
+        """
+        home = self.coordinator.data.get("intuis_home") if isinstance(self.coordinator.data, dict) else self.coordinator.data
+        if not home or not hasattr(home, 'schedules') or not home.schedules:
+            return {"schedules": []}
+        
+        schedules_summary = []
+        
+        for schedule in home.schedules:
+            if not isinstance(schedule, IntuisThermSchedule):
+                continue
+            
+            # Only include essential schedule info (no detailed rooms_temp)
+            zones_summary = []
+            if schedule.zones:
+                for zone in schedule.zones:
+                    if isinstance(zone, IntuisThermZone):
+                        zones_summary.append({
+                            "id": zone.id,
+                            "name": zone.name,
+                        })
+            
+            schedules_summary.append({
+                "schedule_id": schedule.id,
+                "name": schedule.name,
+                "selected": schedule.selected,
+                "timetable_count": len(schedule.timetables) if schedule.timetables else 0,
+                "zones": zones_summary,
+                "away_temp": schedule.away_temp,
+                "hg_temp": schedule.hg_temp,
+            })
+        
+        return {
+            "schedules": schedules_summary,
+            "active_schedule": self.native_value
+        }
+
+
+class IntuisIndividualScheduleSensor(CoordinatorEntity, SensorEntity):
+    """Sensor exposing individual schedule data for UI integration.
+    
+    Each schedule gets its own sensor with weekly_timetable, zones, and 
+    room_temperatures as attributes. The entity_id is based on schedule_id
+    to be robust against renames.
+    """
+
+    def __init__(
+            self,
+            coordinator,
+            home_id: str,
+            intuis_home,
+            schedule: IntuisThermSchedule,
+    ) -> None:
+        """Initialize the individual schedule sensor."""
+        super().__init__(coordinator)
+        self._home_id = home_id
+        self._intuis_home = intuis_home
+        self._schedule_id = schedule.id
+        # Use schedule_id for unique_id to be robust against renames
+        self._attr_unique_id = f"intuis_{home_id}_schedule_{schedule.id}"
+        self._attr_icon = "mdi:calendar-week"
+
+    def _get_schedule(self) -> IntuisThermSchedule | None:
+        """Get the current schedule from coordinator data."""
+        home = self.coordinator.data.get("intuis_home") if isinstance(self.coordinator.data, dict) else self.coordinator.data
+        if not home or not hasattr(home, 'schedules') or not home.schedules:
+            return None
+        for schedule in home.schedules:
+            if isinstance(schedule, IntuisThermSchedule) and schedule.id == self._schedule_id:
+                return schedule
+        return None
+
+    def _get_all_schedules(self) -> list:
+        """Get all schedules for available_schedules attribute."""
+        home = self.coordinator.data.get("intuis_home") if isinstance(self.coordinator.data, dict) else self.coordinator.data
+        if not home or not hasattr(home, 'schedules') or not home.schedules:
+            return []
+        result = []
+        for schedule in home.schedules:
+            if isinstance(schedule, IntuisThermSchedule):
+                result.append({
+                    "id": schedule.id,
+                    "name": schedule.name,
+                    "selected": schedule.selected
+                })
+        return result
+
+    @property
+    def name(self) -> str:
+        """Return the name of the schedule, updated dynamically."""
+        schedule = self._get_schedule()
+        if schedule:
+            return f"Schedule {schedule.name}"
+        return f"Schedule {self._schedule_id[-6:]}"
+
+    @property
+    def device_info(self):
+        """Return device info for this entity."""
+        return {
+            "identifiers": {(DOMAIN, self._home_id)},
+            "name": "Intuis Home",
+            "manufacturer": "Muller / Netatmo",
+            "model": "Intuis",
+        }
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the schedule name as state."""
+        schedule = self._get_schedule()
+        return schedule.name if schedule else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return schedule data as attributes compatible with Node-RED format."""
+        schedule = self._get_schedule()
+        if not schedule:
+            return {}
+        
+        home = self.coordinator.data.get("intuis_home") if isinstance(self.coordinator.data, dict) else self.coordinator.data
+        
+        # Build rooms map for room names
+        rooms_map = {}
+        if home and hasattr(home, 'rooms') and home.rooms:
+            for room_id, room in home.rooms.items():
+                rooms_map[str(room_id)] = room.name if hasattr(room, 'name') else str(room_id)
+        
+        # Convert timetable to weekly format (Monday, Tuesday, etc.)
+        weekly_timetable = self._convert_to_weekly_timetable(schedule)
+        
+        # Build zones with room_temperatures as dict (room_id -> temp)
+        zones = []
+        for zone in schedule.zones:
+            if isinstance(zone, IntuisThermZone):
+                room_temperatures = {}
+                for rt in zone.rooms_temp:
+                    room_temperatures[str(rt.room_id)] = rt.temp
+                zones.append({
+                    "id": zone.id,
+                    "name": zone.name,
+                    "type": zone.type,
+                    "room_temperatures": room_temperatures
+                })
+        
+        return {
+            "schedule_id": schedule.id,
+            "schedule_name": schedule.name,
+            "is_active": schedule.selected,
+            "is_default": schedule.default,
+            "away_temperature": schedule.away_temp,
+            "frost_guard_temperature": schedule.hg_temp,
+            "weekly_timetable": weekly_timetable,
+            "zones": zones,
+            "zones_count": len(zones),
+            "available_schedules": self._get_all_schedules(),
+        }
+
+    def _convert_to_weekly_timetable(self, schedule: IntuisThermSchedule) -> dict:
+        """Convert m_offset timetable to weekly format with day names."""
+        DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        
+        # Build zone_id to name map
+        zone_names = {}
+        for zone in schedule.zones:
+            if isinstance(zone, IntuisThermZone):
+                zone_names[zone.id] = zone.name
+        
+        # Group timetable entries by day
+        weekly = {day: [] for day in DAY_NAMES}
+        
+        for tt in sorted(schedule.timetables, key=lambda t: t.m_offset):
+            day_index = tt.m_offset // MINUTES_PER_DAY
+            if 0 <= day_index < 7:
+                minutes_in_day = tt.m_offset % MINUTES_PER_DAY
+                hours = minutes_in_day // 60
+                mins = minutes_in_day % 60
+                time_str = f"{hours:02d}:{mins:02d}"
+                zone_name = zone_names.get(tt.zone_id, f"Zone {tt.zone_id}")
+                
+                weekly[DAY_NAMES[day_index]].append({
+                    "time": time_str,
+                    "zone": zone_name
+                })
+        
+        # Remove empty days
+        return {day: slots for day, slots in weekly.items() if slots}
+

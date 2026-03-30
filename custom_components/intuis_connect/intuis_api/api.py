@@ -387,6 +387,28 @@ class IntuisAPI:
                     # No more server error retries
                     resp.raise_for_status()
 
+                # Handle client errors (4xx) - capture body before raising
+                if 400 <= resp.status < 500:
+                    error_body = ""
+                    try:
+                        error_body = await resp.text()
+                        _LOGGER.error(
+                            "API client error %s for %s %s. Response body: %s",
+                            resp.status, method, path, error_body[:1000]
+                        )
+                    except Exception as read_err:
+                        _LOGGER.error(
+                            "API client error %s for %s %s (could not read body: %s)",
+                            resp.status, method, path, read_err
+                        )
+                    raise aiohttp.ClientResponseError(
+                        resp.request_info,
+                        resp.history,
+                        status=resp.status,
+                        message=f"Bad Request: {error_body[:200]}" if error_body else "Bad Request",
+                        headers=resp.headers,
+                    )
+
                 # Success - record it and return
                 resp.raise_for_status()
                 self._circuit_breaker.record_success()
@@ -394,8 +416,15 @@ class IntuisAPI:
 
             except aiohttp.ClientResponseError as e:
                 # Non-retriable client errors (4xx other than 429/401)
-                _LOGGER.error("API request failed for %s: %s", path, e)
-                raise APIError(f"Request failed for {path}: {e.status}") from e
+                # Try to get more details from the response body
+                error_details = ""
+                try:
+                    if hasattr(e, 'message'):
+                        error_details = f" - {e.message}"
+                except Exception:
+                    pass
+                _LOGGER.error("API request failed for %s: %s%s", path, e, error_details)
+                raise APIError(f"Request failed for {path}: {e.status}{error_details}") from e
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 last_exc = e
                 if attempt < server_attempts:
@@ -730,16 +759,8 @@ class IntuisAPI:
             ) as resp:
                 data = await resp.json()
 
-            # Always log raw response structure at DEBUG level for diagnostics
-            _LOGGER.debug(
-                "Room %s energy response (scale=%s, types=%d): body has %d entries",
-                room_id,
-                scale,
-                len(ENERGY_MEASURE_TYPES.split(",")),
-                len(data.get("body", [])),
-            )
             if self._debug:
-                _LOGGER.debug("Room %s full energy response: %s", room_id, data)
+                _LOGGER.debug("Room %s energy response: %s", room_id, data)
 
             # Sum all non-null values from all measure entries
             # Response format: {"body": [{"beg_time": ..., "value": [[v1, v2, v3, v4], ...]}, ...]}
@@ -765,6 +786,87 @@ class IntuisAPI:
                 exc_info=True,
             )
             return 0.0
+
+    async def async_get_room_energy_hourly(
+        self, room_id: str, date_begin: int, date_end: int
+    ) -> list[tuple[int, float]]:
+        """Get hourly energy consumption for a room over a date range.
+
+        This method fetches energy data in bulk (one API call for the entire range)
+        and returns individual hourly values for proper Home Assistant statistics.
+
+        Note: The API returns individual hourly consumption values (not cumulative).
+        Each value represents the energy consumed during that specific hour.
+
+        Args:
+            room_id: The room ID.
+            date_begin: Unix epoch timestamp for start of period.
+            date_end: Unix epoch timestamp for end of period.
+
+        Returns:
+            List of tuples (timestamp, energy_wh) for each hour in the range.
+            Empty list on error.
+        """
+        form_data = {
+            "home_id": self.home_id,
+            "room_id": room_id,
+            "scale": "1hour",
+            "type": ENERGY_MEASURE_TYPES,
+            "date_begin": str(date_begin),
+            "date_end": str(date_end),
+        }
+
+        try:
+            async with await self._async_request(
+                "post",
+                ROOMMEASURE_PATH,
+                data=form_data,
+            ) as resp:
+                data = await resp.json()
+
+            if self._debug:
+                _LOGGER.debug("Room %s hourly energy response: %s", room_id, data)
+
+            # Response format: {"body": [{"beg_time": ts, "step_time": 3600, "value": [[wh1], [wh2], ...]}, ...]}
+            # Each value is the energy consumed during that specific hour (NOT cumulative)
+            hourly_values: list[tuple[int, float]] = []
+            body = data.get("body", [])
+
+            for measure in body:
+                beg_time = measure.get("beg_time", 0)
+                step_time = measure.get("step_time", 3600)  # Default 1 hour in seconds
+                values = measure.get("value", [])
+
+                for i, val_set in enumerate(values):
+                    # Calculate timestamp for this hour
+                    hour_ts = beg_time + (i * step_time)
+
+                    # Sum all tariff values for this hour (in case of multiple tariffs)
+                    hour_energy = 0.0
+                    for val in val_set:
+                        if val is not None:
+                            hour_energy += float(val)
+
+                    hourly_values.append((hour_ts, hour_energy))
+
+            _LOGGER.debug(
+                "Room %s: fetched %d hourly values from %s to %s",
+                room_id,
+                len(hourly_values),
+                date_begin,
+                date_end,
+            )
+
+            return hourly_values
+
+        except (APIError, KeyError, ValueError, TypeError) as e:
+            # Log at debug level - hourly requests may fail, caller will fallback
+            _LOGGER.debug(
+                "Hourly energy request failed for room %s: %s",
+                room_id,
+                e,
+            )
+            return []
 
     async def async_get_room_energy_daily(
         self, room_id: str, date_begin: int, date_end: int
@@ -943,12 +1045,12 @@ class IntuisAPI:
                 len(zones),
             )
 
-        # Build payload in the required format
+        # Build payload in the required format (matching working Node-RED format)
         payload: dict[str, Any] = {
+            "app_identifier": "app_muller",
             "home_id": self.home_id,
-            "id": schedule_id,
+            "schedule_id": schedule_id,
             "name": schedule_name,
-            "type": schedule_type,
             "timetable": timetable,
             "zones": zones,
         }
@@ -962,22 +1064,31 @@ class IntuisAPI:
 
         _LOGGER.debug("Sync schedule payload: %s", payload)
 
-        async with await self._async_request(
-            "post",
-            SYNCHOMESCHEDULE_PATH,
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=20,
-        ) as resp:
-            result = await resp.json()
-            _LOGGER.debug("Sync schedule response (status=%s): %s", resp.status, result)
+        try:
+            async with await self._async_request(
+                "post",
+                SYNCHOMESCHEDULE_PATH,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=20,
+            ) as resp:
+                result = await resp.json()
+                _LOGGER.debug("Sync schedule response (status=%s): %s", resp.status, result)
 
-            # Check for API error in response body
-            if "error" in result:
-                error = result["error"]
-                raise APIError(
-                    f"sync_schedule failed: {error.get('message', 'Unknown error')} "
-                    f"(code: {error.get('code')})"
-                )
+                # Check for API error in response body
+                if "error" in result:
+                    error = result["error"]
+                    raise APIError(
+                        f"sync_schedule failed: {error.get('message', 'Unknown error')} "
+                        f"(code: {error.get('code')})"
+                    )
 
-        _LOGGER.info("Schedule %s synced successfully", schedule_name)
+            _LOGGER.info("Schedule %s synced successfully", schedule_name)
+        except aiohttp.ClientResponseError as e:
+            # Try to get more details from the response
+            _LOGGER.error(
+                "Sync schedule failed with status %s for payload: %s",
+                e.status,
+                payload,
+            )
+            raise

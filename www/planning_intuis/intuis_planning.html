@@ -1,0 +1,1516 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Intuis Planning v12 – Semaine complète</title>
+  <style>
+    :root {
+      --bg-color: #fafafa;
+      --text-color: #212121;
+      --border-color: #ccc;
+      --card-bg: #fff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-color: #1a1a1a;
+        --text-color: #e0e0e0;
+        --border-color: #444;
+        --card-bg: #2a2a2a;
+      }
+    }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+      margin: 0; 
+      padding: 16px; 
+      background: var(--bg-color); 
+      color: var(--text-color); 
+    }
+    h2 { margin: 0 0 12px; font-size: 1.5em; }
+    h3 { margin: 16px 0 8px; font-size: 1.1em; }
+    select, button, input { font: inherit; }
+    
+    /* Top controls */
+    .top-controls { 
+      display: flex; 
+      align-items: center; 
+      gap: 18px; 
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .top-controls label { font-size: 14px; }
+    .top-controls select { padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border-color); }
+    .top-controls input[type="number"] { width: 50px; padding: 4px; border-radius: 4px; border: 1px solid var(--border-color); }
+    
+    /* Week grid */
+    #week { margin-top: 8px; }
+    .row { display: flex; align-items: center; margin: 3px 0; font-size: 12px; }
+    .lbl { width: 42px; text-align: right; padding-right: 8px; font-weight: 500; }
+    .bar { 
+      flex: 1; 
+      position: relative; 
+      height: 26px; 
+      border: 1px solid var(--border-color); 
+      display: flex; 
+      background: var(--card-bg); 
+      border-radius: 6px; 
+      margin: 0 8px; 
+      overflow: hidden;
+    }
+    /* Hours header/footer row */
+    .hours-row {
+      display: flex;
+      align-items: center;
+      margin: 2px 0;
+      font-size: 10px;
+    }
+    .hours-row .lbl { width: 42px; }
+    .hours-bar {
+      flex: 1;
+      position: relative;
+      height: 16px;
+      margin: 0 8px;
+      display: flex;
+    }
+    .hours-bar .hour-mark {
+      position: absolute;
+      transform: translateX(-50%);
+      color: #888;
+      font-size: 9px;
+      font-weight: 500;
+    }
+    .hours-row.top .hour-mark { top: 0; }
+    .hours-row.bottom .hour-mark { bottom: 0; }
+    .seg { 
+      cursor: pointer; 
+      height: 100%; 
+      transition: filter 0.15s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: rgba(0,0,0,0.6);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .seg:hover { 
+      filter: brightness(1.15); 
+      outline: 2px solid #666; 
+      z-index: 1; 
+    }
+    /* Vertical grid lines */
+    .tick { 
+      position: absolute; 
+      top: 0;
+      bottom: 0;
+      width: 1px; 
+      background: rgba(128,128,128,0.2);
+      pointer-events: none;
+    }
+    .plusbtn { 
+      background: var(--card-bg); 
+      border: 1px solid var(--border-color); 
+      border-radius: 50%; 
+      font-size: 16px; 
+      width: 24px; 
+      height: 24px; 
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .plusbtn:hover { background: #e0e0e0; }
+    
+    /* Legend */
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 11px; margin: 12px 0; }
+    .legend span { display: flex; align-items: center; gap: 4px; }
+    .legend i { width: 16px; height: 16px; border: 1px solid #888; border-radius: 3px; display: inline-block; }
+    
+    /* Zone boxes */
+    #zones { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+    .zonebox { 
+      border-radius: 8px; 
+      border: 1px solid var(--border-color); 
+      padding: 10px; 
+      min-width: 180px; 
+      background: var(--zone-bg, var(--card-bg)); 
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .zonebox h4 { margin: 0 0 8px 0; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+    .zonecolor { width: 18px; height: 18px; border-radius: 4px; display: inline-block; }
+    .temp { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 13px; }
+    .temp span:first-child { width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .temp input[type="number"] { width: 50px; padding: 3px 4px; border-radius: 4px; border: 1px solid var(--border-color); text-align: center; }
+    .temp button { 
+      width: 24px; 
+      height: 24px; 
+      border: 1px solid var(--border-color); 
+      border-radius: 4px; 
+      background: var(--card-bg); 
+      cursor: pointer; 
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .temp button:hover { background: #e0e0e0; }
+    
+    /* Buttons */
+    #save { 
+      margin-top: 16px; 
+      padding: 10px 24px; 
+      font-size: 14px; 
+      background: #4caf50; 
+      color: white; 
+      border: none; 
+      border-radius: 6px; 
+      cursor: pointer;
+    }
+    #save:disabled { background: #9e9e9e; cursor: not-allowed; }
+    #save:hover:not(:disabled) { background: #43a047; }
+    
+    /* Dialog */
+    dialog { 
+      border: none; 
+      border-radius: 12px; 
+      padding: 20px; 
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25); 
+      max-width: 320px;
+      background: var(--card-bg);
+      color: var(--text-color);
+    }
+    dialog::backdrop { background: rgba(0,0,0,0.5); }
+    dialog h3 { margin: 0 0 16px; }
+    dialog label { display: block; margin: 10px 0; font-size: 14px; }
+    dialog input, dialog select { 
+      width: 100%; 
+      padding: 8px; 
+      margin-top: 4px; 
+      border: 1px solid var(--border-color); 
+      border-radius: 4px; 
+      box-sizing: border-box;
+    }
+    dialog menu { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; padding: 0; }
+    dialog button { padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+    dialog button[value="cancel"] { background: #e0e0e0; border: none; }
+    dialog button[value="default"] { background: #2196f3; color: white; border: none; }
+    
+    /* Feedback */
+    #feedback { 
+      display: none; 
+      position: fixed; 
+      left: 50%; 
+      top: 20px; 
+      transform: translateX(-50%);
+      background: #323232;
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      z-index: 1000;
+      font-size: 14px;
+    }
+    
+    /* Loading */
+    #loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #2196f3;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div id="feedback"></div>
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Connexion à Home Assistant...</p>
+  </div>
+  
+  <!-- Configuration dialog (shown if not embedded in HA) -->
+  <div id="config-dialog" style="display:none; padding: 20px; max-width: 400px; margin: 40px auto;">
+    <h2>🔧 Configuration</h2>
+    <p>Cette page n'est pas intégrée dans Home Assistant. Veuillez configurer la connexion :</p>
+    <label style="display:block; margin: 16px 0;">
+      URL Home Assistant :<br>
+      <input type="text" id="ha-url" placeholder="http://homeassistant.local:8123" style="width:100%; padding:8px; margin-top:4px;">
+    </label>
+    <label style="display:block; margin: 16px 0;">
+      Token d'accès longue durée :<br>
+      <input type="password" id="ha-token" placeholder="eyJ0eXAiOiJKV1Q..." style="width:100%; padding:8px; margin-top:4px;">
+      <small style="color:#666;">Créez-le dans Profil → Tokens d'accès longue durée</small>
+    </label>
+    <label style="display:block; margin: 8px 0 16px 0; font-size: 0.9em; color: #aaa; cursor: pointer;">
+      <input type="checkbox" id="remember-token" style="margin-right:6px;">
+      Se souvenir du token (moins sécurisé — ne pas cocher sur un ordinateur partagé)
+    </label>
+    <button id="connect-btn" style="padding: 10px 24px; background: #2196f3; color: white; border: none; border-radius: 6px; cursor: pointer;">
+      Connecter
+    </button>
+  </div>
+  
+  <div id="app" style="display:none;">
+    <h2>🏠 Intuis Planning</h2>
+    
+    <div class="top-controls">
+      <label>Planning : <select id="planner"></select></label>
+      <label>Absent : <input id="away" type="number" min="4" max="24" step="0.5"> °C</label>
+      <label>Hors-gel : <input id="hg" type="number" min="-5" max="15" step="0.5"> °C</label>
+      <button id="refresh" title="Rafraîchir les données">🔄</button>
+    </div>
+    
+    <div id="week"></div>
+    <div id="legend" class="legend"></div>
+    
+    <h3>Températures par zone</h3>
+    <div id="zones"></div>
+    
+    <button id="save" disabled>💾 Enregistrer</button>
+  </div>
+  
+  <dialog id="dlg">
+    <form method="dialog">
+      <h3 id="dlgTitle">Éditer créneau</h3>
+      <label>Jour <select id="dDay"></select></label>
+      <label>Début <input type="time" id="dStart" required></label>
+      <label>Fin <select id="dEndDay"></select> <input type="time" id="dEnd" required style="width:auto;"></label>
+      <label>Zone <select id="dZone"></select></label>
+      <menu>
+        <button type="submit" value="cancel" formnovalidate>Annuler</button>
+        <button type="submit" value="default">OK</button>
+      </menu>
+    </form>
+  </dialog>
+
+<script>
+(async () => {
+  // === CONFIGURATION ===
+  const COLORS = ['#ef5350','#42a5f5','#ffca28','#66bb6a','#ab47bc','#26a69a','#8d6e63','#78909c','#ec407a','#5c6bc0'];
+  const DAY = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+  const DAY_FULL = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+  const TICKS = [0, 360, 720, 1080]; // 0h, 6h, 12h, 18h
+  
+  // === DOM ELEMENTS ===
+  const loading = document.getElementById('loading');
+  const app = document.getElementById('app');
+  const feedback = document.getElementById('feedback');
+  const sel = document.getElementById('planner');
+  const week = document.getElementById('week');
+  const legend = document.getElementById('legend');
+  const zonesDiv = document.getElementById('zones');
+  const saveBtn = document.getElementById('save');
+  const refreshBtn = document.getElementById('refresh');
+  const dlg = document.getElementById('dlg');
+  const dDay = document.getElementById('dDay');
+  const dStart = document.getElementById('dStart');
+  const dEnd = document.getElementById('dEnd');
+  const dEndDay = document.getElementById('dEndDay');
+  const dZone = document.getElementById('dZone');
+  const awayInput = document.getElementById('away');
+  const hgInput = document.getElementById('hg');
+  
+  // === STATE ===
+  let hass = null;
+  let schedules = [];
+  let currentSchedule = null;
+  let rooms = {};
+  let dirty = false;
+  let editing = null;
+  
+  // === UTILITIES ===
+  const fmt = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+  
+  function hex2rgba(hex, alpha = 0.3) {
+    hex = hex.replace('#','');
+    if (hex.length === 3) hex = hex.split('').map(x => x+x).join('');
+    const r = parseInt(hex.slice(0,2), 16);
+    const g = parseInt(hex.slice(2,4), 16);
+    const b = parseInt(hex.slice(4,6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+  
+  function showFeedback(msg, duration = 3000) {
+    feedback.textContent = msg;
+    feedback.style.display = 'block';
+    setTimeout(() => { feedback.style.display = 'none'; }, duration);
+  }
+  
+  // === HOME ASSISTANT CONNECTION ===
+  // URL is not sensitive — persist in localStorage so users don't re-type it after every restart.
+  // Token: stored in localStorage only if the user explicitly checks "remember token",
+  // otherwise sessionStorage (cleared when the browser tab/session ends).
+  let haUrl = localStorage.getItem('intuis_ha_url') || '';
+  let haToken = localStorage.getItem('intuis_ha_token_saved') || sessionStorage.getItem('intuis_ha_token') || '';
+  
+  // Pre-fill remember checkbox based on whether token was persisted
+  const _rememberSaved = !!localStorage.getItem('intuis_ha_token_saved');
+  document.addEventListener('DOMContentLoaded', () => {
+    const cb = document.getElementById('remember-token');
+    if (cb) cb.checked = _rememberSaved;
+  });
+  
+  function getHass() {
+    // Try to get hass from parent (when embedded in HA iframe)
+    try {
+      if (window.parent && window.parent !== window) {
+        const haEl = window.parent.document.querySelector('home-assistant');
+        if (haEl && haEl.hass) {
+          return haEl.hass;
+        }
+      }
+    } catch (e) {
+      // Cross-origin error - we're not in HA iframe
+    }
+    // Fallback to window.hass (for development)
+    if (window.hass) {
+      return window.hass;
+    }
+    return null;
+  }
+
+  function isInHaIframe() {
+    // Quick synchronous check — if we're same-origin inside HA the home-assistant element exists
+    try {
+      if (window.parent && window.parent !== window) {
+        return !!window.parent.document.querySelector('home-assistant');
+      }
+    } catch (e) {
+      // Cross-origin: definitely not in HA iframe
+    }
+    return false;
+  }
+  
+  async function waitForHass(maxWaitMs = 5000) {
+    // If we're in the same-origin HA iframe, poll for hass with a hard timeout.
+    // If the element is there but hass never populates (e.g. after a restart),
+    // we give up quickly and fall through to REST mode.
+    const deadline = Date.now() + maxWaitMs;
+    while (Date.now() < deadline) {
+      hass = getHass();
+      if (hass && hass.states && Object.keys(hass.states).length > 0) {
+        return true;
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+    return false;
+  }
+
+  async function waitForHassIframe(maxWaitMs = 45000) {
+    // In HA iframe after a restart, the WebSocket reconnects before hass is populated.
+    // Wait up to 45s and show a live countdown so the user knows what is happening.
+    const loadingText = loading.querySelector('p');
+    const deadline = Date.now() + maxWaitMs;
+    while (Date.now() < deadline) {
+      hass = getHass();
+      if (hass && hass.states && Object.keys(hass.states).length > 0) {
+        return true;
+      }
+      const remaining = Math.ceil((deadline - Date.now()) / 1000);
+      loadingText.textContent = `En attente de la reconnexion Home Assistant… (${remaining}s)`;
+      await new Promise(r => setTimeout(r, 500));
+    }
+    loadingText.textContent = 'Connexion à Home Assistant…';
+    return false;
+  }
+  
+  // REST API fallback when not in HA iframe
+  async function fetchStatesViaREST() {
+    if (!haUrl || !haToken) return null;
+    
+    try {
+      const response = await fetch(`${haUrl}/api/states`, {
+        headers: {
+          'Authorization': `Bearer ${haToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const states = await response.json();
+      // Convert array to object like hass.states
+      const statesObj = {};
+      for (const state of states) {
+        statesObj[state.entity_id] = state;
+      }
+      return statesObj;
+    } catch (err) {
+      console.error('REST API error:', err);
+      return null;
+    }
+  }
+  
+  async function callServiceREST(domain, service, data = {}) {
+    if (!haUrl || !haToken) throw new Error('Not configured');
+    
+    const response = await fetch(`${haUrl}/api/services/${domain}/${service}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${haToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data)
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    return response.json();
+  }
+  
+  async function callService(domain, service, data = {}) {
+    if (hass) {
+      return hass.callService(domain, service, data);
+    } else {
+      return callServiceREST(domain, service, data);
+    }
+  }
+  
+  // Show config dialog for external access
+  function showConfigDialog() {
+    loading.style.display = 'none';
+    document.getElementById('config-dialog').style.display = 'block';
+    document.getElementById('ha-url').value = haUrl;
+    document.getElementById('ha-token').value = haToken;
+    const cb = document.getElementById('remember-token');
+    if (cb) cb.checked = !!localStorage.getItem('intuis_ha_token_saved');
+  }
+  
+  (document.getElementById('connect-btn') || {addEventListener:function(){}}).addEventListener('click', async () => {
+    haUrl = document.getElementById('ha-url').value.trim().replace(/\/$/, '');
+    haToken = document.getElementById('ha-token').value.trim();
+    
+    if (!haUrl || !haToken) {
+      showFeedback('❌ URL et token requis', 3000);
+      return;
+    }
+    
+    // URL is not sensitive: always persist in localStorage.
+    // Token: persist in localStorage only if "remember" is checked, otherwise sessionStorage only.
+    localStorage.setItem('intuis_ha_url', haUrl);
+    const rememberToken = (document.getElementById('remember-token') || {}).checked;
+    if (rememberToken) {
+      localStorage.setItem('intuis_ha_token_saved', haToken);
+    } else {
+      localStorage.removeItem('intuis_ha_token_saved');
+      sessionStorage.setItem('intuis_ha_token', haToken);
+    }
+    
+    // Try to connect
+    document.getElementById('config-dialog').style.display = 'none';
+    loading.style.display = 'block';
+    loading.querySelector('p').textContent = 'Connexion...';
+    
+    const states = await fetchStatesViaREST();
+    if (states) {
+      // Create a fake hass object
+      hass = { 
+        states: states,
+        callService: callServiceREST
+      };
+      initApp();
+    } else {
+      showFeedback('❌ Connexion échouée. Vérifiez URL et token.', 5000);
+      showConfigDialog();
+    }
+  });
+  
+  // === DATA LOADING ===
+  function loadSchedulesFromStates() {
+    schedules = [];
+    rooms = {};
+    
+    
+    // Find schedule sensors: sensor.intuis_home_schedule_*
+    for (const [entityId, state] of Object.entries(hass.states)) {
+      // Match pattern: sensor.intuis_home_schedule_* but NOT schedule_optimization
+      if (entityId.startsWith('sensor.') && 
+          entityId.includes('_schedule_') && 
+          !entityId.includes('schedule_optimization') &&
+          (state.attributes && state.attributes.weekly_timetable)) {
+        
+        
+        const attrs = state.attributes;
+        
+        // Convert weekly_timetable to m_offset format
+        const timetable = convertWeeklyTimetableToOffsets(attrs.weekly_timetable, attrs.zones);
+        
+        // Convert zones format
+        const zones = (attrs.zones || []).map(z => ({
+          id: z.id,
+          name: z.name,
+          type: z.type,
+          rooms_temp: Object.entries(z.room_temperatures || {}).map(([roomId, temp]) => ({
+            room_id: roomId,
+            temp: temp
+          }))
+        }));
+        
+        schedules.push({
+          entity_id: entityId,
+          schedule_id: attrs.schedule_id,
+          name: attrs.schedule_name || state.state || entityId,
+          timetable: timetable,
+          zones: zones,
+          away_temp: attrs.away_temperature || 16,
+          hg_temp: attrs.frost_guard_temperature || 8,
+          selected: attrs.is_active || false,
+          type: 'therm',
+          weekly_timetable: attrs.weekly_timetable // Keep original for display
+        });
+        
+      }
+    }
+    
+    // Build room map from climate entities
+    for (const [entityId, state] of Object.entries(hass.states)) {
+      if (entityId.startsWith('climate.') && entityId.includes('intuis')) {
+        const roomName = (state.attributes.friendly_name ? state.attributes.friendly_name.replace('Intuis ', '') : entityId);
+        const roomId = state.attributes.room_id;
+        if (roomId) {
+          rooms[roomId] = roomName;
+        }
+      }
+      
+      // Also get room names from temperature sensors
+      if (entityId.startsWith('sensor.') && entityId.includes('intuis') && entityId.includes('temperature')) {
+        const roomId = state.attributes.room_id;
+        const roomName = state.attributes.room_name || (state.attributes.friendly_name ? state.attributes.friendly_name.replace('Intuis ', '').replace(' Temperature', '') : '');
+        if (roomId && roomName && !rooms[roomId]) {
+          rooms[roomId] = roomName;
+        }
+      }
+    }
+    
+    // Get room names from current_zone sensor
+    const currentZone = hass.states['sensor.intuis_home_current_zone'];
+    if ((currentZone && currentZone.attributes && currentZone.attributes.room_temperatures)) {
+      // This gives us room IDs, we need to match with climate entities
+    }
+    
+    // Try to get room names from climate entities by matching patterns
+    for (const [entityId, state] of Object.entries(hass.states)) {
+      if (entityId.startsWith('climate.intuis_')) {
+        // Extract room name from entity ID or friendly name
+        const friendlyName = state.attributes.friendly_name || '';
+        const roomName = friendlyName.replace('Intuis ', '').trim();
+        
+        // Find room_id in attributes or infer from entity
+        if (state.attributes.room_id) {
+          rooms[state.attributes.room_id] = roomName;
+        }
+      }
+    }
+    
+    // If we still don't have room names, try to extract from entity IDs
+    // Pattern: climate.intuis_XXXX_room_name
+    if (Object.keys(rooms).length === 0) {
+      for (const [entityId, state] of Object.entries(hass.states)) {
+        if (entityId.startsWith('climate.intuis_')) {
+          const parts = entityId.replace('climate.intuis_', '').split('_');
+          // Skip the home_id (first part, usually numeric)
+          if (parts.length >= 2) {
+            const roomId = parts[0]; // This might be the room ID
+            const roomName = (state.attributes.friendly_name ? state.attributes.friendly_name.replace('Intuis ', '') : '') || 
+                           parts.slice(1).join(' ').replace(/_/g, ' ');
+            if (roomId && roomName) {
+              // We don't have the actual room_id, but we can try to match later
+            }
+          }
+        }
+      }
+    }
+    
+    // Build room ID to name map from schedule zones if not found
+    if (Object.keys(rooms).length === 0 && schedules.length > 0) {
+      // Use first schedule's zones to build a preliminary room list
+      const firstSchedule = schedules[0];
+      for (const zone of firstSchedule.zones) {
+        for (const rt of zone.rooms_temp) {
+          if (!rooms[rt.room_id]) {
+            // Try to find the room name from climate entities by matching the room_id
+            for (const [entityId, state] of Object.entries(hass.states)) {
+              if (entityId.startsWith('climate.') && entityId.includes(rt.room_id)) {
+                rooms[rt.room_id] = (state.attributes.friendly_name ? state.attributes.friendly_name.replace('Intuis ', '') : rt.room_id);
+                break;
+              }
+            }
+            // Fallback: use room_id as name (will be numeric)
+            if (!rooms[rt.room_id]) {
+              rooms[rt.room_id] = `Pièce ${rt.room_id.slice(-4)}`;
+            }
+          }
+        }
+      }
+    }
+    
+    
+    // Build room ID to name mapping
+    buildRoomMapping();
+    
+    
+    return schedules;
+  }
+  
+  // Helper function to get room name, with fallback
+  function getRoomName(roomId) {
+    if (rooms[roomId]) return rooms[roomId];
+    return `Pièce ${roomId.slice(-4)}`;
+  }
+  
+  // Build room ID to name mapping from various sources
+  function buildRoomMapping() {
+    rooms = {};
+    
+    // Method 0 (BEST): Get room_names directly from schedule sensor attributes
+    // The integration now provides room_names = {room_id: room_name} mapping
+    if (schedules.length > 0) {
+      const firstSchedule = schedules[0];
+      const scheduleState = hass.states[firstSchedule.entity_id];
+      if ((scheduleState && scheduleState.attributes && scheduleState.attributes.room_names)) {
+        rooms = {...scheduleState.attributes.room_names};
+        return rooms;
+      }
+    }
+    
+    // Also try current_zone sensor
+    const currentZone = hass.states['sensor.intuis_home_current_zone'];
+    if ((currentZone && currentZone.attributes && currentZone.attributes.room_names)) {
+      rooms = {...currentZone.attributes.room_names};
+      return rooms;
+    }
+    
+    // Method 1: Get from climate entities using room_id attribute
+    // This is the most reliable method as each climate entity has its room_id
+    const climateEntities = Object.entries(hass.states)
+      .filter(([id]) => id.startsWith('climate.intuis_'))
+      .map(([id, state]) => ({
+        entity_id: id,
+        friendly_name: (state.attributes.friendly_name ? state.attributes.friendly_name.replace('Intuis ', '') : id),
+        room_id: state.attributes.room_id
+      }));
+    
+    
+    for (const climate of climateEntities) {
+      if (climate.room_id) {
+        rooms[climate.room_id] = climate.friendly_name;
+      }
+    }
+    
+    if (Object.keys(rooms).length > 0) {
+      return rooms;
+    }
+    
+    // Method 2: Try to extract room_id from climate entity_id pattern
+    // entity_id format: climate.intuis_{home_id}_{room_id}
+    for (const [entityId, state] of Object.entries(hass.states)) {
+      if (entityId.startsWith('climate.intuis_')) {
+        const parts = entityId.split('_');
+        if (parts.length >= 3) {
+          const roomId = parts[parts.length - 1]; // Last part is room_id
+          if (roomId && /^\d+$/.test(roomId)) {
+            const friendlyName = (state.attributes.friendly_name ? state.attributes.friendly_name.replace('Intuis ', '') : entityId);
+            rooms[roomId] = friendlyName;
+          }
+        }
+      }
+    }
+    
+    if (Object.keys(rooms).length > 0) {
+      return rooms;
+    }
+    
+    // Method 3: Fallback - match room_ids from schedules with climate entity_ids
+    if (schedules.length > 0) {
+      const allRoomIds = new Set();
+      for (const sched of schedules) {
+        for (const zone of sched.zones) {
+          for (const rt of zone.rooms_temp) {
+            allRoomIds.add(rt.room_id);
+          }
+        }
+      }
+      
+      
+      for (const roomId of allRoomIds) {
+        if (!rooms[roomId]) {
+          // Try to find a climate entity that contains this room_id in its entity_id
+          for (const [entityId, state] of Object.entries(hass.states)) {
+            if (entityId.startsWith('climate.intuis_') && entityId.includes(roomId)) {
+              const friendlyName = (state.attributes.friendly_name ? state.attributes.friendly_name.replace('Intuis ', '') : entityId);
+              rooms[roomId] = friendlyName;
+              break;
+            }
+          }
+        }
+      }
+    }
+    
+    if (Object.keys(rooms).length > 0) {
+      return rooms;
+    }
+      
+    // Method 4: Try sensor entities with room info
+    for (const [entityId, state] of Object.entries(hass.states)) {
+      if (entityId.startsWith('sensor.intuis_') && 
+          entityId.includes('_temperature') && 
+          !entityId.includes('scheduled') &&
+          (state.attributes && state.attributes.room_id)) {
+        const roomId = state.attributes.room_id;
+        if (!rooms[roomId]) {
+          let name = state.attributes.friendly_name || '';
+          name = name.replace('Intuis ', '').replace(' Temperature', '').trim();
+          if (name) {
+            rooms[roomId] = name;
+          }
+        }
+      }
+    }
+    
+    return rooms;
+  }
+  
+  // Convert weekly_timetable format to m_offset format
+  function convertWeeklyTimetableToOffsets(weeklyTimetable, zones) {
+    if (!weeklyTimetable) return [];
+    
+    const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const timetable = [];
+    
+    // Build zone name to ID map
+    const zoneNameToId = {};
+    for (const zone of (zones || [])) {
+      zoneNameToId[zone.name] = zone.id;
+    }
+    
+    for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
+      const dayName = DAY_NAMES[dayIdx];
+      const daySlots = weeklyTimetable[dayName] || [];
+      
+      for (const slot of daySlots) {
+        const [hours, minutes] = slot.time.split(':').map(Number);
+        const m_offset = dayIdx * 1440 + hours * 60 + minutes;
+        const zone_id = (zoneNameToId[slot.zone] !== undefined ? zoneNameToId[slot.zone] : 0);
+        
+        timetable.push({ zone_id, m_offset });
+      }
+    }
+    
+    // Sort by m_offset
+    timetable.sort((a, b) => a.m_offset - b.m_offset);
+    
+    return timetable;
+  }
+  
+  function populatePlannerSelect() {
+    sel.innerHTML = '';
+    for (const sched of schedules) {
+      const opt = document.createElement('option');
+      opt.value = sched.entity_id;
+      // Show ID suffix for debugging
+      const idSuffix = sched.schedule_id ? ` [${sched.schedule_id.slice(-6)}]` : '';
+      opt.textContent = sched.name + (sched.selected ? ' ✓' : '') + idSuffix;
+      sel.appendChild(opt);
+    }
+    
+    // Select the active schedule
+    const active = schedules.find(s => s.selected);
+    if (active) {
+      sel.value = active.entity_id;
+    }
+  }
+  
+  // === RENDERING ===
+  function render() {
+    const entityId = sel.value;
+    currentSchedule = schedules.find(s => s.entity_id === entityId);
+    
+    if (!currentSchedule) {
+      week.innerHTML = '<p>Aucun planning sélectionné</p>';
+      zonesDiv.innerHTML = '';
+      legend.innerHTML = '';
+      return;
+    }
+    
+    // Update away/hg inputs
+    awayInput.value = currentSchedule.away_temp;
+    hgInput.value = currentSchedule.hg_temp;
+    
+    // Build legend
+    legend.innerHTML = '';
+    for (const zone of currentSchedule.zones) {
+      const color = COLORS[zone.id % COLORS.length];
+      const span = document.createElement('span');
+      span.innerHTML = `<i style="background:${color}"></i> ${zone.name}`;
+      legend.appendChild(span);
+    }
+    
+    // Build week grid
+    week.innerHTML = '';
+    const timetable = [...currentSchedule.timetable].sort((a,b) => a.m_offset - b.m_offset);
+    
+    // Helper function to create hours row
+    function createHoursRow(position) {
+      const row = document.createElement('div');
+      row.className = `hours-row ${position}`;
+      
+      const lbl = document.createElement('div');
+      lbl.className = 'lbl';
+      lbl.textContent = '';
+      row.appendChild(lbl);
+      
+      const bar = document.createElement('div');
+      bar.className = 'hours-bar';
+      
+      // Add hour marks (every 2 hours for readability)
+      for (let h = 0; h <= 24; h += 2) {
+        const mark = document.createElement('span');
+        mark.className = 'hour-mark';
+        mark.style.left = `${(h * 60) / 14.4}%`;
+        mark.textContent = `${h}h`;
+        bar.appendChild(mark);
+      }
+      
+      row.appendChild(bar);
+      
+      // Spacer for alignment with plus button
+      const spacer = document.createElement('div');
+      spacer.style.width = '24px';
+      row.appendChild(spacer);
+      
+      return row;
+    }
+    
+    // Add hours header
+    week.appendChild(createHoursRow('top'));
+    
+    for (let d = 0; d < 7; d++) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      
+      const lbl = document.createElement('div');
+      lbl.className = 'lbl';
+      lbl.textContent = DAY[d];
+      row.appendChild(lbl);
+      
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      
+      // Add vertical grid lines (subtle ticks)
+      for (let h = 0; h < 24; h += 6) {
+        const tick = document.createElement('span');
+        tick.className = 'tick';
+        tick.style.left = `${(h * 60) / 14.4}%`;
+        bar.appendChild(tick);
+      }
+      
+      // Calculate segments for this day
+      const base = d * 1440;
+      const next = base + 1440;
+      const daySlots = timetable.filter(s => s.m_offset >= base && s.m_offset < next);
+      
+      // Get previous day's last zone for continuity
+      const prevSlots = timetable.filter(s => s.m_offset < base);
+      let lastZone = prevSlots.length > 0 ? prevSlots[prevSlots.length - 1].zone_id : ((daySlots[0] && daySlots[0].zone_id !== undefined ? daySlots[0].zone_id : 0));
+      
+      // Build segments
+      const segments = [];
+      let cursor = 0;
+      
+      for (const slot of daySlots) {
+        const segStart = slot.m_offset - base;
+        if (segStart > cursor) {
+          segments.push({ zone_id: lastZone, start: cursor, end: segStart });
+        }
+        lastZone = slot.zone_id;
+        cursor = segStart;
+      }
+      
+      // Fill to end of day
+      if (cursor < 1440) {
+        segments.push({ zone_id: lastZone, start: cursor, end: 1440 });
+      }
+      
+      // Merge consecutive same-zone segments
+      const merged = [];
+      for (const seg of segments) {
+        if (merged.length && merged[merged.length-1].zone_id === seg.zone_id) {
+          merged[merged.length-1].end = seg.end;
+        } else {
+          merged.push({...seg});
+        }
+      }
+      
+      // Render segments
+      for (const seg of merged) {
+        const zone = currentSchedule.zones.find(z => z.id === seg.zone_id);
+        const color = COLORS[seg.zone_id % COLORS.length];
+        
+        const div = document.createElement('div');
+        div.className = 'seg';
+        div.style.width = `${(seg.end - seg.start) / 14.4}%`;
+        div.style.background = hex2rgba(color, 0.4);
+        div.title = `${fmt(seg.start)} - ${fmt(seg.end)}\n${(zone && zone.name ? zone.name : 'Zone ' + seg.zone_id)}`;
+        
+        // Show zone name if segment is wide enough
+        if (seg.end - seg.start >= 120) {
+          div.textContent = (zone && zone.name ? zone.name : '');
+        }
+        
+        div.onclick = () => openDialog('edit', d, seg);
+        bar.appendChild(div);
+      }
+      
+      row.appendChild(bar);
+      
+      // Add button
+      const plus = document.createElement('button');
+      plus.className = 'plusbtn';
+      plus.textContent = '+';
+      plus.title = 'Ajouter un créneau';
+      plus.onclick = () => openDialog('insert', d, null);
+      row.appendChild(plus);
+      
+      week.appendChild(row);
+    }
+    
+    // Add hours footer
+    week.appendChild(createHoursRow('bottom'));
+    
+    // Build zone temperature boxes
+    zonesDiv.innerHTML = '';
+    for (const zone of currentSchedule.zones) {
+      const color = COLORS[zone.id % COLORS.length];
+      
+      const box = document.createElement('div');
+      box.className = 'zonebox';
+      box.style.setProperty('--zone-bg', hex2rgba(color, 0.15));
+      
+      const header = document.createElement('h4');
+      header.innerHTML = `<span class="zonecolor" style="background:${color}"></span>${zone.name}`;
+      box.appendChild(header);
+      
+      // Room temperatures
+      if (zone.rooms_temp) {
+        for (const rt of zone.rooms_temp) {
+          const roomName = getRoomName(rt.room_id);
+          
+          const div = document.createElement('div');
+          div.className = 'temp';
+          
+          const label = document.createElement('span');
+          label.textContent = roomName;
+          label.title = roomName;
+          
+          const minus = document.createElement('button');
+          minus.textContent = '−';
+          minus.onclick = () => {
+            inp.value = Math.max(5, parseFloat(inp.value) - 0.5).toFixed(1);
+            rt.temp = parseFloat(inp.value);
+            markDirty();
+          };
+          
+          const inp = document.createElement('input');
+          inp.type = 'number';
+          inp.min = 5;
+          inp.max = 30;
+          inp.step = 0.5;
+          inp.value = rt.temp;
+          inp.onchange = () => {
+            rt.temp = parseFloat(inp.value);
+            markDirty();
+          };
+          
+          const plus = document.createElement('button');
+          plus.textContent = '+';
+          plus.onclick = () => {
+            inp.value = Math.min(30, parseFloat(inp.value) + 0.5).toFixed(1);
+            rt.temp = parseFloat(inp.value);
+            markDirty();
+          };
+          
+          div.append(label, minus, inp, plus);
+          box.appendChild(div);
+        }
+      }
+      
+      zonesDiv.appendChild(box);
+    }
+  }
+  
+  // === DIALOG ===
+  function openDialog(mode, day, segment) {
+    // Populate day selects
+    dDay.innerHTML = '';
+    dEndDay.innerHTML = '';
+    for (let i = 0; i < 7; i++) {
+      const opt1 = document.createElement('option');
+      opt1.value = i;
+      opt1.textContent = DAY_FULL[i];
+      dDay.appendChild(opt1);
+      
+      const opt2 = document.createElement('option');
+      opt2.value = i;
+      opt2.textContent = DAY[i];
+      dEndDay.appendChild(opt2);
+    }
+    
+    // Populate zone select
+    dZone.innerHTML = '';
+    for (const zone of currentSchedule.zones) {
+      const opt = document.createElement('option');
+      opt.value = zone.id;
+      opt.textContent = zone.name;
+      dZone.appendChild(opt);
+    }
+    
+    // Set values
+    dDay.value = day;
+    dEndDay.value = day;
+    
+    if (mode === 'edit' && segment) {
+      dStart.value = fmt(segment.start);
+      dEnd.value = fmt(segment.end);
+      dZone.value = segment.zone_id;
+      document.getElementById('dlgTitle').textContent = 'Éditer créneau';
+    } else {
+      dStart.value = '08:00';
+      dEnd.value = '22:00';
+      dZone.value = (currentSchedule.zones[0] && currentSchedule.zones[0].id !== undefined ? currentSchedule.zones[0].id : 0);
+      document.getElementById('dlgTitle').textContent = 'Ajouter créneau';
+    }
+    
+    editing = { mode, day, segment };
+    dlg.showModal();
+  }
+  
+  dlg.addEventListener('close', () => {
+    if (dlg.returnValue !== 'default') return;
+    
+    const day = parseInt(dDay.value);
+    const endDay = parseInt(dEndDay.value);
+    const [sh, sm] = dStart.value.split(':').map(Number);
+    const [eh, em] = dEnd.value.split(':').map(Number);
+    const zoneId = parseInt(dZone.value);
+    
+    const startOffset = day * 1440 + sh * 60 + sm;
+    let endOffset = endDay * 1440 + eh * 60 + em;
+    if (endOffset === 0) endOffset = 1440; // Midnight = end of day
+    if (endOffset <= startOffset) endOffset += 7 * 1440; // Wrap to next week
+    
+    // Apply the slot change
+    applySlotChange(startOffset, endOffset % (7 * 1440), zoneId);
+    markTimetableDirty();
+    render();
+  });
+  
+  function applySlotChange(startOffset, endOffset, zoneId) {
+    // Use the same logic as Node-RED code that works
+    let tt = [...currentSchedule.timetable].sort((a, b) => a.m_offset - b.m_offset);
+    
+    // Get zone at end position BEFORE filtering (important!)
+    const zoneAfter = getZoneAt(tt, endOffset);
+    
+    
+    // Handle week wrap-around
+    if (endOffset > startOffset) {
+      // Normal case: remove slots strictly between start and end
+      tt = tt.filter(s => !(s.m_offset > startOffset && s.m_offset < endOffset));
+    } else {
+      // Week wrap: remove slots from start to end of week AND from start of week to end
+      tt = tt.filter(s => !((s.m_offset > startOffset && s.m_offset < 7*1440) || (s.m_offset >= 0 && s.m_offset < endOffset)));
+    }
+    
+    // Add start slot
+    tt.push({ zone_id: zoneId, m_offset: startOffset % (7 * 1440) });
+    
+    // Add end slot (restore previous zone)
+    tt.push({ zone_id: zoneAfter, m_offset: endOffset % (7 * 1440) });
+    
+    // Sort
+    tt.sort((a, b) => a.m_offset - b.m_offset);
+    
+    // Merge consecutive same-zone (exactly like Node-RED)
+    let merged = [];
+    for (let i = 0; i < tt.length; i++) {
+      if (merged.length && merged[merged.length - 1].zone_id === tt[i].zone_id) continue;
+      merged.push(tt[i]);
+    }
+    
+    currentSchedule.timetable = merged;
+    
+    // IMPORTANT: Normalize the timetable (ensure it starts at 0 and covers all days)
+    normalizeTimetable();
+  }
+  
+  function normalizeTimetable() {
+    // Ensure the timetable:
+    // 1. Starts with a slot at m_offset = 0
+    // 2. Has no duplicate m_offsets
+    // 3. Has no consecutive same-zone entries
+    let tt = [...currentSchedule.timetable].sort((a, b) => a.m_offset - b.m_offset);
+    
+    if (tt.length === 0) return;
+    
+    // Ensure first slot is at 0
+    if (tt[0].m_offset !== 0) {
+      // Find what zone should be at the start (last zone of week wraps around)
+      const lastZone = tt[tt.length - 1].zone_id;
+      tt.unshift({ zone_id: lastZone, m_offset: 0 });
+    }
+    
+    // Remove any entries with m_offset >= 10080 (7 * 1440)
+    tt = tt.filter(s => s.m_offset < 10080);
+    
+    // Merge consecutive same-zone entries
+    const merged = [];
+    for (const slot of tt) {
+      if (merged.length && merged[merged.length - 1].zone_id === slot.zone_id) {
+        continue;
+      }
+      merged.push(slot);
+    }
+    
+    currentSchedule.timetable = merged;
+  }
+  
+  function getZoneAt(tt, offset) {
+    const sorted = [...tt].sort((a, b) => a.m_offset - b.m_offset);
+    const before = sorted.filter(s => s.m_offset <= offset);
+    if (before.length === 0) {
+      // No slot before this offset, use the last slot (week wraps around)
+      return sorted.length > 0 ? sorted[sorted.length - 1].zone_id : 0;
+    }
+    return before[before.length - 1].zone_id;
+  }
+  
+  // === DIRTY STATE ===
+  let timetableDirty = false;
+  
+  function markDirty() {
+    dirty = true;
+    saveBtn.disabled = false;
+  }
+  
+  function markTimetableDirty() {
+    timetableDirty = true;
+    dirty = true;
+    saveBtn.disabled = false;
+  }
+  
+  // === SAVE ===
+  // Track original values to detect changes
+  let originalTemps = {};
+  let originalTimetable = [];
+  
+  function captureOriginalTemps() {
+    originalTemps = {};
+    originalTimetable = [];
+    if (!currentSchedule) return;
+    
+    for (const zone of currentSchedule.zones) {
+      for (const rt of zone.rooms_temp) {
+        const key = `${zone.name}|${rt.room_id}`;
+        originalTemps[key] = rt.temp;
+      }
+    }
+    
+    // Deep copy timetable
+    originalTimetable = currentSchedule.timetable.map(t => ({...t}));
+  }
+  
+  function getChangedTemps() {
+    const changes = [];
+    if (!currentSchedule) return changes;
+    
+    for (const zone of currentSchedule.zones) {
+      for (const rt of zone.rooms_temp) {
+        const key = `${zone.name}|${rt.room_id}`;
+        if (originalTemps[key] !== rt.temp) {
+          changes.push({
+            schedule_id: currentSchedule.schedule_id,  // Use ID instead of name
+            schedule_name: currentSchedule.name,       // Keep for logging/display
+            zone_name: zone.name,
+            room_id: rt.room_id,
+            room_name: getRoomName(rt.room_id),
+            temperature: rt.temp
+          });
+        }
+      }
+    }
+    
+    return changes;
+  }
+  
+  function getTimetableChanges() {
+    if (!currentSchedule || !timetableDirty) return [];
+    
+    // Compare current timetable with original
+    const current = currentSchedule.timetable;
+    const original = originalTimetable;
+    
+    // Simple comparison - if anything changed, we need to resync
+    const currentStr = JSON.stringify(current.map(t => ({zone_id: t.zone_id, m_offset: t.m_offset})).sort((a,b) => a.m_offset - b.m_offset));
+    const originalStr = JSON.stringify(original.map(t => ({zone_id: t.zone_id, m_offset: t.m_offset})).sort((a,b) => a.m_offset - b.m_offset));
+    
+    if (currentStr === originalStr) return [];
+    
+    // Return the full timetable for sync
+    return current;
+  }
+  
+  saveBtn.onclick = async () => {
+    if (!dirty || !currentSchedule) return;
+    
+    saveBtn.disabled = true;
+    saveBtn.textContent = '⏳ Enregistrement...';
+    
+    try {
+      // Check if timetable changed
+      const timetableChanged = timetableDirty && getTimetableChanges().length > 0;
+      const tempChanges = getChangedTemps();
+      
+      
+      if (tempChanges.length === 0 && !timetableChanged) {
+        showFeedback('ℹ️ Aucune modification détectée');
+        dirty = false;
+        timetableDirty = false;
+        saveBtn.textContent = '💾 Enregistrer';
+        saveBtn.disabled = true;
+        return;
+      }
+      
+      let saved = 0;
+      let errors = [];
+      
+      // Save timetable changes via sync_schedule service
+      if (timetableChanged) {
+        showFeedback('💾 Synchronisation du planning...', 2000);
+        
+        try {
+          const timetableJson = JSON.stringify(
+            currentSchedule.timetable.map(t => ({
+              zone_id: t.zone_id,
+              m_offset: t.m_offset
+            }))
+          );
+          
+          
+          await callService('intuis_connect', 'sync_schedule', {
+            schedule_id: currentSchedule.schedule_id,  // Use ID instead of name!
+            timetable: timetableJson
+          });
+          
+          saved++;
+          timetableDirty = false;
+          showFeedback('✅ Planning synchronisé!', 1500);
+          await new Promise(r => setTimeout(r, 1000));
+          
+        } catch (err) {
+          console.error('sync_schedule failed:', err);
+          errors.push(`Planning: ${err.message}`);
+          showFeedback(`❌ Erreur planning: ${err.message}`, 3000);
+        }
+      }
+      
+      // Save temperature changes
+      if (tempChanges.length > 0) {
+        showFeedback('💾 Sauvegarde des températures...', 2000);
+        
+        for (const change of tempChanges) {
+          try {
+            await callService('intuis_connect', 'set_zone_temperature', {
+              schedule_id: change.schedule_id,  // Use ID instead of name!
+              zone_name: change.zone_name,
+              room_name: change.room_name,
+              temperature: change.temperature
+            });
+            saved++;
+            showFeedback(`💾 ${change.room_name}: ${change.temperature}°C`, 800);
+            await new Promise(r => setTimeout(r, 500));
+          } catch (err) {
+            console.error('set_zone_temperature failed:', change, err);
+            errors.push(`${change.room_name}: ${err.message}`);
+          }
+        }
+      }
+      
+      // Final feedback
+      if (errors.length === 0) {
+        showFeedback(`✅ Tout enregistré!`, 3000);
+        dirty = false;
+        captureOriginalTemps();
+        
+        // Refresh after delay
+        setTimeout(async () => {
+          try {
+            await callService('intuis_connect', 'refresh_schedules', {});
+          } catch (e) {}
+        }, 2000);
+      } else {
+        showFeedback(`⚠️ Erreurs: ${errors.join(', ')}`, 5000);
+      }
+      
+    } catch (err) {
+      console.error('Save error:', err);
+      showFeedback('❌ Erreur: ' + err.message, 5000);
+    }
+    
+    saveBtn.textContent = '💾 Enregistrer';
+    saveBtn.disabled = !dirty;
+  };
+  
+  // === REFRESH ===
+  refreshBtn.onclick = async () => {
+    refreshBtn.disabled = true;
+    showFeedback('🔄 Rafraîchissement...');
+    
+    try {
+      await callService('intuis_connect', 'refresh_schedules', {});
+      await new Promise(r => setTimeout(r, 2000));
+      
+      loadSchedulesFromStates();
+      populatePlannerSelect();
+      render();
+      
+      showFeedback('✅ Données rafraîchies');
+    } catch (err) {
+      showFeedback('❌ Erreur: ' + err.message, 5000);
+    }
+    
+    refreshBtn.disabled = false;
+  };
+  
+  // === SCHEDULE CHANGE ===
+  sel.onchange = () => {
+    if (dirty) {
+      if (!confirm('Des modifications non enregistrées seront perdues. Continuer ?')) {
+        sel.value = currentSchedule.entity_id;
+        return;
+      }
+    }
+    dirty = false;
+    timetableDirty = false;
+    saveBtn.disabled = true;
+    render();
+    captureOriginalTemps();
+  };
+  
+  // === AWAY/HG CHANGE ===
+  awayInput.onchange = () => {
+    if (currentSchedule) {
+      currentSchedule.away_temp = parseFloat(awayInput.value);
+      markDirty();
+    }
+  };
+  
+  hgInput.onchange = () => {
+    if (currentSchedule) {
+      currentSchedule.hg_temp = parseFloat(hgInput.value);
+      markDirty();
+    }
+  };
+  
+  // === INIT ===
+  async function initApp() {
+    
+    if ((hass && hass.states)) {
+      // Specifically look for schedule sensors
+      const scheduleEntities = Object.keys(hass.states).filter(k => 
+        k.includes('schedule') && k.includes('intuis') && !k.includes('optimization')
+      );
+      scheduleEntities.forEach(e => {
+        const state = hass.states[e];
+      });
+    }
+    
+    loadSchedulesFromStates();
+    
+    if (schedules.length === 0) {
+      loading.style.display = 'none';
+      app.innerHTML = '<p style="color:orange; text-align:center; padding:40px;">⚠️ Aucun planning Intuis trouvé.<br>Vérifiez que l\'intégration est configurée.<br><br><small>Voir la console (F12) pour le debug</small></p>';
+      app.style.display = 'block';
+      return;
+    }
+    
+    populatePlannerSelect();
+    render();
+    
+    loading.style.display = 'none';
+    app.style.display = 'block';
+    
+    // Capture original temps for change detection
+    captureOriginalTemps();
+  }
+  
+  // ── Startup ───────────────────────────────────────────────────────────────
+  // Three scenarios:
+  //   A) Same-origin HA iframe → hass object is accessible directly (ideal)
+  //   B) Cross-origin / post-restart: in HA but hass not accessible yet
+  //      → use REST API with the token the user already entered this session
+  //   C) Standalone browser access → need URL + token from user
+
+  const inIframe = isInHaIframe();
+
+  if (inIframe) {
+    // We're inside HA. Try direct hass access — wait up to 45s so a post-restart
+    // WebSocket reconnect has time to complete. The countdown is shown to the user.
+    loading.querySelector('p').textContent = 'Connexion à Home Assistant…';
+    const connected = await waitForHassIframe(45000);
+
+    if (connected) {
+      initApp();
+    } else {
+      // Still nothing after 45s — probably a config problem. Show dialog if we have
+      // saved credentials, otherwise show a clear error message.
+      if (haUrl && haToken) {
+        loading.querySelector('p').textContent = 'Connexion via API REST…';
+        const states = await fetchStatesViaREST();
+        if (states) {
+          hass = { states: states, callService: callServiceREST };
+          initApp();
+        } else {
+          showConfigDialog();
+        }
+      } else {
+        loading.style.display = 'none';
+        app.innerHTML = '<p style="color:orange; text-align:center; padding:40px;">⚠️ Impossible de se connecter à Home Assistant après 45 secondes.<br>Vérifiez que HA est démarré et rafraîchissez la page.</p>';
+        app.style.display = 'block';
+      }
+    }
+  } else {
+    // Standalone browser: no point waiting for hass.
+    if (haUrl && haToken) {
+      loading.querySelector('p').textContent = 'Connexion via API REST...';
+      const states = await fetchStatesViaREST();
+      if (states) {
+        hass = { states: states, callService: callServiceREST };
+        initApp();
+      } else {
+        showConfigDialog();
+      }
+    } else {
+      showConfigDialog();
+    }
+  }
+  
+})();
+</script>
+</body>
+</html>

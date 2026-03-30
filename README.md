@@ -14,7 +14,10 @@
 | **Climate Control** | Full thermostat control per room with Auto/Heat/Off modes |
 | **Presets** | Schedule, Away, and Boost modes with configurable durations |
 | **Energy Monitoring** | Daily kWh consumption per room with historical import |
+| **Hourly Energy Statistics** | Accurate per-room kWh injected into HA Long-Term Statistics |
+| **Energy Cost Tracking** | Automatic cost calculation per room, visible in the Energy Dashboard |
 | **Schedule Management** | View, switch, and edit heating schedules |
+| **Intuis Planning** | Standalone visual web interface for schedule editing *(new)* |
 | **Calendar Integration** | Visualize weekly schedules as calendar events |
 | **Smart Detection** | Presence detection, open window detection, heating anticipation |
 | **Indefinite Override** | Keep manual temperatures active indefinitely |
@@ -57,7 +60,8 @@
 | **Sensor** | `sensor.<room>_temperature` | Current room temperature (°C) |
 | **Sensor** | `sensor.<room>_target_temperature` | Current setpoint (°C) |
 | **Sensor** | `sensor.<room>_scheduled_temperature` | Temperature according to schedule |
-| **Sensor** | `sensor.<room>_energy` | Daily energy consumption (kWh) |
+| **Sensor** | `sensor.<room>_energy` | Hourly/daily energy consumption (kWh) — feeds the Energy Dashboard |
+| **Sensor** | `sensor.<room>_cost` | Cumulative energy cost — feeds the Energy Dashboard |
 | **Sensor** | `sensor.<room>_heating_minutes` | Heating time today |
 | **Sensor** | `sensor.<room>_override_expires` | When manual override ends |
 | **Binary Sensor** | `binary_sensor.<room>_presence` | Motion/presence detected |
@@ -140,6 +144,141 @@ Force refresh all schedule data from the Intuis API.
 service: intuis_connect.refresh_schedules
 ```
 
+### `intuis_connect.sync_schedule`
+
+Push a full timetable to the Intuis API (used internally by the planning interface).
+
+```yaml
+service: intuis_connect.sync_schedule
+data:
+  schedule_name: "Comfort"
+  timetable: [...]
+```
+
+### `intuis_connect.set_zone_temperature`
+
+Set the temperature of a zone for a specific room.
+
+```yaml
+service: intuis_connect.set_zone_temperature
+data:
+  room_name: "Living Room"
+  zone_name: "Comfort"
+  temperature: 20.5
+```
+
+### `intuis_connect.import_energy_history`
+
+Import historical energy data from the Intuis cloud into HA Long-Term Statistics.
+
+```yaml
+service: intuis_connect.import_energy_history
+data:
+  days: 365
+  granularity: "1hour"   # or "1day"
+```
+
+### `intuis_connect.recalculate_cost_history`
+
+Recalculate energy cost statistics from existing kWh data, useful after changing the electricity price.
+
+```yaml
+service: intuis_connect.recalculate_cost_history
+data:
+  days: 365
+```
+
+---
+
+## Energy Monitoring
+
+### Hourly Statistics
+
+The integration periodically fetches past hourly consumption data from the Intuis API and injects it directly into **Home Assistant Long-Term Statistics** via `async_import_statistics`. This makes per-room energy consumption available in the **Energy Dashboard** with accurate historical data.
+
+- Statistics are updated at a configurable interval (default: every 2 hours)
+- The Intuis API typically has a 2–4 hour delay before data is finalized
+- Data is stored as cumulative kWh sums, compatible with the HA Energy Dashboard
+
+### Energy Cost Tracking
+
+When enabled, the integration calculates the cost of each room's energy consumption and writes it to a dedicated `sensor.<room>_cost` entity, also visible in the Energy Dashboard.
+
+Two pricing modes are available:
+- **Fixed price** — a constant €/kWh rate configured in the integration options
+- **HA Entity** — reads the current price from any HA sensor (e.g. Octopus, Amber, or a template sensor)
+
+To activate, go to **Settings → Devices & Services → Intuis Connect → Configure → Energy Cost**.
+
+After changing the electricity price, use the `recalculate_cost_history` service to rewrite historical cost statistics.
+
+### Historical Import
+
+Use the `import_energy_history` service or enable it at setup time to backfill the Energy Dashboard with up to 730 days of historical data.
+
+```yaml
+service: intuis_connect.import_energy_history
+data:
+  days: 365
+  granularity: "1hour"
+```
+
+---
+
+## Intuis Planning — Visual Web Interface *(new)*
+
+`intuis_planning.html` is a standalone single-file web application for visually editing your Intuis heating schedules.
+
+### Usage Modes
+
+**Embedded in Home Assistant** — place the file in `/config/www/` and add it to your dashboard:
+
+```yaml
+type: iframe
+url: /local/intuis_planning.html
+aspect_ratio: 100%
+```
+
+When loaded inside the HA iframe, the page accesses the `hass` object directly — no token required.
+
+**Standalone browser access** — open the file in any browser. A configuration dialog prompts for:
+- Your Home Assistant URL (e.g. `http://homeassistant.local:8123`)
+- A long-lived access token (created under **Profile → Long-Lived Access Tokens**)
+- An optional *Remember token* checkbox (stores credentials in `localStorage`; leave unchecked on shared computers)
+
+In standalone mode, all communication goes through the HA REST API.
+
+### Features
+
+- **Full week grid** — each day is a horizontal bar with colored segments per zone; hour markers every 2 hours
+- **Click to edit** — clicking any segment opens a dialog to change start time, end time (with next-day option), and zone
+- **Add slots** — a `+` button on each day row adds a new time slot
+- **Zone temperature editing** — zone cards below the grid allow per-room temperature adjustment with `+` / `−` buttons
+- **Away & frost-guard temperatures** — editable directly from the top controls
+- **Multi-schedule support** — dropdown lists all available schedules; the active one is marked with ✓
+- **Change detection** — Save is only enabled when changes exist; switching schedule without saving prompts a confirmation
+- **Save** — timetable changes pushed via `intuis_connect.sync_schedule`; temperature changes via `intuis_connect.set_zone_temperature` (one call per changed room); `refresh_schedules` triggered automatically after saving
+- **Refresh** — 🔄 button triggers `refresh_schedules` and reloads state from HA
+- **Light / Dark mode** — follows OS preference via `prefers-color-scheme`
+- **Firefox / ES5 compatible** — no optional chaining, nullish coalescing, or template literals; works in HA's sandboxed iframe on Firefox
+- **Post-restart resilience** — when embedded after a HA restart, waits up to 45 seconds for WebSocket reconnection with a live countdown; falls back to REST mode if unavailable
+
+### Installation
+
+Copy `intuis_planning.html` to your HA config folder:
+
+```
+/config/www/intuis_planning.html
+```
+
+Then add a panel in your dashboard:
+
+```yaml
+type: iframe
+url: /local/intuis_planning.html
+aspect_ratio: 100%
+```
+
 ---
 
 ## Configuration Options
@@ -166,29 +305,25 @@ Accessible via **Settings → Devices & Services → Intuis Connect → Configur
 | Option | Default | Description |
 |--------|---------|-------------|
 | Energy Scale | 1 day | Granularity: 5min, 30min, 1hour, or 1day |
+| Hourly Statistics | Off | Enable periodic injection of hourly kWh into LTS |
+| Hourly Stats Interval | 2 hours | How often to fetch and inject hourly stats |
 | Import History | Off | Import historical energy data on setup |
 | History Days | 30 | Days of history to import (7, 30, 90, 365) |
+
+### Energy Cost
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| Enable Cost Calculation | Off | Calculate and track energy cost per room |
+| Pricing Mode | Fixed | `fixed` (€/kWh) or `entity` (HA sensor) |
+| Fixed Price | 0.25 €/kWh | Rate used in fixed pricing mode |
+| Price Entity | — | HA sensor providing current price in €/kWh |
 
 ### Special Modes
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | Indefinite Mode | Off | Auto-reapply overrides before they expire |
-
----
-
-## Energy Monitoring
-
-The integration tracks energy consumption per room:
-
-- **Daily consumption** in kWh
-- **Heating minutes** per day
-- **Historical import** available (up to 365 days)
-- **Multiple tariff support** (aggregates all EJP tariffs)
-
-Energy data is fetched based on your configured scale:
-- `1day`: Cached daily totals (fetched after 2 AM)
-- `5min/30min/1hour`: Real-time tracking
 
 ---
 
@@ -203,13 +338,13 @@ Energy data is fetched based on your configured scale:
 
 ### Editing Schedules
 
-Use the `set_schedule_slot` service or install the [Intuis Schedule Card](https://github.com/antoine-pyre/intuis-schedule-card) for visual editing.
+Use the **Intuis Planning** web interface (see above), the `set_schedule_slot` service, or install the [Intuis Schedule Card](https://github.com/antoine-pyre/intuis-schedule-card) for visual editing.
 
 ### Schedule Structure
 
 Schedules contain **zones** (Comfort, Night, Eco, etc.) with:
 - Temperature settings per room
-- Weekly timetable (minute-precision, 0-10080 minutes from Monday 00:00)
+- Weekly timetable (minute-precision, 0–10080 minutes from Monday 00:00)
 
 ---
 
@@ -269,7 +404,15 @@ entities:
 hours_to_show: 168
 ```
 
-### Visual Schedule Editor
+### Visual Schedule Editor (Planning Interface)
+
+```yaml
+type: iframe
+url: /local/intuis_planning.html
+aspect_ratio: 100%
+```
+
+### Visual Schedule Editor (Card)
 
 Install the companion [Intuis Schedule Card](https://github.com/antoine-pyre/intuis-schedule-card):
 
@@ -308,9 +451,19 @@ When enabled, the integration automatically re-applies manual overrides before t
 - Check that rooms have associated bridge IDs
 - Try switching to a different energy scale
 
+### Energy Dashboard shows no data or negative values
+- Enable **Hourly Statistics** in the integration options
+- Use `import_energy_history` to backfill historical data
+- If cost values look wrong after a price change, run `recalculate_cost_history`
+
 ### Schedule changes not appearing
 - Click the refresh button or call `refresh_schedules`
 - Changes made in the Intuis app may take 2 minutes to sync
+
+### Intuis Planning not loading
+- Ensure `intuis_planning.html` is in `/config/www/`
+- In standalone mode, verify your HA URL and long-lived access token
+- After a HA restart, the page waits up to 45 seconds before falling back to REST mode
 
 ### Authentication errors
 - Re-authenticate by removing and re-adding the integration
@@ -324,6 +477,7 @@ When enabled, the integration automatically re-applies manual overrides before t
 - **API**: Uses Netatmo cloud endpoints
 - **Multi-cluster**: Automatic failover between API endpoints
 - **Token refresh**: Automatic with 60-second buffer
+- **Statistics backend**: `async_import_statistics` with `source="recorder"` (idempotent UPSERT — no conflicts with HA's internal recorder)
 
 ---
 

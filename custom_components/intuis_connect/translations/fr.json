@@ -50,9 +50,31 @@
           "name": "Jours a importer",
           "description": "Nombre de jours d'historique a importer (1-730). Par defaut 365 jours."
         },
+        "granularity": {
+          "name": "Granularité",
+          "description": "Choisir entre données horaires (recommandé pour le tableau de bord Énergie) ou journalières (import plus rapide)."
+        },
+        "clear_existing": {
+          "name": "Effacer les statistiques existantes",
+          "description": "Supprime TOUTES les statistiques d'énergie existantes avant l'import. Requis lors du changement de granularité journalière vers horaire pour éviter les incohérences."
+        },
         "room_name": {
           "name": "Piece",
           "description": "Importer uniquement cette piece. Laisser vide pour toutes les pieces."
+        }
+      }
+    },
+    "recalculate_cost_history": {
+      "name": "Recalculer l'historique des coûts",
+      "description": "Recalcule les statistiques de coût énergétique à partir des statistiques kWh existantes et du prix configuré. Utile après un changement de prix ou l'activation initiale du calcul.",
+      "fields": {
+        "days": {
+          "name": "Jours",
+          "description": "Nombre de jours d'historique à recalculer (1-730). Par défaut 365 jours."
+        },
+        "room_name": {
+          "name": "Pièce",
+          "description": "Recalculer uniquement cette pièce. Laisser vide pour toutes les pièces."
         }
       }
     }
@@ -129,6 +151,22 @@
       "reauth_confirm": {
         "title": "Reconnexion au compte Intuis",
         "description": "Session expirée pour {username}. Veuillez entrer votre mot de passe."
+      },
+      "energy_cost": {
+        "title": "Calcul du coût énergétique",
+        "description": "Calculez automatiquement le coût de votre consommation et écrivez les statistiques dans les capteurs energy_cost de chaque pièce.",
+        "data": {
+          "energy_cost_enabled": "Activer le calcul du coût",
+          "energy_price_mode": "Mode de tarif",
+          "energy_fixed_price": "Prix fixe (monnaie locale/kWh)",
+          "energy_price_entity": "Entité de prix dynamique"
+        },
+        "data_description": {
+          "energy_cost_enabled": "Active le calcul automatique du coût basé sur la consommation horaire.",
+          "energy_price_mode": "**Prix fixe** : utilisez un tarif constant configuré ici.\n**Entité HA** : lisez le prix depuis un capteur (Octopus, Amber, template...).",
+          "energy_fixed_price": "Tarif en monnaie locale/kWh utilisé pour le calcul si le mode est « Prix fixe ».",
+          "energy_price_entity": "Entité capteur fournissant le prix en /kWh (mode entité uniquement)."
+        }
       }
     },
     "error": {
@@ -185,18 +223,46 @@
         }
       },
       "rate_limit": {
-        "title": "Limitation de l'API",
-        "description": "Configurez la gestion des limites de l'API (erreurs 429).\n\nCes paramètres aident à éviter d'être bloqué par l'API Intuis lors d'une utilisation intensive.",
+        "title": "Statistiques horaires et limitation API",
+        "description": "Configurez la récupération des statistiques horaires et la gestion des limites de l'API.\n\n**Statistiques horaires** : L'API Intuis a un décalage de 2-4h pour les données de consommation. Cette option récupère périodiquement les données horaires passées et les injecte dans les statistiques Home Assistant pour un suivi précis.",
         "data": {
+          "hourly_stats_enabled": "Activer les statistiques horaires",
+          "hourly_stats_interval": "Intervalle de mise à jour",
           "rate_limit_delay": "Délai initial de réessai",
           "circuit_breaker_threshold": "Seuil du disjoncteur",
           "max_update_interval": "Intervalle de mise à jour maximum"
         },
         "data_description": {
+          "hourly_stats_enabled": "Active la récupération périodique des données de consommation horaires pour un suivi précis dans le tableau de bord Énergie.",
+          "hourly_stats_interval": "Fréquence de mise à jour des statistiques horaires. 2 heures est recommandé pour éviter les limites de l'API.",
           "rate_limit_delay": "Temps d'attente avant de réessayer après une erreur de limitation.",
           "circuit_breaker_threshold": "Nombre d'erreurs de limitation consécutives avant de suspendre toutes les requêtes.",
           "max_update_interval": "Intervalle maximum entre les mises à jour quand l'API est limitée. Normalement interroge toutes les 2 minutes."
         }
+      },
+      "energy_cost": {
+        "title": "Calcul du coût énergétique",
+        "description": "Configurez le calcul automatique du coût d'énergie.",
+        "data": {
+          "energy_cost_enabled": "Activer le calcul du coût",
+          "energy_price_mode": "Mode de tarif",
+          "energy_fixed_price": "Prix fixe (monnaie locale/kWh)",
+          "energy_price_entity": "Entité de prix dynamique"
+        },
+        "data_description": {
+          "energy_cost_enabled": "Active le calcul automatique du coût basé sur la consommation horaire.",
+          "energy_price_mode": "**Prix fixe** : utilisez un tarif constant configuré ici.\n**Entité HA** : lisez le prix depuis un capteur (Octopus, Amber, template...).",
+          "energy_fixed_price": "Tarif en monnaie locale/kWh. Après un changement de prix, lancez le service « Recalculer l'historique des coûts » pour réécrire l'historique.",
+          "energy_price_entity": "Entité capteur fournissant le prix en /kWh (mode entité uniquement). Après un changement de prix, lancez le service « Recalculer l'historique des coûts » pour réécrire l'historique."
+        }
+      }
+    }
+  },
+  "selector": {
+    "energy_price_mode": {
+      "options": {
+        "fixed": "Prix fixe (€/kWh)",
+        "entity": "Entité Home Assistant (prix dynamique)"
       }
     }
   }

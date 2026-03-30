@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from homeassistant.helpers.update_coordinator import UpdateFailed
+
 from .entity.intuis_home import IntuisHome
 from .entity.intuis_home_config import IntuisHomeConfig
 from .intuis_api.api import IntuisAPI, APIError, CannotConnect, RateLimitError
@@ -239,7 +241,13 @@ class IntuisData:
         if overrides_changed and self._save_overrides:
             await self._save_overrides()
 
-        config = IntuisHomeConfig.from_dict(await self._api.async_get_config())
+        try:
+            config = IntuisHomeConfig.from_dict(await self._api.async_get_config())
+        except ValueError as err:
+            _LOGGER.warning(
+                "API returned empty config (no modules), skipping this cycle: %s", err
+            )
+            raise UpdateFailed(f"Transient API config error: {err}") from err
 
         # Fetch energy data (daily kWh per room)
         await self._fetch_energy_data(data_by_room, now)
@@ -286,27 +294,15 @@ class IntuisData:
         reset_hour = options.get(CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR)
         is_realtime = scale != "1day"
 
-        # Calculate timestamps using the home's timezone
-        # This ensures day boundaries align with the user's local time
-        try:
-            home_tz = ZoneInfo(self._api.home_timezone)
-        except (KeyError, ValueError):
-            _LOGGER.warning(
-                "Invalid home timezone '%s', falling back to UTC",
-                self._api.home_timezone,
-            )
-            home_tz = timezone.utc
-
-        now_local = datetime.now(home_tz)
-        today_iso = now_local.date().isoformat()
-
         # For daily scale, only fetch after reset hour to ensure data is available
-        if not is_realtime and now_local.hour < reset_hour:
+        if not is_realtime and now.hour < reset_hour:
             _LOGGER.debug(
                 "Skipping energy fetch before reset hour %02d:00 (daily mode)",
                 reset_hour,
             )
             return
+
+        today_iso = now.date().isoformat()
 
         # For daily scale, use caching. For real-time scales, always fetch fresh data.
         if not is_realtime and self._energy_cache.get("_date") == today_iso:
@@ -327,25 +323,22 @@ class IntuisData:
             _LOGGER.debug("No rooms with bridge_id found, skipping energy fetch")
             return
 
+        # Calculate epoch timestamps using the HOME's timezone (from IntuisHome.timezone),
+        # not the HA server timezone. These can differ if the HA server runs in UTC or a
+        # different locale from the physical installation.
+        _tz = getattr(self._intuis_home, "timezone", None)
+        home_tz_str = _tz if isinstance(_tz, str) and _tz else "Europe/Paris"
+        home_tz = ZoneInfo(home_tz_str)
+        now_local = now.astimezone(home_tz)
         today_start = datetime.combine(now_local.date(), datetime.min.time(), tzinfo=home_tz)
-        today_end = datetime.combine(now_local.date(), datetime.max.time(), tzinfo=home_tz)
-
         if is_realtime:
-            date_end = int(now_local.timestamp())
-            end_display = now_local.isoformat()
+            date_end = int(now.timestamp())
         else:
+            today_end = datetime.combine(now_local.date(), datetime.max.time(), tzinfo=home_tz)
             date_end = int(today_end.timestamp())
-            end_display = today_end.isoformat()
         date_begin = int(today_start.timestamp())
 
-        _LOGGER.debug(
-            "Fetching energy data for %d rooms (scale=%s, tz=%s, range=%s to %s)",
-            len(rooms_for_api),
-            scale,
-            home_tz,
-            today_start.isoformat(),
-            end_display,
-        )
+        _LOGGER.debug("Fetching energy data for %d rooms (scale=%s)", len(rooms_for_api), scale)
 
         try:
             energy_data = await self._api.async_get_energy_measures(
@@ -375,4 +368,4 @@ class IntuisData:
                 self._energy_cache[room_id] = kwh
             room.energy = kwh
 
-        _LOGGER.debug("Energy data fetched (scale=%s): %s", scale, {k: f"{v:.3f} kWh" for k, v in energy_data.items()})
+        _LOGGER.debug("Energy data fetched (scale=%s): %s", scale, {k: f"{v:.3f} Wh" for k, v in energy_data.items()})

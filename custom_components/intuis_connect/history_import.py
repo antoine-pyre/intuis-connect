@@ -30,7 +30,12 @@ from homeassistant.helpers.recorder import session_scope
 from homeassistant.helpers.storage import Store
 from sqlalchemy import delete, select, and_
 
-from .utils.const import DOMAIN
+from .utils.const import (
+    DOMAIN,
+    API_DATA_DELAY_HOURS,
+    MAX_DAYS_PER_HOURLY_REQUEST,
+    HISTORY_IMPORT_KEY,
+)
 from .intuis_api.api import RateLimitError, APIError, CannotConnect
 
 if TYPE_CHECKING:
@@ -210,22 +215,112 @@ async def _clear_statistics_in_range(
 
             return deleted
 
-    try:
-        deleted_count = await instance.async_add_executor_job(_do_clear)
-        if deleted_count > 0:
+    # Retry with backoff in case of database lock
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            deleted = await instance.async_add_executor_job(_do_clear)
+            if deleted > 0:
+                _LOGGER.debug(
+                    "Cleared %d statistics entries for %s in range",
+                    deleted,
+                    entity_id,
+                )
+            return deleted
+        except Exception as err:
+            if "database is locked" in str(err) and attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2  # 2s, 4s
+                _LOGGER.debug(
+                    "Database locked, retrying in %ds (attempt %d/%d)",
+                    wait_time, attempt + 1, max_retries
+                )
+                await asyncio.sleep(wait_time)
+            else:
+                _LOGGER.warning(
+                    "Failed to clear statistics for %s: %s",
+                    entity_id,
+                    err,
+                )
+                return 0
+    return 0
+
+
+async def _clear_all_statistics(
+    hass: HomeAssistant,
+    entity_id: str,
+) -> int:
+    """Clear ALL statistics for an entity (all time).
+
+    Use this when changing granularity (daily -> hourly) to avoid
+    sum discontinuity issues.
+
+    Args:
+        hass: Home Assistant instance.
+        entity_id: The statistic_id (entity_id) to clear.
+
+    Returns:
+        Number of statistics entries deleted.
+    """
+    instance = get_instance(hass)
+
+    def _do_clear() -> int:
+        with session_scope(session=instance.get_session()) as session:
+            # Get metadata_id for this entity
+            result = session.execute(
+                select(StatisticsMeta.id).where(
+                    StatisticsMeta.statistic_id == entity_id
+                )
+            ).scalar()
+
+            if not result:
+                _LOGGER.debug(
+                    "No statistics metadata found for %s, nothing to clear",
+                    entity_id,
+                )
+                return 0
+
+            metadata_id = result
+
+            # Delete ALL entries from Statistics (long-term) table
+            deleted = session.execute(
+                delete(Statistics).where(
+                    Statistics.metadata_id == metadata_id,
+                )
+            ).rowcount
+
+            # Also clear from StatisticsShortTerm table
+            session.execute(
+                delete(StatisticsShortTerm).where(
+                    StatisticsShortTerm.metadata_id == metadata_id,
+                )
+            )
+
             _LOGGER.info(
-                "Cleared %d existing statistics entries for %s in import range",
-                deleted_count,
+                "Cleared all %d statistics entries for %s",
+                deleted,
                 entity_id,
             )
-        return deleted_count
-    except Exception as err:
-        _LOGGER.warning(
-            "Failed to clear statistics for %s: %s",
-            entity_id,
-            err,
-        )
-        return 0
+
+            return deleted
+
+    # Retry with backoff in case of database lock
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            deleted = await instance.async_add_executor_job(_do_clear)
+            return deleted
+        except Exception as err:
+            if "database is locked" in str(err) and attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 3  # 3s, 6s, 9s, 12s
+                _LOGGER.debug(
+                    "Database locked, retrying in %ds (attempt %d/%d)",
+                    wait_time, attempt + 1, max_retries
+                )
+                await asyncio.sleep(wait_time)
+            else:
+                _LOGGER.error("Failed to clear statistics for %s: %s", entity_id, err)
+                return 0
+    return 0
 
 
 async def _fix_post_import_discontinuity(
@@ -394,10 +489,12 @@ async def async_import_energy_history(
     days: int = DEFAULT_HISTORY_DAYS,
     room_filter: str | None = None,
     home_id: str | None = None,
+    granularity: str = "hourly",
+    clear_existing: bool = False,
 ) -> dict:
     """Import historical energy data into Home Assistant statistics.
 
-    This function fetches daily energy consumption for the configured number
+    This function fetches energy consumption for the configured number
     of days and imports it as statistics for existing sensor entities.
 
     Args:
@@ -408,6 +505,8 @@ async def async_import_energy_history(
         days: Number of days of history to import (1-730).
         room_filter: Optional room name to import only that room.
         home_id: Home ID for building entity unique_ids.
+        granularity: "hourly" for hourly stats (recommended) or "daily" for daily stats.
+        clear_existing: If True, delete existing statistics before importing.
 
     Returns:
         Dict with import results: rooms_imported, total_energy, errors.
@@ -420,6 +519,19 @@ async def async_import_energy_history(
     manager._cancelled = False
     manager.status = "importing"
     manager.last_error = None
+    
+    # Signal to HourlyStatsUpdater that import is running, using hass.data to avoid globals
+    effective_home_id = home_id or intuis_home.id
+    if DOMAIN not in hass.data:
+        hass.data[DOMAIN] = {}
+    if HISTORY_IMPORT_KEY not in hass.data[DOMAIN]:
+        hass.data[DOMAIN][HISTORY_IMPORT_KEY] = {}
+    hass.data[DOMAIN][HISTORY_IMPORT_KEY][effective_home_id] = True
+    _LOGGER.info("History import started - HourlyStatsUpdater paused for home %s", effective_home_id)
+    
+    # Validate granularity
+    if granularity not in ("hourly", "daily"):
+        granularity = "hourly"
 
     # Clamp days to valid range and ensure integer
     days = int(max(1, min(days, MAX_HISTORY_DAYS)))
@@ -485,6 +597,39 @@ async def async_import_energy_history(
         "errors": [],
     }
 
+    # Collect midnight sums per entity to pass directly to hourly_stats.
+    # New format: by_day = {day_key: midnight_sum} for ALL days in the import window.
+    # This allows partial reimports (any N-day window) to anchor correctly.
+    # Legacy keys (base_kwh, sensor_base) kept for backward compatibility.
+    midnight_sums: dict[str, dict[str, float]] = {}
+
+    # Compute midnight timestamps for all days in the import window
+    _home_tz_str = getattr(intuis_home, "timezone", None) or "Europe/Paris"
+    from zoneinfo import ZoneInfo as _ZI
+    _home_tz = _ZI(_home_tz_str)
+    _now_local = datetime.now(_home_tz)
+    _today_midnight_local = _now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    _yesterday_midnight_local = _today_midnight_local - timedelta(days=1)
+
+    # Build lookup: day_key -> (utc_ts of stat ending AT midnight = midnight_utc - 1h)
+    # Import window spans `days` days back from today.
+    _midnight_ts_by_day: dict[str, int] = {}
+    for _d in range(0, days + 2):  # +2 for safety margin
+        _m_local = _today_midnight_local - timedelta(days=_d)
+        _m_utc_ts = int(_m_local.astimezone(timezone.utc).timestamp())
+        # HA stat whose hour ENDS at midnight: start = midnight_utc - 1h
+        _midnight_ts_by_day[_m_local.strftime("%Y-%m-%d")] = _m_utc_ts - 3600
+
+    # Legacy ts keys (kept for fallback logic below)
+    _yesterday_midnight_utc_ts = int(
+        _yesterday_midnight_local.astimezone(timezone.utc).timestamp()
+    )
+    _today_midnight_utc_ts = int(
+        _today_midnight_local.astimezone(timezone.utc).timestamp()
+    )
+    _base_kwh_stat_ts = _yesterday_midnight_utc_ts - 3600
+    _sensor_base_stat_ts = _today_midnight_utc_ts - 3600
+
     try:
         for room_info in rooms_to_import:
             if manager._cancelled:
@@ -511,26 +656,24 @@ async def async_import_energy_history(
                 tzinfo=timezone.utc
             )
 
-            # Get baseline sum from existing statistics BEFORE import period
-            # This ensures imported data continues from existing baseline
-            baseline_sum = await _get_baseline_sum(
-                hass, entity_id, room_name, import_start_time
-            )
-
-            # Clear ALL existing statistics within the import range
-            # This removes both import entries (at 00:00 UTC) and live sensor
-            # entries (at various hours) to prevent coexisting conflicting data
-            cleared_count = await _clear_statistics_in_range(
-                hass, entity_id, import_start_time, now
-            )
-            if cleared_count > 0:
-                results["statistics_cleared"] = results.get(
-                    "statistics_cleared", 0
-                ) + cleared_count
+            # No clear needed: async_import_statistics with source="recorder" does
+            # UPSERT on (metadata_id, start_ts) - existing records are updated in place.
+            # Clearing before import caused "database is locked" errors because the
+            # recorder thread pool (DbWorker_0/1/2) would race: pending INSERTs from the
+            # previous room collide with the DELETE for the current room.
+            #
+            # For full imports (clear_existing=True): start cumulative sum from 0.
+            # For partial imports (clear_existing=False): continue from existing baseline.
+            if clear_existing:
+                baseline_sum = 0.0
+            else:
+                baseline_sum = await _get_baseline_sum(
+                    hass, entity_id, room_name, import_start_time
+                )
 
             cumulative_sum = baseline_sum
 
-            # Collect daily statistics using BULK retrieval (one API call per room)
+            # Collect hourly statistics using BULK retrieval (one API call per room)
             statistics: list[StatisticData] = []
             manager.days_imported = 0
 
@@ -550,66 +693,171 @@ async def async_import_energy_history(
 
             try:
                 # Calculate date range for bulk fetch
+                # Skip the current hour which may still be accumulating data
+                data_cutoff = now - timedelta(hours=API_DATA_DELAY_HOURS)
                 range_start = now - timedelta(days=days)
-                date_begin = int(datetime.combine(
+                
+                date_begin_dt = datetime.combine(
                     range_start.date(),
                     datetime.min.time(),
                     tzinfo=timezone.utc
-                ).timestamp())
-                date_end = int(now.timestamp())
-
-                _LOGGER.info(
-                    "Fetching %d days of energy data for %s in single API call",
-                    days,
-                    room_name,
                 )
+                date_end_dt = data_cutoff
 
-                # BULK fetch: one API call returns all daily values
-                daily_values = await api.async_get_room_energy_daily(
-                    room_id, date_begin, date_end
-                )
+                if granularity == "hourly":
+                    _LOGGER.info(
+                        "Fetching %d days of HOURLY energy data for %s (in chunks of %d days)",
+                        days,
+                        room_name,
+                        MAX_DAYS_PER_HOURLY_REQUEST,
+                    )
 
-                if not daily_values:
+                    # Split into chunks to avoid API 500 errors
+                    energy_values: list[tuple[int, float]] = []
+                    chunk_start = date_begin_dt
+                    chunk_num = 0
+                    
+                    while chunk_start < date_end_dt:
+                        if manager._cancelled:
+                            break
+                            
+                        chunk_end = min(
+                            chunk_start + timedelta(days=MAX_DAYS_PER_HOURLY_REQUEST),
+                            date_end_dt
+                        )
+                        
+                        chunk_begin_ts = int(chunk_start.timestamp())
+                        chunk_end_ts = int(chunk_end.timestamp())
+                        
+                        try:
+                            chunk_values = await api.async_get_room_energy_hourly(
+                                room_id, chunk_begin_ts, chunk_end_ts
+                            )
+                            if chunk_values:
+                                energy_values.extend(chunk_values)
+                                chunk_num += 1
+                                _LOGGER.debug(
+                                    "Chunk %d for %s: %d hourly values (%s to %s)",
+                                    chunk_num,
+                                    room_name,
+                                    len(chunk_values),
+                                    chunk_start.date(),
+                                    chunk_end.date(),
+                                )
+                        except Exception as chunk_err:
+                            _LOGGER.warning(
+                                "Chunk fetch failed for %s (%s to %s): %s",
+                                room_name,
+                                chunk_start.date(),
+                                chunk_end.date(),
+                                chunk_err,
+                            )
+                        
+                        # Move to next chunk
+                        chunk_start = chunk_end
+                        
+                        # Small delay between chunks
+                        if chunk_start < date_end_dt:
+                            await asyncio.sleep(API_DELAY_SECONDS)
+                    
+                    step_name = "hour"
+                    _LOGGER.info(
+                        "Fetched %d hourly values for %s in %d chunks",
+                        len(energy_values),
+                        room_name,
+                        chunk_num,
+                    )
+                else:
+                    _LOGGER.info(
+                        "Fetching %d days of DAILY energy data for %s (data cutoff: %s)",
+                        days,
+                        room_name,
+                        data_cutoff.isoformat(),
+                    )
+
+                    date_begin = int(date_begin_dt.timestamp())
+                    date_end = int(date_end_dt.timestamp())
+                    
+                    # BULK fetch: one API call returns all daily values
+                    energy_values = await api.async_get_room_energy_daily(
+                        room_id, date_begin, date_end
+                    )
+                    step_name = "day"
+
+                if not energy_values:
                     _LOGGER.warning(
-                        "No energy data returned for %s, skipping",
+                        "No %s energy data returned for %s, skipping",
+                        step_name,
                         room_name,
                     )
                 else:
                     # Sort by timestamp to ensure chronological order
-                    daily_values.sort(key=lambda x: x[0])
+                    energy_values.sort(key=lambda x: x[0])
 
-                    # Build statistics from daily values
-                    for day_ts, day_energy_wh in daily_values:
+                    # Deduplicate timestamps from chunk boundaries.
+                    # When chunk N ends at T and chunk N+1 starts at T, the API
+                    # may return the same hour T in both chunks.  Both entries
+                    # accumulate into cumulative_sum but HA only stores the last
+                    # stat for that timestamp → the sum is inflated by the first
+                    # chunk's duplicate.  Merge duplicates by summing their Wh.
+                    deduped: dict[int, float] = {}
+                    for ts_v, wh_v in energy_values:
+                        deduped[ts_v] = deduped.get(ts_v, 0.0) + wh_v
+                    if len(deduped) < len(energy_values):
+                        dupes = len(energy_values) - len(deduped)
+                        _LOGGER.info(
+                            "%s: merged %d duplicate timestamp(s) at chunk boundaries",
+                            room_name,
+                            dupes,
+                        )
+                    energy_values = sorted(deduped.items(), key=lambda x: x[0])
+
+                    # Build statistics from values
+                    entries_with_data = 0
+                    for ts, energy_wh in energy_values:
                         if manager._cancelled:
                             break
 
-                        day_energy_kwh = day_energy_wh / 1000.0
+                        energy_kwh = energy_wh / 1000.0
 
-                        if day_energy_kwh > 0:
-                            cumulative_sum += day_energy_kwh
-                            day_start = datetime.fromtimestamp(day_ts, tz=timezone.utc)
-                            statistics.append(
-                                StatisticData(
-                                    start=day_start,
-                                    state=day_energy_kwh,
-                                    sum=cumulative_sum,
-                                )
+                        if energy_kwh > 0:
+                            cumulative_sum += energy_kwh
+                            entries_with_data += 1
+                            
+                        # Create a statistic entry
+                        # Normalize timestamp to the top of the hour (required by HA)
+                        entry_start = datetime.fromtimestamp(ts, tz=timezone.utc)
+                        entry_start = entry_start.replace(minute=0, second=0, microsecond=0)
+                        
+                        statistics.append(
+                            StatisticData(
+                                start=entry_start,
+                                state=cumulative_sum,
+                                sum=cumulative_sum,
                             )
-                            _LOGGER.debug(
-                                "%s day %s: %.3f kWh (total: %.3f kWh)",
-                                room_name,
-                                day_start.date(),
-                                day_energy_kwh,
-                                cumulative_sum,
-                            )
+                        )
+                        _LOGGER.debug(
+                            "%s %s %s: %.3f kWh (total: %.3f kWh)",
+                            room_name,
+                            step_name,
+                            entry_start.isoformat(),
+                            energy_kwh,
+                            cumulative_sum,
+                        )
 
-                        manager.days_imported += 1
+                    # Calculate progress
+                    if granularity == "hourly":
+                        manager.days_imported = len(energy_values) // 24
+                    else:
+                        manager.days_imported = len(energy_values)
 
                     _LOGGER.info(
-                        "Bulk fetch completed for %s: %d days with data out of %d total",
+                        "Bulk fetch completed for %s: %d %s entries, %d with data (%.3f kWh total)",
                         room_name,
                         len(statistics),
-                        len(daily_values),
+                        step_name,
+                        entries_with_data,
+                        cumulative_sum - baseline_sum,
                     )
 
                 # Small delay between rooms to be polite to the API
@@ -667,9 +915,10 @@ async def async_import_energy_history(
                     results["total_energy_kwh"] += imported_energy
 
                     _LOGGER.info(
-                        "Imported %d days of energy history for %s: "
+                        "Imported %d %s statistics for %s: "
                         "%.3f kWh imported (baseline: %.3f, final sum: %.3f)",
                         len(statistics),
+                        "hourly" if granularity == "hourly" else "daily",
                         room_name,
                         imported_energy,
                         baseline_sum,
@@ -695,6 +944,79 @@ async def async_import_energy_history(
                             "statistics_adjusted", 0
                         ) + adjusted_count
 
+                    # Extract midnight sums for hourly_stats handoff.
+                    # Build index: stat_start_utc_ts -> sum
+                    _sum_by_ts: dict[int, float] = {}
+                    for _se in statistics:
+                        _sstart = _se["start"]
+                        _sts = int(_sstart.timestamp()) if hasattr(_sstart, "timestamp") else int(_sstart)
+                        _sum_by_ts[_sts] = float(_se["sum"])
+
+                    _base_val = _sum_by_ts.get(_base_kwh_stat_ts)
+                    _sb_val = _sum_by_ts.get(_sensor_base_stat_ts)
+
+                    # Fallback: if the exact midnight stat isn't found (gap in data),
+                    # search for the most recent stat BEFORE that midnight.
+                    if _base_val is None:
+                        candidates = [
+                            v for ts_k, v in _sum_by_ts.items()
+                            if ts_k <= _base_kwh_stat_ts
+                        ]
+                        if candidates:
+                            _base_val = candidates[-1] if isinstance(candidates, list) else None
+                            # sorted dict lookup
+                            for ts_k in sorted(_sum_by_ts):
+                                if ts_k <= _base_kwh_stat_ts:
+                                    _base_val = _sum_by_ts[ts_k]
+                                else:
+                                    break
+                            _LOGGER.debug(
+                                "%s: J-1 midnight stat not found exactly, "
+                                "using nearest prior stat as base_kwh fallback",
+                                room_name,
+                            )
+
+                    if _sb_val is None:
+                        for ts_k in sorted(_sum_by_ts):
+                            if ts_k <= _sensor_base_stat_ts:
+                                _sb_val = _sum_by_ts[ts_k]
+                            else:
+                                break
+
+                    # Build by_day: midnight sum for every day in the import window.
+                    # _sum_by_ts has all 5800+ hourly points → covers all midnights.
+                    # For each day: the stat whose hour ENDS at midnight has
+                    # start = midnight_utc - 1h. If that exact ts is missing (data gap),
+                    # use the nearest prior stat (last known cumulative before midnight).
+                    _sorted_ts = sorted(_sum_by_ts)
+                    _by_day: dict[str, float] = {}
+                    for _day_key, _stat_ts in _midnight_ts_by_day.items():
+                        _mv = _sum_by_ts.get(_stat_ts)
+                        if _mv is None:
+                            # nearest prior: walk sorted ts, take last one <= _stat_ts
+                            for _tk in _sorted_ts:
+                                if _tk <= _stat_ts:
+                                    _mv = _sum_by_ts[_tk]
+                                else:
+                                    break
+                        if _mv is not None:
+                            _by_day[_day_key] = round(_mv, 3)
+
+                    midnight_sums[entity_id] = {
+                        "by_day": _by_day,
+                        "base_kwh": round(_base_val, 3) if _base_val is not None else round(cumulative_sum, 3),
+                        "sensor_base": round(_sb_val, 3) if _sb_val is not None else round(cumulative_sum, 3),
+                        "final_sum": round(cumulative_sum, 3),
+                    }
+                    _LOGGER.info(
+                        "Midnight sums for %s: %d days captured, J-1=%.3f, today=%.3f, final=%.3f",
+                        room_name,
+                        len(_by_day),
+                        midnight_sums[entity_id]["base_kwh"],
+                        midnight_sums[entity_id]["sensor_base"],
+                        cumulative_sum,
+                    )
+
                 except (ValueError, TypeError) as err:
                     _LOGGER.error(
                         "Failed to import statistics for %s: %s",
@@ -716,6 +1038,40 @@ async def async_import_energy_history(
         if manager.status not in ("cancelled", "rate_limited"):
             manager.status = "completed"
         manager.current_room = None
+        
+        # Clear global flag to resume HourlyStatsUpdater
+        effective_home_id = home_id or intuis_home.id
+        if DOMAIN in hass.data and HISTORY_IMPORT_KEY in hass.data[DOMAIN]:
+            hass.data[DOMAIN][HISTORY_IMPORT_KEY][effective_home_id] = False
+        _LOGGER.info("History import finished - HourlyStatsUpdater resumed for home %s", effective_home_id)
+
+        # Re-initialize hourly_stats base_kwh from imported midnight sums
+        # (exact values, no DB query needed)
+        if midnight_sums:
+            for _eid, _edata in hass.data.get(DOMAIN, {}).items():
+                if isinstance(_edata, dict):
+                    updater = _edata.get("hourly_stats_updater")
+                    if updater and hasattr(updater, "async_set_bases_from_import"):
+                        try:
+                            await updater.async_set_bases_from_import(midnight_sums)
+                            _LOGGER.info(
+                                "Set hourly_stats bases from history_import "
+                                "for %d sensors", len(midnight_sums)
+                            )
+                            # Immediately fill the gap between import cutoff (now-1h)
+                            # and the next scheduled hourly cycle (up to 60 min away).
+                            # Without this, the dashboard shows a truncated day until
+                            # the next hourly run.
+                            _LOGGER.info(
+                                "Triggering immediate hourly stats update "
+                                "to fill post-import gap"
+                            )
+                            hass.async_create_task(updater.async_update())
+                        except Exception as init_err:
+                            _LOGGER.warning(
+                                "Failed to set hourly_stats bases: %s", init_err
+                            )
+                        break  # only one updater per home
 
     _LOGGER.info(
         "Energy history import finished: %d rooms, %.3f kWh total",
