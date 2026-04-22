@@ -285,6 +285,13 @@ class IntuisCurrentZoneSensor(CoordinatorEntity[IntuisDataUpdateCoordinator], Se
                 room_temps[rt.room_id] = rt.temp
             attrs["room_temperatures"] = room_temps
 
+            # Build room_names mapping (room_id -> room_name) for UI display
+            rooms = self.coordinator.data.get("rooms", {})
+            room_names = {}
+            for room_id, room in rooms.items():
+                room_names[str(room_id)] = room.name
+            attrs["room_names"] = room_names
+
         return attrs
 
 
@@ -435,6 +442,13 @@ class IntuisScheduleSummarySensor(CoordinatorEntity[IntuisDataUpdateCoordinator]
                 zones_info.append(zone_info)
         attrs["zones"] = zones_info
         attrs["zones_count"] = len(zones_info)
+
+        # Build room_names mapping (room_id -> room_name) for UI display
+        rooms = self.coordinator.data.get("rooms", {})
+        room_names = {}
+        for room_id, room in rooms.items():
+            room_names[str(room_id)] = room.name
+        attrs["room_names"] = room_names
 
         # Build weekly timetable summary (day -> list of changes)
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -616,14 +630,15 @@ class GatewayFirmwareSensor(CoordinatorEntity[IntuisDataUpdateCoordinator], Sens
 class IntuisHomeEnergySensor(CoordinatorEntity[IntuisDataUpdateCoordinator], SensorEntity):
     """Sensor showing total home energy consumption aggregated from all rooms.
 
-    This sensor sums the energy consumption from all room energy sensors,
-    providing a single value for total home energy usage.
+    Exposes cumulative total (sum of all room base_kwh + daily consumption),
+    matching the room sensor convention. No state_class since hourly_stats
+    does not import statistics for this aggregate entity — it's display-only.
     """
 
     _attr_icon = "mdi:home-lightning-bolt"
     _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.ENERGY
-    _attr_state_class = SensorStateClass.TOTAL
+    # No state_class: display-only aggregate, not tracked by hourly_stats
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
 
     def __init__(

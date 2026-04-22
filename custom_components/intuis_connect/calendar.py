@@ -62,9 +62,9 @@ class IntuisScheduleCalendar(
         self._home_id = home_id
         self._intuis_home = intuis_home
         self._schedule_id = schedule.id
-        self._schedule_name = schedule.name or f"Schedule {schedule.id}"
+        # Don't store schedule_name - always get it dynamically from _get_schedule()
 
-        self._attr_name = f"Schedule {self._schedule_name}"
+        # Use schedule_id for unique_id to be robust against renames
         self._attr_unique_id = f"intuis_{home_id}_schedule_{schedule.id}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{home_id}_home")},
@@ -72,6 +72,14 @@ class IntuisScheduleCalendar(
             manufacturer="Muller Intuitiv (Netatmo)",
             model="Home Controller",
         )
+
+    @property
+    def name(self) -> str:
+        """Return the name of the calendar, updated dynamically from schedule data."""
+        schedule = self._get_schedule()
+        if schedule:
+            return f"Schedule {schedule.name}"
+        return f"Schedule {self._schedule_id[-6:]}"
 
     def _get_home(self) -> IntuisHome:
         """Get the home data from coordinator."""

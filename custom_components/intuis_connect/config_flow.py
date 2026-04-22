@@ -11,6 +11,8 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector,
+    EntitySelector,
+    EntitySelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -43,6 +45,8 @@ from .utils.const import (
     CONF_RATE_LIMIT_DELAY,
     CONF_CIRCUIT_BREAKER_THRESHOLD,
     CONF_MAX_UPDATE_INTERVAL,
+    CONF_HOURLY_STATS_ENABLED,
+    CONF_HOURLY_STATS_INTERVAL,
     DEFAULT_MANUAL_DURATION,
     DEFAULT_AWAY_DURATION,
     DEFAULT_BOOST_DURATION,
@@ -56,6 +60,17 @@ from .utils.const import (
     DEFAULT_RATE_LIMIT_DELAY,
     DEFAULT_CIRCUIT_THRESHOLD,
     DEFAULT_MAX_UPDATE_INTERVAL,
+    DEFAULT_HOURLY_STATS_ENABLED,
+    DEFAULT_HOURLY_STATS_INTERVAL,
+    CONF_ENERGY_COST_ENABLED,
+    CONF_ENERGY_PRICE_MODE,
+    CONF_ENERGY_FIXED_PRICE,
+    CONF_ENERGY_PRICE_ENTITY,
+    DEFAULT_ENERGY_COST_ENABLED,
+    DEFAULT_ENERGY_PRICE_MODE,
+    DEFAULT_ENERGY_FIXED_PRICE,
+    DEFAULT_ENERGY_PRICE_ENTITY,
+    ENERGY_PRICE_MODE_OPTIONS,
     ENERGY_SCALE_OPTIONS,
     DURATION_OPTIONS_SHORT,
     DURATION_OPTIONS_LONG,
@@ -322,29 +337,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if isinstance(import_days, str):
                 import_days = int(import_days)
 
-            # Combine all options
-            all_options = {
-                **self._override_options,
+            self._override_options.update({
                 CONF_IMPORT_HISTORY: import_history,
                 CONF_IMPORT_HISTORY_DAYS: import_days if import_history else 0,
-            }
-
-            # Use home_name in title for multi-home setups, username for single-home
-            if self._home_name and len(self._homes) > 1:
-                title = f"Intuis Connect ({self._home_name})"
-            else:
-                title = f"Intuis Connect ({self._username})"
-
-            return self.async_create_entry(
-                title=title,
-                data={
-                    CONF_USERNAME: self._username,
-                    CONF_REFRESH_TOKEN: self._refresh_token,
-                    CONF_HOME_ID: self._home_id,
-                    CONF_HOME_NAME: self._home_name,
-                },
-                options=all_options,
-            )
+            })
+            return await self.async_step_energy_cost()
 
         options_schema = vol.Schema(
             {
@@ -362,6 +359,70 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(
             step_id="history_import",
+            data_schema=options_schema,
+        )
+
+    async def async_step_energy_cost(
+            self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Step 6: Configure energy cost calculation."""
+        if user_input is not None:
+            cost_enabled = user_input.get(CONF_ENERGY_COST_ENABLED, DEFAULT_ENERGY_COST_ENABLED)
+            self._override_options.update({
+                CONF_ENERGY_COST_ENABLED: cost_enabled,
+                CONF_ENERGY_PRICE_MODE: user_input.get(CONF_ENERGY_PRICE_MODE, DEFAULT_ENERGY_PRICE_MODE),
+                CONF_ENERGY_FIXED_PRICE: float(user_input.get(CONF_ENERGY_FIXED_PRICE, DEFAULT_ENERGY_FIXED_PRICE)),
+                CONF_ENERGY_PRICE_ENTITY: user_input.get(CONF_ENERGY_PRICE_ENTITY, DEFAULT_ENERGY_PRICE_ENTITY) or "",
+            })
+
+            if self._home_name and len(self._homes) > 1:
+                title = f"Intuis Connect ({self._home_name})"
+            else:
+                title = f"Intuis Connect ({self._username})"
+
+            return self.async_create_entry(
+                title=title,
+                data={
+                    CONF_USERNAME: self._username,
+                    CONF_REFRESH_TOKEN: self._refresh_token,
+                    CONF_HOME_ID: self._home_id,
+                    CONF_HOME_NAME: self._home_name,
+                },
+                options=self._override_options,
+            )
+
+        price_mode_options = [
+            {"value": v} for v in ENERGY_PRICE_MODE_OPTIONS
+        ]
+
+        options_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_ENERGY_COST_ENABLED,
+                    default=DEFAULT_ENERGY_COST_ENABLED,
+                ): BooleanSelector(),
+                vol.Optional(
+                    CONF_ENERGY_PRICE_MODE,
+                    default=DEFAULT_ENERGY_PRICE_MODE,
+                ): SelectSelector(
+                    
+                ),
+                vol.Optional(
+                    CONF_ENERGY_FIXED_PRICE,
+                    default=DEFAULT_ENERGY_FIXED_PRICE,
+                ): NumberSelector(
+                    NumberSelectorConfig(min=0.0, max=5.0, step=0.0001, mode=NumberSelectorMode.BOX, unit_of_measurement="/kWh")
+                ),
+                vol.Optional(
+                    CONF_ENERGY_PRICE_ENTITY,
+                    default=DEFAULT_ENERGY_PRICE_ENTITY,
+                ): EntitySelector(
+                    EntitySelectorConfig(domain=["sensor"])
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="energy_cost",
             data_schema=options_schema,
         )
 
@@ -581,7 +642,7 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
     async def async_step_rate_limit(
             self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Step 4: Configure rate limiting settings."""
+        """Step 4: Configure rate limiting and hourly stats settings."""
         if user_input is not None:
             # Convert values to integers
             rate_limit_delay = user_input.get(
@@ -593,6 +654,9 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
             max_update_interval = user_input.get(
                 CONF_MAX_UPDATE_INTERVAL, str(DEFAULT_MAX_UPDATE_INTERVAL)
             )
+            hourly_stats_interval = user_input.get(
+                CONF_HOURLY_STATS_INTERVAL, str(DEFAULT_HOURLY_STATS_INTERVAL)
+            )
 
             if isinstance(rate_limit_delay, str):
                 rate_limit_delay = int(rate_limit_delay)
@@ -600,6 +664,8 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
                 circuit_threshold = int(circuit_threshold)
             if isinstance(max_update_interval, str):
                 max_update_interval = int(max_update_interval)
+            if isinstance(hourly_stats_interval, str):
+                hourly_stats_interval = int(hourly_stats_interval)
 
             # Combine all options
             all_options = {
@@ -607,8 +673,13 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
                 CONF_RATE_LIMIT_DELAY: rate_limit_delay,
                 CONF_CIRCUIT_BREAKER_THRESHOLD: circuit_threshold,
                 CONF_MAX_UPDATE_INTERVAL: max_update_interval,
+                CONF_HOURLY_STATS_ENABLED: user_input.get(
+                    CONF_HOURLY_STATS_ENABLED, DEFAULT_HOURLY_STATS_ENABLED
+                ),
+                CONF_HOURLY_STATS_INTERVAL: hourly_stats_interval,
             }
-            return self.async_create_entry(title="", data=all_options)
+            self._override_options = all_options
+            return await self.async_step_energy_cost()
 
         # Get current values
         current_rate_limit = self._entry.options.get(
@@ -620,9 +691,35 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
         current_max_interval = self._entry.options.get(
             CONF_MAX_UPDATE_INTERVAL, DEFAULT_MAX_UPDATE_INTERVAL
         )
+        current_hourly_stats_enabled = self._entry.options.get(
+            CONF_HOURLY_STATS_ENABLED, DEFAULT_HOURLY_STATS_ENABLED
+        )
+        current_hourly_stats_interval = self._entry.options.get(
+            CONF_HOURLY_STATS_INTERVAL, DEFAULT_HOURLY_STATS_INTERVAL
+        )
+
+        # Options for hourly stats interval
+        hourly_stats_interval_options = [
+            {"value": "60", "label": "1 hour"},
+            {"value": "120", "label": "2 hours (recommended)"},
+            {"value": "240", "label": "4 hours"},
+        ]
 
         options_schema = vol.Schema(
             {
+                vol.Optional(
+                    CONF_HOURLY_STATS_ENABLED,
+                    default=current_hourly_stats_enabled,
+                ): BooleanSelector(),
+                vol.Optional(
+                    CONF_HOURLY_STATS_INTERVAL,
+                    default=str(current_hourly_stats_interval),
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=hourly_stats_interval_options,
+                        mode=SelectSelectorMode.DROPDOWN
+                    )
+                ),
                 vol.Optional(
                     CONF_RATE_LIMIT_DELAY,
                     default=str(current_rate_limit),
@@ -654,5 +751,57 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
         )
         return self.async_show_form(
             step_id="rate_limit",
+            data_schema=options_schema,
+        )
+
+    async def async_step_energy_cost(
+            self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Step 5: Configure energy cost calculation."""
+        if user_input is not None:
+            cost_enabled = user_input.get(CONF_ENERGY_COST_ENABLED, DEFAULT_ENERGY_COST_ENABLED)
+            all_options = {
+                **self._override_options,
+                CONF_ENERGY_COST_ENABLED: cost_enabled,
+                CONF_ENERGY_PRICE_MODE: user_input.get(CONF_ENERGY_PRICE_MODE, DEFAULT_ENERGY_PRICE_MODE),
+                CONF_ENERGY_FIXED_PRICE: float(user_input.get(CONF_ENERGY_FIXED_PRICE, DEFAULT_ENERGY_FIXED_PRICE)),
+                CONF_ENERGY_PRICE_ENTITY: user_input.get(CONF_ENERGY_PRICE_ENTITY, DEFAULT_ENERGY_PRICE_ENTITY) or "",
+            }
+            return self.async_create_entry(title="", data=all_options)
+
+        price_mode_options = [
+            {"value": v} for v in ENERGY_PRICE_MODE_OPTIONS
+        ]
+
+        current_price_entity = self._entry.options.get(CONF_ENERGY_PRICE_ENTITY, DEFAULT_ENERGY_PRICE_ENTITY) or ""
+
+        options_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_ENERGY_COST_ENABLED,
+                    default=self._entry.options.get(CONF_ENERGY_COST_ENABLED, DEFAULT_ENERGY_COST_ENABLED),
+                ): BooleanSelector(),
+                vol.Optional(
+                    CONF_ENERGY_PRICE_MODE,
+                    default=self._entry.options.get(CONF_ENERGY_PRICE_MODE, DEFAULT_ENERGY_PRICE_MODE),
+                ): SelectSelector(
+                    SelectSelectorConfig(options=price_mode_options, mode=SelectSelectorMode.DROPDOWN, translation_key="energy_price_mode")
+                ),
+                vol.Optional(
+                    CONF_ENERGY_FIXED_PRICE,
+                    default=self._entry.options.get(CONF_ENERGY_FIXED_PRICE, DEFAULT_ENERGY_FIXED_PRICE),
+                ): NumberSelector(
+                    NumberSelectorConfig(min=0.0, max=5.0, step=0.0001, mode=NumberSelectorMode.BOX, unit_of_measurement="/kWh")
+                ),
+                vol.Optional(
+                    CONF_ENERGY_PRICE_ENTITY,
+                    default=current_price_entity,
+                ): EntitySelector(
+                    EntitySelectorConfig(domain=["sensor"])
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="energy_cost",
             data_schema=options_schema,
         )

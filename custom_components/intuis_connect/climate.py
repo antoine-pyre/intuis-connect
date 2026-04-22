@@ -92,8 +92,8 @@ class IntuisConnectClimate(
     def _schedule_end_refresh(self, end_ts: int) -> None:
         # Schedule a refresh slightly after end time
         delay = max(0, end_ts - int(time.time()) + 1)
-        async def _cb(_now):
-            await self.coordinator.async_request_refresh()
+        def _cb(_now):
+            self.hass.async_create_task(self.coordinator.async_request_refresh())
         async_call_later(self.hass, delay, _cb)
 
     @property

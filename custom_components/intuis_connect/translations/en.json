@@ -50,9 +50,31 @@
           "name": "Days to Import",
           "description": "Number of days of history to import (1-730). Default is 365 days."
         },
+        "granularity": {
+          "name": "Granularity",
+          "description": "Choose between hourly data (recommended for Energy Dashboard) or daily data (faster import)."
+        },
+        "clear_existing": {
+          "name": "Clear existing statistics",
+          "description": "Delete ALL existing energy statistics before import. Required when changing from daily to hourly granularity to avoid data inconsistencies."
+        },
         "room_name": {
           "name": "Room",
           "description": "Import only this room. Leave empty for all rooms."
+        }
+      }
+    },
+    "recalculate_cost_history": {
+      "name": "Recalculate Cost History",
+      "description": "Recalculates energy cost statistics from existing kWh statistics and the configured price. Useful after a price change or initial cost calculation activation.",
+      "fields": {
+        "days": {
+          "name": "Days",
+          "description": "Number of history days to recalculate (1-730). Default 365 days."
+        },
+        "room_name": {
+          "name": "Room",
+          "description": "Recalculate only this room. Leave empty for all rooms."
         }
       }
     }
@@ -129,6 +151,22 @@
       "reauth_confirm": {
         "title": "Re-authenticate Intuis Account",
         "description": "Session expired for {username}. Please enter your password."
+      },
+      "energy_cost": {
+        "title": "Energy Cost Calculation",
+        "description": "Automatically calculate energy consumption cost and write statistics to per-room energy_cost sensors.",
+        "data": {
+          "energy_cost_enabled": "Enable cost calculation",
+          "energy_price_mode": "Pricing mode",
+          "energy_fixed_price": "Fixed price (local currency/kWh)",
+          "energy_price_entity": "Dynamic price entity"
+        },
+        "data_description": {
+          "energy_cost_enabled": "Enables automatic cost calculation based on hourly consumption.",
+          "energy_price_mode": "**Fixed price**: use a constant rate configured here.\n**HA Entity**: read the price from a sensor (Octopus, Amber, template...).",
+          "energy_fixed_price": "Rate in local currency/kWh used for calculation in fixed price mode.",
+          "energy_price_entity": "Sensor entity providing the price per kWh (entity mode only)."
+        }
       }
     },
     "error": {
@@ -185,18 +223,46 @@
         }
       },
       "rate_limit": {
-        "title": "API Rate Limiting",
-        "description": "Configure how the integration handles API rate limits (429 errors).\n\nThese settings help prevent being blocked by the Intuis API during heavy usage.",
+        "title": "Hourly Statistics & API Rate Limiting",
+        "description": "Configure hourly statistics retrieval and API rate limit handling.\n\n**Hourly Statistics**: The Intuis API has a 2-4 hour delay for energy data. This option periodically fetches past hourly data and injects it into Home Assistant statistics for accurate tracking.",
         "data": {
+          "hourly_stats_enabled": "Enable hourly statistics",
+          "hourly_stats_interval": "Update interval",
           "rate_limit_delay": "Initial retry delay",
           "circuit_breaker_threshold": "Circuit breaker threshold",
           "max_update_interval": "Maximum polling interval"
         },
         "data_description": {
+          "hourly_stats_enabled": "Enable periodic retrieval of hourly energy consumption data for accurate tracking in the Energy dashboard.",
+          "hourly_stats_interval": "How often to fetch hourly statistics. 2 hours is recommended to avoid API rate limits.",
           "rate_limit_delay": "How long to wait before retrying after a rate limit error.",
           "circuit_breaker_threshold": "Number of consecutive rate limit errors before pausing all requests.",
           "max_update_interval": "Maximum polling interval when rate limited. Normally polls every 2 minutes."
         }
+      },
+      "energy_cost": {
+        "title": "Energy Cost Calculation",
+        "description": "Configure automatic energy cost calculation.",
+        "data": {
+          "energy_cost_enabled": "Enable cost calculation",
+          "energy_price_mode": "Pricing mode",
+          "energy_fixed_price": "Fixed price (local currency/kWh)",
+          "energy_price_entity": "Dynamic price entity"
+        },
+        "data_description": {
+          "energy_cost_enabled": "Enables automatic cost calculation based on hourly consumption.",
+          "energy_price_mode": "**Fixed price**: use a constant rate configured here.\n**HA Entity**: read the price from a sensor (Octopus, Amber, template...).",
+          "energy_fixed_price": "Rate in local currency/kWh. After changing the price, run the Recalculate Cost History service to rewrite historical data.",
+          "energy_price_entity": "Sensor entity providing the price per kWh (entity mode only). After changing the price, run the Recalculate Cost History service to rewrite historical data."
+        }
+      }
+    }
+  },
+  "selector": {
+    "energy_price_mode": {
+      "options": {
+        "fixed": "Fixed price (€/kWh)",
+        "entity": "Home Assistant entity (dynamic price)"
       }
     }
   }

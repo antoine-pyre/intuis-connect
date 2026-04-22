@@ -162,6 +162,9 @@ class NMHIntuisModule(IntuisModule):
     def from_dict(cls, data: dict[str, Any]) -> NMHIntuisModule:
         """Create a NMH module from a dictionary."""
         try:
+            rs = data.get("radiator_state", "")
+            _LOGGER.debug("NMHIntuisModule %s raw radiator_state=%r (full keys: %s)",
+                          data.get("id"), rs, list(data.keys()))
             return NMHIntuisModule(
                 module_id=data["id"],
                 last_seen=data.get("last_seen", 0),

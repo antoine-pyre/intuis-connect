@@ -188,18 +188,28 @@ class IntuisZoneTemperatureNumber(CoordinatorEntity[IntuisDataUpdateCoordinator]
         self._api = api
         self._home_id = home_id
         self._schedule_id = schedule.id
-        self._schedule_name = schedule.name
+        # Don't store _schedule_name - get it dynamically via _get_schedule()
         self._zone_id = zone.id
         self._zone_name = zone.name
         self._room_id = room_temp.room_id
         self._room_name = room_name
         self._cached_temp = float(room_temp.temp)
 
-        # Unique ID
+        # Unique ID - uses schedule_id which is stable
         self._attr_unique_id = f"intuis_{home_id}_{schedule.id}_{zone.id}_{room_temp.room_id}_zone_temp"
 
         # Entity name: just zone + room since schedule is the device
         self._attr_name = f"{zone.name} {room_name}"
+
+    def _get_schedule(self) -> IntuisThermSchedule | None:
+        """Get the current schedule from coordinator data."""
+        intuis_home = self.coordinator.data.get("intuis_home") if self.coordinator.data else None
+        if not intuis_home:
+            return None
+        for schedule in intuis_home.schedules:
+            if isinstance(schedule, IntuisThermSchedule) and schedule.id == self._schedule_id:
+                return schedule
+        return None
 
     @property
     def unique_id(self) -> str:
@@ -208,10 +218,12 @@ class IntuisZoneTemperatureNumber(CoordinatorEntity[IntuisDataUpdateCoordinator]
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Return device info - grouped by schedule."""
+        """Return device info - grouped by schedule with dynamic name."""
+        schedule = self._get_schedule()
+        schedule_name = schedule.name if schedule else self._schedule_id[-6:]
         return DeviceInfo(
             identifiers={(DOMAIN, f"{self._home_id}_schedule_{self._schedule_id}")},
-            name=f"Schedule {self._schedule_name}",
+            name=f"Schedule {schedule_name}",
             manufacturer="Muller Intuitiv (Netatmo)",
             model="Heating Schedule",
             via_device=(DOMAIN, f"{self._home_id}_home"),
@@ -274,7 +286,7 @@ class IntuisZoneTemperatureNumber(CoordinatorEntity[IntuisDataUpdateCoordinator]
                         "Updating temperature for room '%s' in zone '%s' of schedule '%s': %d -> %d",
                         self._room_name,
                         self._zone_name,
-                        self._schedule_name,
+                        target_schedule.name,
                         old_temp,
                         int(value),
                     )

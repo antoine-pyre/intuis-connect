@@ -1,10 +1,13 @@
-"""Setup for Intuis Connect (v1.9.6)."""
+"""Setup for Intuis Connect (v1.10.0)."""
 from __future__ import annotations
 
 import asyncio
 import datetime
 import logging
 
+from pathlib import Path
+
+from homeassistant.components.http import HomeAssistantView
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -21,7 +24,11 @@ from .utils.const import (
     CONF_HOME_NAME,
     CONF_IMPORT_HISTORY,
     CONF_IMPORT_HISTORY_DAYS,
+    CONF_HOURLY_STATS_ENABLED,
+    CONF_HOURLY_STATS_INTERVAL,
     DEFAULT_UPDATE_INTERVAL,
+    DEFAULT_HOURLY_STATS_ENABLED,
+    DEFAULT_HOURLY_STATS_INTERVAL,
     CONF_RATE_LIMIT_DELAY,
     CONF_CIRCUIT_BREAKER_THRESHOLD,
     CONF_MIN_REQUEST_DELAY,
@@ -30,12 +37,18 @@ from .utils.const import (
     DEFAULT_CIRCUIT_THRESHOLD,
     DEFAULT_MIN_REQUEST_DELAY,
     DEFAULT_MAX_UPDATE_INTERVAL,
+    CONF_ENERGY_RESET_HOUR,
+    DEFAULT_ENERGY_RESET_HOUR,
+    CONF_ENERGY_COST_ENABLED,
+    DEFAULT_ENERGY_COST_ENABLED,
 )
 from .entity.intuis_entity import IntuisDataUpdateCoordinator
 from .history_import import (
     HistoryImportManager,
     async_import_energy_history,
 )
+from .hourly_stats import HourlyStatsUpdater
+from .cost_stats import CostStatsUpdater
 from .intuis_data import IntuisData
 from .services import (
     async_generate_services_yaml,
@@ -78,6 +91,150 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     _LOGGER.debug("Reloading entry %s due to options update", entry.entry_id)
     await hass.config_entries.async_reload(entry.entry_id)
 
+
+async def _async_migrate_cost_entity_ids(hass, entry, intuis_home) -> None:
+    """Migrate old energy_cost/_2 entities to the new 'cost' suffix.
+
+    Previous versions named cost sensors 'sensor.X_energy_cost' which
+    conflicts with the virtual entity HA's Energy Dashboard auto-creates.
+    New name: 'sensor.X_cost' (unique_id suffix: 'cost').
+
+    This migration:
+    1. Looks for entities with old unique_id suffix '_energy_cost' or '_energy_cost_2'
+    2. Renames them in the entity registry to the new entity_id 'sensor.X_cost'
+    3. Renames the StatisticsMeta row to the new statistic_id
+    4. Removes any HA-generated virtual 'sensor.X_energy_cost' (state=unavailable)
+    """
+    from homeassistant.components.recorder import get_instance
+    from homeassistant.components.recorder.db_schema import StatisticsMeta, Statistics, StatisticsShortTerm
+    from homeassistant.helpers.recorder import session_scope
+    from homeassistant.helpers import entity_registry as er
+    from sqlalchemy import delete, update, select
+
+    ent_reg = er.async_get(hass)
+    instance = get_instance(hass)
+
+    rooms = intuis_home.rooms if intuis_home else {}
+    migrated = 0
+
+    for room_id in rooms:
+        room = rooms[room_id]
+        room_slug = room.name.lower().replace(" ", "_").replace("-", "_")
+
+        # New target entity_id and unique_id
+        new_entity_id = f"sensor.{room_slug}_cost"
+        new_unique_id = f"intuis_{intuis_home.id}_{room_id}_cost"
+
+        # Skip if already migrated
+        if ent_reg.async_get_entity_id("sensor", DOMAIN, new_unique_id):
+            continue
+
+        # Find old entity: try _energy_cost then _energy_cost_2
+        old_unique_id = f"intuis_{intuis_home.id}_{room_id}_energy_cost"
+        old_entity_id = ent_reg.async_get_entity_id("sensor", DOMAIN, old_unique_id)
+        if not old_entity_id:
+            # Check _2 variant (old unique_id may have been duplicated)
+            old_entity_id = ent_reg.async_get_entity_id("sensor", DOMAIN, old_unique_id + "_2")
+
+        if not old_entity_id:
+            continue
+
+        # Remove any blocking HA-generated virtual entity at our target entity_id
+        blocking_entry = ent_reg.async_get(new_entity_id)
+        if blocking_entry and blocking_entry.platform != DOMAIN:
+            try:
+                ent_reg.async_remove(new_entity_id)
+                _LOGGER.info("Migration: removed HA-generated virtual entity '%s'", new_entity_id)
+            except Exception as e:
+                _LOGGER.warning("Migration: could not remove blocking entity '%s': %s", new_entity_id, e)
+
+        # Rename StatisticsMeta old → new
+        def _rename_stats(old_sid: str, new_sid: str) -> bool:
+            with session_scope(session=instance.get_session()) as session:
+                meta = session.execute(
+                    select(StatisticsMeta).where(StatisticsMeta.statistic_id == old_sid)
+                ).scalar_one_or_none()
+                if meta:
+                    session.execute(
+                        update(StatisticsMeta)
+                        .where(StatisticsMeta.statistic_id == old_sid)
+                        .values(statistic_id=new_sid)
+                    )
+                    return True
+                return False
+
+        try:
+            renamed = await instance.async_add_executor_job(
+                _rename_stats, old_entity_id, new_entity_id
+            )
+            if renamed:
+                _LOGGER.info("Migration: renamed StatisticsMeta '%s' → '%s'",
+                             old_entity_id, new_entity_id)
+        except Exception as e:
+            _LOGGER.warning("Migration: could not rename StatisticsMeta '%s': %s", old_entity_id, e)
+
+        # Update entity registry: new unique_id + new entity_id
+        try:
+            ent_reg.async_update_entity(
+                old_entity_id,
+                new_entity_id=new_entity_id,
+                new_unique_id=new_unique_id,
+            )
+            _LOGGER.info("Migration: entity '%s' (unique_id=%s) → '%s' (unique_id=%s)",
+                         old_entity_id, old_unique_id, new_entity_id, new_unique_id)
+            migrated += 1
+        except Exception as e:
+            _LOGGER.warning("Migration: could not rename entity '%s': %s", old_entity_id, e)
+
+    if migrated:
+        _LOGGER.info("Migration: migrated %d cost entities to 'cost' suffix", migrated)
+
+
+
+
+_PLANNING_HTML = Path(__file__).parent / "resources" / "intuis_planning.html"
+
+# Read version once at import time (avoids blocking call warning in async context)
+try:
+    import json as _json
+    _INTEGRATION_VERSION = _json.loads((Path(__file__).parent / "manifest.json").read_text())["version"]
+except Exception:
+    _INTEGRATION_VERSION = "0"
+
+
+class IntuisPlanningView(HomeAssistantView):
+    """Serve intuis_planning.html with automatic cache-busting based on integration version."""
+
+    url = "/api/intuis_connect/planning"
+    name = "api:intuis_connect:planning"
+    requires_auth = False  # The HTML handles its own HA token auth
+
+    def __init__(self, html_path: Path) -> None:
+        """Initialize."""
+        self._html_path = html_path
+        self._etag = f'"{_INTEGRATION_VERSION}"'
+
+    async def get(self, request):
+        """Return the planning HTML file."""
+        from aiohttp.web import Response, HTTPNotFound
+        import asyncio
+        if not self._html_path.exists():
+            raise HTTPNotFound()
+        # Cache-busting: if client sends matching ETag, return 304
+        if request.headers.get("If-None-Match") == self._etag:
+            return Response(status=304)
+        # Use executor to avoid blocking the event loop
+        loop = asyncio.get_event_loop()
+        html = await loop.run_in_executor(None, self._html_path.read_text, "utf-8")
+        return Response(
+            body=html,
+            content_type="text/html",
+            charset="utf-8",
+            headers={
+                "ETag": self._etag,
+                "Cache-Control": "no-cache",
+            },
+        )
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Intuis Connect from a config entry."""
@@ -197,11 +354,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)
 
+    # ---------- migrate orphaned _energy_cost entities (_2 fix) -------------------
+    # Previous versions may have left a StatisticsMeta entry occupying the clean
+    # entity_id (e.g. sensor.chambre_parents_energy_cost), causing the new sensor
+    # to be registered as sensor.chambre_parents_energy_cost_2.
+    # Migration: remove the orphaned StatisticsMeta rows so the new entity can
+    # claim the clean entity_id on the next reload.
+    cost_enabled = entry.options.get(CONF_ENERGY_COST_ENABLED, DEFAULT_ENERGY_COST_ENABLED)
+    if cost_enabled:
+        await _async_migrate_cost_entity_ids(hass, entry, intuis_home)
+
     # ---------- setup platforms ----------------------------------------------------
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # ---------- register services -------------------------------------------------
     await async_register_services(hass, entry)
+
+    # ---------- register planning HTML view (auto cache-busting) ------------------
+    # Guard: register only once across all entries (route cannot be registered twice)
+    if not hass.data[DOMAIN].get("_planning_view_registered"):
+        hass.http.register_view(IntuisPlanningView(_PLANNING_HTML))
+        hass.data[DOMAIN]["_planning_view_registered"] = True
 
     # ---------- cancel any previous import and trigger new one if requested --------
     # Cancel any existing import from previous session to release resources
@@ -246,12 +419,77 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         new_options = {**entry.options, CONF_IMPORT_HISTORY: False}
         hass.config_entries.async_update_entry(entry, options=new_options)
 
+    # ---------- start hourly stats updater ------------------------------------------
+    # HourlyStatsUpdater - Periodic import of hourly energy statistics
+    # This runs periodically to fetch hourly energy data and inject it into HA statistics
+    hourly_stats_enabled = entry.options.get(
+        CONF_HOURLY_STATS_ENABLED, DEFAULT_HOURLY_STATS_ENABLED
+    )
+    hourly_stats_interval = entry.options.get(
+        CONF_HOURLY_STATS_INTERVAL, DEFAULT_HOURLY_STATS_INTERVAL
+    )
+    
+    if hourly_stats_enabled:
+        # Get timezone from HA config or default to Europe/Paris
+        timezone_str = hass.config.time_zone or "Europe/Paris"
+        
+        hourly_stats_updater = HourlyStatsUpdater(
+            hass=hass,
+            api=intuis_api,
+            intuis_home=intuis_home,
+            entry_id=entry.entry_id,
+            home_id=entry.data["home_id"],
+            update_interval_minutes=hourly_stats_interval,
+            timezone_str=timezone_str,
+        )
+        hass.data[DOMAIN][entry.entry_id]["hourly_stats_updater"] = hourly_stats_updater
+        # Load storage NOW so base_kwh is available before sensors start reporting
+        await hourly_stats_updater.load_storage()
+
+        # CostStatsUpdater — wired to HourlyStatsUpdater so cost is updated
+        # at the same cadence as energy stats.
+        cost_enabled = entry.options.get(CONF_ENERGY_COST_ENABLED, DEFAULT_ENERGY_COST_ENABLED)
+        if cost_enabled:
+            cost_updater = CostStatsUpdater(
+                hass=hass,
+                intuis_home=intuis_home,
+                entry_id=entry.entry_id,
+                options=dict(entry.options),
+                timezone_str=timezone_str,
+            )
+            await cost_updater.load_storage()
+            cost_updater.publish_cost_base()
+            hourly_stats_updater.cost_updater = cost_updater
+            hass.data[DOMAIN][entry.entry_id]["cost_stats_updater"] = cost_updater
+            _LOGGER.info("Energy cost statistics updater enabled")
+
+        await hourly_stats_updater.async_start()
+        
+        # Schedule daily rebase at reset_hour+1 local time.
+        # reset_hour is the API's finalization time (default 02:00, configurable).
+        # Running 1h after ensures J-1 data is fully available in the API.
+        _LOGGER.info(
+            "Hourly energy statistics updater started (interval: %d min, tz: %s)",
+            hourly_stats_interval,
+            timezone_str,
+        )
+    else:
+        _LOGGER.debug("Hourly energy statistics updater disabled by configuration")
+
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     _LOGGER.debug("Unloading entry %s", entry.entry_id)
+    
+    # Stop hourly stats updater
+    entry_data = hass.data[DOMAIN].get(entry.entry_id, {})
+    hourly_stats_updater = entry_data.get("hourly_stats_updater")
+    if hourly_stats_updater:
+        await hourly_stats_updater.async_stop()
+        _LOGGER.debug("Stopped hourly stats updater for entry %s", entry.entry_id)
+    
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN].pop(entry.entry_id)
         _LOGGER.debug("Unloaded entry %s", entry.entry_id)

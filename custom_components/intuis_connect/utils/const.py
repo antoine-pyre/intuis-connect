@@ -1,4 +1,4 @@
-"""Constants for Intuis Connect integration (v1.9.6)."""
+"""Constants for Intuis Connect integration (v1.10.0)."""
 
 DOMAIN = "intuis_connect"
 
@@ -37,11 +37,7 @@ HOMEMEASURE_PATH = "/api/gethomemeasure"
 ROOMMEASURE_PATH = "/api/getroommeasure"
 
 # Energy measure types - request all tariffs to capture all consumption
-# Extended with heating/hot_water types discovered from APK decompilation
-ENERGY_MEASURE_TYPES = (
-    "sum_energy_elec,sum_energy_elec$0,sum_energy_elec$1,sum_energy_elec$2,"
-    "sum_energy_elec_heating,sum_energy_elec_hot_water"
-)
+ENERGY_MEASURE_TYPES = "sum_energy_elec,sum_energy_elec$0,sum_energy_elec$1,sum_energy_elec$2,sum_energy_elec_heating,sum_energy_elec_hot_water"
 
 ENERGY_BASE = f"{BASE_URL}/api"
 GET_SCHEDULE_PATH = "/gethomeschedule"
@@ -128,6 +124,26 @@ CONF_IMPORT_HISTORY_DAYS = "import_history_days"
 DEFAULT_IMPORT_HISTORY = False
 DEFAULT_IMPORT_HISTORY_DAYS = 365
 
+# Hourly statistics updater options
+CONF_HOURLY_STATS_ENABLED = "hourly_stats_enabled"
+CONF_HOURLY_STATS_INTERVAL = "hourly_stats_interval"
+DEFAULT_HOURLY_STATS_ENABLED = True
+DEFAULT_HOURLY_STATS_INTERVAL = 120  # minutes (2 hours)
+
+# API data delay for hourly energy data
+# Only skip the current hour which may still be accumulating data
+# Hourly data is available almost immediately from the API
+API_DATA_DELAY_HOURS = 1
+
+# Lookback period for hourly stats updater (in hours)
+HOURLY_STATS_LOOKBACK_HOURS = 12
+
+# Maximum hours per API request to avoid 500 errors
+MAX_HOURS_PER_REQUEST = 12
+
+# Maximum days per hourly API request for historical import
+MAX_DAYS_PER_HOURLY_REQUEST = 42  # API returns max 1024 hourly values (~42 days)
+
 IMPORT_DAYS_OPTIONS = [
     {"value": "30", "label": "30 days (1 month)"},
     {"value": "90", "label": "90 days (3 months)"},
@@ -180,3 +196,22 @@ MAX_UPDATE_INTERVAL_OPTIONS = [
     {"value": "15", "label": "15 minutes"},
     {"value": "30", "label": "30 minutes"},
 ]
+
+# Key used in hass.data[DOMAIN] to signal that a history import is in progress.
+# Stored as hass.data[DOMAIN][HISTORY_IMPORT_KEY] = {home_id: bool}
+# Using hass.data avoids a module-level mutable global and works correctly
+# across multiple config entries.
+HISTORY_IMPORT_KEY = "history_import_in_progress"
+
+# Energy cost calculation
+CONF_ENERGY_COST_ENABLED = "energy_cost_enabled"
+CONF_ENERGY_PRICE_MODE = "energy_price_mode"      # "fixed" | "entity"
+CONF_ENERGY_FIXED_PRICE = "energy_fixed_price"    # €/kWh (float)
+CONF_ENERGY_PRICE_ENTITY = "energy_price_entity"  # entity_id of a price sensor
+
+DEFAULT_ENERGY_COST_ENABLED = False
+DEFAULT_ENERGY_PRICE_MODE = "fixed"
+DEFAULT_ENERGY_FIXED_PRICE = 0.25                 # €/kWh (valeur par défaut raisonnable)
+DEFAULT_ENERGY_PRICE_ENTITY = ""
+
+ENERGY_PRICE_MODE_OPTIONS = ["fixed", "entity"]
