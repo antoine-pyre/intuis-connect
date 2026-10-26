@@ -10,5 +10,5 @@ Les cases cochées correspondent aux travaux réalisés et vérifiés ; voir doc
 
 ## 2. Validation et livraison
 
-- [ ] 2.1 Vérifier les liens et la concordance auteur/PR/commit/statut ; contrôler l’absence d’identité de coauteur inventée.
+- [x] 2.1 Vérifier les liens et la concordance auteur/PR/commit/statut ; contrôler l’absence d’identité de coauteur inventée.
 - [ ] 2.2 Ajouter les crédits aux descriptions et notes de livraison réellement préparées ; ne publier aucun message externe au titre de cette planification.
