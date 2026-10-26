@@ -210,9 +210,11 @@ class IntuisZoneTemperatureNumber(CoordinatorEntity[IntuisDataUpdateCoordinator]
     @property
     def device_info(self) -> DeviceInfo:
         """Return device info - grouped by schedule."""
+        home = self.coordinator.data.get("intuis_home")
+        schedule = next((s for s in home.schedules if s.id == self._schedule_id), None) if home else None
         return DeviceInfo(
             identifiers={(DOMAIN, f"{self._home_id}_schedule_{self._schedule_id}")},
-            name=f"Schedule {self._schedule_name}",
+            name=f"Schedule {schedule.name if schedule else self._schedule_name}",
             manufacturer="Muller Intuitiv (Netatmo)",
             model="Heating Schedule",
             via_device=(DOMAIN, f"{self._home_id}_home"),
@@ -259,6 +261,16 @@ class IntuisZoneTemperatureNumber(CoordinatorEntity[IntuisDataUpdateCoordinator]
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+        from homeassistant.helpers import device_registry as dr
+        registry = dr.async_get(self.hass)
+        if hasattr(registry, "async_get_devices"):
+            devices = registry.async_get_devices(identifiers=self.device_info["identifiers"])
+        else:
+            device = registry.async_get_device(identifiers=self.device_info["identifiers"])
+            devices = [device] if device else []
+        for device in devices:
+            if device.name != self.device_info["name"]:
+                registry.async_update_device(device.id, name=self.device_info["name"])
         # Update cached value from coordinator if available
         intuis_home = self.coordinator.data.get("intuis_home")
         if intuis_home:

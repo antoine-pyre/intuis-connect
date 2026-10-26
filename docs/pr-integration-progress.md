@@ -12,3 +12,4 @@ Chaque ligne est enregistrée dans le commit de la tâche concernée.
 | extend-schedule-editing | 1.1 | feat: target inactive schedules by name or ID | 49 tests services/ciblage réussis sur HA 2026.10 ; Ruff passe |
 | extend-schedule-editing | 1.2 | feat: validate complete timetable and planning temperature payloads | 13 tests ciblés passent ; Ruff ; JSON et limites validés |
 | extend-schedule-editing | 1.3 | feat: save complete schedules through confirmed shared mutations | 107 tests services/mutations passent ; erreurs et températures vérifiées ; Ruff |
+| extend-schedule-editing | 2.1 | feat: refresh schedule labels while preserving registry identities | 16 tests ciblés réussis ; vrai registry, IDs et noms personnalisés préservés |

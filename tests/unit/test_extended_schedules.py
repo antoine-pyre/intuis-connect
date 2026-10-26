@@ -70,3 +70,31 @@ async def test_unknown_zone_and_cloud_error_preserve_state(homes):
     with pytest.raises(APIError):
         await call(homes,'sync_schedule',home_id='second',away_temp=19.5)
     assert target.away_temp==16
+
+
+async def test_renamed_schedule_names_keep_identity_and_user_name(homes):
+    from types import SimpleNamespace
+    from homeassistant.helpers import device_registry as dr
+    from custom_components.intuis_connect.number import IntuisZoneTemperatureNumber
+    from custom_components.intuis_connect.calendar import IntuisScheduleCalendar
+    if hasattr(dr, 'async_setup'):
+        dr.async_setup(homes.hass)
+    await dr.async_load(homes.hass)
+    registry = dr.async_get(homes.hass)
+    schedule = homes.second.home.schedules[0]
+    coordinator = SimpleNamespace(data={'intuis_home': homes.second.home})
+    zone = schedule.zones[0]
+    number = IntuisZoneTemperatureNumber(coordinator,homes.second.api,'second',schedule,zone,zone.rooms_temp[0],'Room')
+    number.hass = homes.hass
+    number.async_write_ha_state = lambda: None
+    calendar = IntuisScheduleCalendar(coordinator,homes.second.api,'second',homes.second.home,schedule)
+    ids = number.unique_id, calendar.unique_id
+    device = registry.async_get_or_create(config_entry_id=homes.second.entry.entry_id, identifiers=number.device_info["identifiers"], name=number.device_info["name"])
+    registry.async_update_device(device.id, name_by_user='My custom device')
+    schedule.name='Renamed'
+    number._handle_coordinator_update()
+    assert number.device_info['name']=='Schedule Renamed'
+    assert calendar.name=='Schedule Renamed'
+    assert registry.async_get(device.id).name=='Schedule Renamed'
+    assert registry.async_get(device.id).name_by_user=='My custom device'
+    assert (number.unique_id,calendar.unique_id)==ids
