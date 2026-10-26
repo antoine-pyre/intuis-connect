@@ -18,6 +18,10 @@ L’intégration SHALL préserver les statistiques existantes si la récupérati
 - **WHEN** l’écriture échoue après le début du remplacement
 - **THEN** les anciennes statistiques restent disponibles ou sont restaurées avant que l’opération soit déclarée terminée
 
+#### Scenario: Premières statistiques live absentes
+- **WHEN** un import est demandé sans métadonnées compatibles ou sans baseline short-term live valide après la période à remplacer
+- **THEN** l’import est refusé sans mutation avec un message invitant à attendre les premières statistiques live puis à relancer le service
+
 ### Requirement: Réimport cohérent et idempotent
 
 L’intégration SHALL importer une série validée dans l’ordre chronologique sans doublons et conserver une somme cumulée cohérente avec les statistiques antérieures et postérieures.

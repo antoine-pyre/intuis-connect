@@ -184,6 +184,10 @@ The integration tracks energy consumption per room:
 - **Daily consumption** in kWh
 - **Heating minutes** per day
 - **Historical import** available (up to 365 days)
+- Historical imports replace complete local days only and preserve existing statistics on failure.
+  Let energy sensors record their first live statistics before importing; if the automatic
+  setup attempt reports a missing live baseline, wait and retry the import service.
+  See [safe import prerequisites and recovery](docs/08-safe-energy-history-import.md).
 - **Multiple tariff support** (aggregates all EJP tariffs)
 
 Energy data is fetched based on your configured scale:

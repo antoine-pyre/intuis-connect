@@ -51,8 +51,11 @@ sur les tables recorder, ainsi que le transport HTTP. L’écriture de `services
 est isolée dans ce test pour éviter de modifier les sources pendant les tests.
 
 La fixture SQLite **ne lance pas le worker recorder** et ne prouve pas le
-fonctionnement des imports mis en file. Les tests du lot import doivent démarrer
-le composant recorder réel et attendre la fin de sa queue pour cette garantie.
+fonctionnement des imports mis en file. Les tests de `test_history_import.py`
+lancent séparément le véritable thread/worker recorder, ses sessions et sa queue,
+attendent son initialisation puis les acquittements de transaction. Ils vérifient
+également la compilation live HA après import, le rollback SQL et le déchargement
+pendant un INSERT et une sauvegarde de progression Store.
 
 ## Baseline du 26 octobre 2026
 
