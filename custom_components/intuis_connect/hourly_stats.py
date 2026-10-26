@@ -26,7 +26,7 @@ from .cost_stats import (
     hourly_costs,
 )
 from .external_statistics import metadata, statistic_id
-from .hourly_series import HOUR, closed_hour_end, stage_hourly
+from .hourly_series import HOUR, closed_hour_end, stage_hourly, sum_hourly
 from .intuis_api.api import APIError, CannotConnect, InvalidAuth, RateLimitError
 from .recorder_import import HistoryReplacementError, async_replace_external_history
 from .utils.const import CONF_COST_STATISTICS
@@ -81,17 +81,6 @@ async def async_update_window(
 def entry_cost_options(options: Any) -> dict[str, Any] | None:
     """Cost settings of one entry, only when that entry enabled costs."""
     return dict(options) if options.get(CONF_COST_STATISTICS) else None
-
-
-def _home_total(
-    confirmed: dict[str, tuple[tuple[datetime, float], ...]],
-) -> tuple[tuple[datetime, float], ...]:
-    """Sum rooms hour by hour; callers guarantee identical complete coverage."""
-    series = list(confirmed.values())
-    return tuple(
-        (series[0][index][0], sum(room[index][1] for room in series))
-        for index in range(len(series[0]))
-    )
 
 
 async def async_import_hourly_history(
@@ -226,7 +215,7 @@ async def async_import_hourly_history(
                         home_metadata(home_id, intuis_home.name),
                         _utc(start),
                         _utc(end),
-                        _home_total(confirmed),
+                        sum_hourly(confirmed),
                     )
                     results["home_total"] = "complete"
                 except HistoryReplacementError as err:
@@ -246,7 +235,7 @@ async def async_import_hourly_history(
                     await async_write_costs(
                         hass,
                         cost_metadata(home_id, None, intuis_home.name, currency),
-                        _home_total(costed),
+                        sum_hourly(costed),
                     )
                 except HistoryReplacementError as err:
                     cost_errors.append(f"Home hourly cost: {err}")

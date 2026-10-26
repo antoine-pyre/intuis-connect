@@ -8,8 +8,8 @@ import json
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
@@ -25,6 +25,7 @@ from .history_import import (
     DEFAULT_HISTORY_DAYS,
     MAX_HISTORY_DAYS,
 )
+from .cost_stats import async_recalculate_costs
 from .hourly_series import closed_hour_end
 from .hourly_stats import entry_cost_options
 from .schedule_mutations import async_set_schedule_slot, async_set_zone_temperature, async_sync_schedule
@@ -40,6 +41,8 @@ SERVICE_REFRESH_SCHEDULES = "refresh_schedules"
 SERVICE_SET_SCHEDULE_SLOT = "set_schedule_slot"
 SERVICE_SET_ZONE_TEMPERATURE = "set_zone_temperature"
 SERVICE_IMPORT_ENERGY_HISTORY = "import_energy_history"
+SERVICE_RECALCULATE_COST_HISTORY = "recalculate_cost_history"
+DEFAULT_COST_RECALCULATION_DAYS = 7
 SERVICE_SYNC_SCHEDULE = "sync_schedule"
 SERVICES = (
     SERVICE_SWITCH_SCHEDULE,
@@ -48,6 +51,7 @@ SERVICES = (
     SERVICE_SET_ZONE_TEMPERATURE,
     SERVICE_IMPORT_ENERGY_HISTORY,
     SERVICE_SYNC_SCHEDULE,
+    SERVICE_RECALCULATE_COST_HISTORY,
 )
 
 ATTR_ROOM_ID = "room_id"
@@ -141,6 +145,13 @@ IMPORT_ENERGY_HISTORY_SCHEMA = vol.Schema(
         vol.Optional(ATTR_DAYS, default=DEFAULT_HISTORY_DAYS): _history_days,
         vol.Optional(ATTR_ROOM_NAME): str,
         vol.Optional(ATTR_GRANULARITY, default="daily"): _granularity,
+    }
+)
+RECALCULATE_COST_HISTORY_SCHEMA = vol.Schema(
+    {
+        **HOME_FIELD,
+        vol.Optional(ATTR_DAYS, default=DEFAULT_COST_RECALCULATION_DAYS): _history_days,
+        vol.Optional(ATTR_ROOM_NAME): str,
     }
 )
 
@@ -332,7 +343,8 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
         if is_loaded(hass, entry_id, data) and (coordinator := data.get("coordinator")):
             await coordinator.async_request_refresh()
 
-    async def import_energy_history(call: ServiceCall) -> None:
+    def room_targets(call: ServiceCall):
+        """Targets and normalized room filter, validated before any job starts."""
         entries = require_targets(hass, call.data.get(ATTR_HOME_ID))
         room_name = call.data.get(ATTR_ROOM_NAME) or None
         if room_name is not None and not room_name.strip():
@@ -354,6 +366,10 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
                 raise ServiceValidationError(
                     f"Room {room_name} not found in any loaded home"
                 )
+        return entries, room_name
+
+    async def import_energy_history(call: ServiceCall) -> None:
+        entries, room_name = room_targets(call)
         if call.data[ATTR_GRANULARITY] == "hourly":
             end = closed_hour_end(datetime.now(timezone.utc))
             job = {
@@ -384,6 +400,47 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
                     data["intuis_home"].id,
                 )
 
+    async def recalculate_cost_history(call: ServiceCall) -> dict:
+        entries, room_name = room_targets(call)
+        entries = [
+            (entry_id, data)
+            for entry_id, data in entries
+            if entry_cost_options(data.get("options", {}))
+        ]
+        if not entries:
+            raise ServiceValidationError(
+                "Cost statistics are not enabled for the targeted home"
+            )
+        end = closed_hour_end(datetime.now(timezone.utc))
+        start = end - call.data[ATTR_DAYS] * 86400
+        homes = {}
+        for entry_id, data in entries:
+            if not is_loaded(hass, entry_id, data):
+                continue
+            manager = await async_get_import_manager(hass, entry_id)
+            result = await manager.async_run_exclusive(
+                async_recalculate_costs(
+                    hass,
+                    entry_id,
+                    data["intuis_home"],
+                    entry_cost_options(data["options"]),
+                    start,
+                    end,
+                    room_name,
+                )
+            )
+            homes[data["intuis_home"].id] = result or {
+                "status": "busy",
+                "errors": ["An energy import is running or the home is unloading"],
+            }
+        failed = [r for r in homes.values() if r["status"] in ("failed", "busy")]
+        if not homes or len(failed) == len(homes):
+            raise HomeAssistantError(
+                "Cost recalculation failed; previous costs were kept: "
+                + "; ".join(e for r in failed for e in r["errors"])
+            )
+        return {"homes": homes}
+
     handlers = {
         SERVICE_SYNC_SCHEDULE: (sync_schedule, SYNC_SCHEDULE_SCHEMA),
         SERVICE_SWITCH_SCHEDULE: (switch_schedule, SWITCH_SCHEDULE_SCHEMA),
@@ -397,10 +454,22 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
             import_energy_history,
             IMPORT_ENERGY_HISTORY_SCHEMA,
         ),
+        SERVICE_RECALCULATE_COST_HISTORY: (
+            recalculate_cost_history,
+            RECALCULATE_COST_HISTORY_SCHEMA,
+        ),
     }
     for service, (handler, schema) in handlers.items():
         if not hass.services.has_service(DOMAIN, service):
-            hass.services.async_register(DOMAIN, service, handler, schema=schema)
+            hass.services.async_register(
+                DOMAIN,
+                service,
+                handler,
+                schema=schema,
+                supports_response=SupportsResponse.OPTIONAL
+                if service == SERVICE_RECALCULATE_COST_HISTORY
+                else SupportsResponse.NONE,
+            )
 
 
 def async_unregister_services_if_unused(hass: HomeAssistant) -> None:

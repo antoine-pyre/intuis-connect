@@ -143,6 +143,24 @@
           "description": "Frost temperature, 5–15 °C in half degrees."
         }
       }
+    },
+    "recalculate_cost_history": {
+      "name": "Recalculer l’historique des coûts",
+      "description": "Réécrit les statistiques de coût depuis l’énergie horaire confirmée et le prix configuré pour les dernières heures closes. L’énergie n’est jamais modifiée ; une pièce en échec conserve ses coûts précédents.",
+      "fields": {
+        "home_id": {
+          "name": "ID du domicile",
+          "description": "Cible un domicile chargé par son ID Intuis. Sans cible, s’applique à tous les domiciles chargés dont les coûts sont activés."
+        },
+        "days": {
+          "name": "Jours",
+          "description": "Nombre entier de jours d’heures closes à recalculer (1–730)."
+        },
+        "room_name": {
+          "name": "Pièce (facultatif)",
+          "description": "Laisser vide pour toutes les pièces et le total du domicile."
+        }
+      }
     }
   },
   "config": {

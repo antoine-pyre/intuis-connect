@@ -38,7 +38,14 @@ async def live_recorder(ha_hass, tmp_path):
 
 
 async def job(
-    ha_hass, monkeypatch, responses, *, home_id="home", entry_id="entry", **kwargs
+    ha_hass,
+    monkeypatch,
+    responses,
+    *,
+    home_id="home",
+    entry_id="entry",
+    end_hour=2,
+    **kwargs,
 ):
     monkeypatch.setattr(
         "custom_components.intuis_connect.history_import.API_DELAY_SECONDS", 0
@@ -56,7 +63,7 @@ async def job(
         ha_hass, cost_signal(entry_id), lambda: published.append(1)
     )
     result = await async_import_hourly_history(
-        ha_hass, api, home, manager, start=ts(0), end=ts(2), **kwargs
+        ha_hass, api, home, manager, start=ts(0), end=ts(end_hour), **kwargs
     )
     await ha_hass.async_block_till_done()
     return result, manager, published
@@ -228,3 +235,110 @@ async def test_platform_adds_cost_displays_only_when_enabled(
             "intuis_home_home_hourly_cost",
         ]
         assert {e.native_unit_of_measurement for e in displays} == {"CHF"}
+
+
+# ---- recalculate_cost_history through the real service (task 2.2) ----------
+
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError  # noqa: E402
+
+from custom_components.intuis_connect.history_import import (  # noqa: E402
+    async_get_import_manager,
+)
+from custom_components.intuis_connect.services import async_register_services  # noqa: E402
+from custom_components.intuis_connect.utils.const import DOMAIN  # noqa: E402
+
+
+async def service_home(
+    ha_hass, ha_entry_factory, monkeypatch, frozen_clock, *, cost=FIXED
+):
+    """One loaded home with 24 confirmed hours of energy for rooms a and b."""
+    frozen_clock.move_to("2026-10-26 00:20:00")
+    ha_hass.config.currency = "EUR"
+    result, _, _ = await job(
+        ha_hass,
+        monkeypatch,
+        [wh(0, [1000] * 24), wh(0, [500] * 24)],
+        end_hour=24,
+    )
+    assert result["status"] == "completed"
+    entry = ha_entry_factory(home_id="home")
+    home = SimpleNamespace(
+        id="home",
+        name="House",
+        rooms={"a": SimpleNamespace(name="Living"), "b": SimpleNamespace(name="Bed")},
+    )
+    ha_hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
+        "intuis_home": home,
+        "api": SimpleNamespace(),
+        "options": dict(cost or {}),
+    }
+    await async_register_services(ha_hass, entry)
+    return entry
+
+
+async def recalc(ha_hass, **data):
+    return await ha_hass.services.async_call(
+        DOMAIN, "recalculate_cost_history", data, blocking=True, return_response=True
+    )
+
+
+async def test_service_recalculates_from_confirmed_energy_and_is_idempotent(
+    ha_hass, ha_entry_factory, live_recorder, monkeypatch, frozen_clock
+):
+    await service_home(ha_hass, ha_entry_factory, monkeypatch, frozen_clock)
+    energy = await series(live_recorder, statistic_id("home", "a"))
+    response = await recalc(ha_hass, days=1)
+    home = response["homes"]["home"]
+    assert home["status"] == "completed" and home["rooms_recalculated"] == 2
+    assert home["hours"] == 24 and home["home_total"] == "complete"
+    room = await series(live_recorder, statistic_id("home", "a", "cost"))
+    assert len(room) == 24 and room[-1][2] == pytest.approx(24 * 0.2)
+    total = await series(live_recorder, statistic_id("home", None, "cost"))
+    assert total[-1][2] == pytest.approx(24 * 0.3)
+    assert await recalc(ha_hass, days=1) == response
+    assert await series(live_recorder, statistic_id("home", "a", "cost")) == room
+    # Energy statistics are only read.
+    assert await series(live_recorder, statistic_id("home", "a")) == energy
+
+
+async def test_new_price_rewrites_only_the_targeted_room(
+    ha_hass, ha_entry_factory, live_recorder, monkeypatch, frozen_clock
+):
+    entry = await service_home(ha_hass, ha_entry_factory, monkeypatch, frozen_clock)
+    await recalc(ha_hass, days=1)
+    total = await series(live_recorder, statistic_id("home", None, "cost"))
+    bed = await series(live_recorder, statistic_id("home", "b", "cost"))
+    ha_hass.data[DOMAIN][entry.entry_id]["options"][CONF_COST_FIXED_PRICE] = 0.5
+    response = await recalc(ha_hass, days=1, room_name="living", home_id="home")
+    assert response["homes"]["home"]["home_total"] == "skipped"
+    living = await series(live_recorder, statistic_id("home", "a", "cost"))
+    assert living[-1][2] == pytest.approx(24 * 0.5)
+    assert await series(live_recorder, statistic_id("home", "b", "cost")) == bed
+    assert await series(live_recorder, statistic_id("home", None, "cost")) == total
+
+
+async def test_missing_energy_fails_visibly_and_keeps_costs(
+    ha_hass, ha_entry_factory, live_recorder, monkeypatch, frozen_clock
+):
+    await service_home(ha_hass, ha_entry_factory, monkeypatch, frozen_clock)
+    await recalc(ha_hass, days=1)
+    before = await series(live_recorder, statistic_id("home", "a", "cost"))
+    # Two days: the first day has no confirmed energy.
+    with pytest.raises(HomeAssistantError, match="No confirmed hourly energy"):
+        await recalc(ha_hass, days=2)
+    assert await series(live_recorder, statistic_id("home", "a", "cost")) == before
+
+
+async def test_service_refuses_disabled_costs_and_busy_homes(
+    ha_hass, ha_entry_factory, live_recorder, monkeypatch, frozen_clock
+):
+    entry = await service_home(ha_hass, ha_entry_factory, monkeypatch, frozen_clock)
+    manager = await async_get_import_manager(ha_hass, entry.entry_id)
+    manager._running = True  # an hourly import holds this home
+    with pytest.raises(HomeAssistantError, match="running"):
+        await recalc(ha_hass, days=1)
+    manager._running = False
+    ha_hass.data[DOMAIN][entry.entry_id]["options"] = {}
+    with pytest.raises(ServiceValidationError, match="not enabled"):
+        await recalc(ha_hass, days=1)
+    assert await series(live_recorder, statistic_id("home", "a", "cost")) is None

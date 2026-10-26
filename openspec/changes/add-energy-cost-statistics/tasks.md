@@ -10,7 +10,7 @@ Les cases cochées correspondent aux travaux réalisés et vérifiés ; voir doc
 ## 2. Statistiques et service
 
 - [x] 2.1 Ajouter séries/coûts d’affichage sans double writer, transaction acquittée et isolation multi-domicile.
-- [ ] 2.2 Implémenter recalculate_cost_history avec ciblage, plages bornées et erreurs visibles ; utiliser une méthode de publication publique.
+- [x] 2.2 Implémenter recalculate_cost_history avec ciblage, plages bornées et erreurs visibles ; utiliser une méthode de publication publique.
 - [ ] 2.3 Tester tarifs négatifs valides le cas échéant, changements de prix/devise, trous, réimport, échec et annulation sans modifier les kWh.
 
 ## 3. Compatibilité et livraison

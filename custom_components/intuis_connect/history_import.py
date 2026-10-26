@@ -192,6 +192,24 @@ class HistoryImportManager:
         self._task = self.hass.async_create_task(job)
         return True
 
+    async def async_run_exclusive(self, job):
+        """Await a caller's job under the same reservation as imports.
+
+        Returns None without running it when an import holds the entry or the
+        entry is unloading; unload cancels and drains it like an import.
+        """
+        if self.is_running or self._closing:
+            job.close()
+            return None
+        self._running = True
+        self._task = asyncio.current_task()
+        try:
+            return await job
+        finally:
+            self._running = False
+            if self._task is asyncio.current_task():
+                self._task = None
+
     def cancel(self) -> None:
         self._cancelled = True
         if self._task is not None and not self._task.done():
