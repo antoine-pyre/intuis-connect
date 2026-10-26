@@ -14,3 +14,4 @@ Chaque ligne est enregistrée dans le commit de la tâche concernée.
 | extend-schedule-editing | 1.3 | feat: save complete schedules through confirmed shared mutations | 107 tests services/mutations passent ; erreurs et températures vérifiées ; Ruff |
 | extend-schedule-editing | 2.1 | feat: refresh schedule labels while preserving registry identities | 16 tests ciblés réussis ; vrai registry, IDs et noms personnalisés préservés |
 | extend-schedule-editing | 2.2 | feat: expose complete weekly planning data with room names | 17 tests ciblés passent ; summary réel, héritage dimanche/lundi et sept jours vérifiés |
+| extend-schedule-editing | 3.1 | test: cover full schedule save concurrency and lifecycle | 111 tests planning/services passent sur les deux HA ; concurrence number/refresh/unload ; Ruff |
