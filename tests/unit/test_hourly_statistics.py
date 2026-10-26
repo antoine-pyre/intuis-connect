@@ -1,5 +1,5 @@
 """Native worker checks for TheFab21-derived external hourly capabilities."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import asyncio
 import inspect
 from homeassistant.components.recorder.tasks import SynchronizeTask
@@ -108,3 +108,121 @@ def test_late_cloud_samples_outside_the_closed_window_are_rejected(samples):
     from custom_components.intuis_connect.intuis_api.api import APIError
     with pytest.raises(APIError):
         stage_hourly(samples,0,3600)
+
+
+def hour(n):
+    return datetime(2026,10,25,tzinfo=timezone.utc)+timedelta(hours=n)
+
+
+def hourly(first,values):
+    return tuple((hour(first+i),value) for i,value in enumerate(values))
+
+
+async def series(instance,sid):
+    from sqlalchemy import select
+    from homeassistant.components.recorder.db_schema import Statistics, StatisticsMeta
+    def read():
+        with instance.get_session() as session:
+            meta=session.scalar(select(StatisticsMeta).where(StatisticsMeta.statistic_id==sid))
+            if meta is None:
+                return None
+            return [(r.start_ts,r.state,r.sum) for r in session.scalars(select(Statistics).where(Statistics.metadata_id==meta.id).order_by(Statistics.start_ts))]
+    return await instance.async_add_executor_job(read)
+
+
+async def replace_external(hass,first,values,meta=None):
+    from custom_components.intuis_connect.recorder_import import async_replace_external_history
+    meta=meta or metadata('home','room','Room hourly energy')
+    return await async_replace_external_history(hass,meta,hour(first),hour(first+len(values)),hourly(first,values))
+
+
+async def test_external_replacement_creates_series_and_replay_is_idempotent(ha_hass,live_recorder):
+    sid=statistic_id('home','room')
+    first=await replace_external(ha_hass,0,(0.5,1.0,0))
+    assert first.created and first.hours==3 and first.final_sum==1.5 and first.cleared==0
+    expected=[(hour(0).timestamp(),0.5,0.5),(hour(1).timestamp(),1.0,1.5),(hour(2).timestamp(),0,1.5)]
+    assert await series(live_recorder,sid)==expected
+    again=await replace_external(ha_hass,0,(0.5,1.0,0))
+    assert not again.created and again.cleared==3 and again.adjusted==0
+    assert await series(live_recorder,sid)==expected
+    read=await live_recorder.async_add_executor_job(statistics.statistics_during_period,ha_hass,hour(0),hour(3),{sid},'hour',None,{'state','sum'})
+    assert [row['sum'] for row in read[sid]]==[0.5,1.5,1.5]
+
+
+async def test_external_replacement_continues_sums_around_the_period(ha_hass,live_recorder):
+    sid=statistic_id('home','room')
+    await replace_external(ha_hass,0,(1,1,1,1,1))
+    result=await replace_external(ha_hass,1,(0.25,3))
+    assert result.final_sum==4.25 and result.adjusted==2
+    assert await series(live_recorder,sid)==[
+        (hour(0).timestamp(),1,1),(hour(1).timestamp(),0.25,1.25),(hour(2).timestamp(),3,4.25),
+        (hour(3).timestamp(),1,5.25),(hour(4).timestamp(),1,6.25)]
+    # Late cloud correction of a later window keeps earlier confirmed hours.
+    await replace_external(ha_hass,4,(2,))
+    assert (await series(live_recorder,sid))[-1]==(hour(4).timestamp(),2,7.25)
+
+
+async def test_external_rollback_preserves_series_and_does_not_create_metadata(ha_hass,live_recorder):
+    from sqlalchemy import event
+    from custom_components.intuis_connect.recorder_import import HistoryReplacementError
+    sid=statistic_id('home','room')
+    def fail_insert(conn,cursor,statement,parameters,context,many):
+        if statement.startswith('INSERT INTO statistics '):
+            raise RuntimeError('injected insertion failure')
+    event.listen(live_recorder.engine,'before_cursor_execute',fail_insert)
+    try:
+        with pytest.raises(HistoryReplacementError,match='injected insertion failure'):
+            await replace_external(ha_hass,0,(1,))
+        assert await series(live_recorder,sid) is None
+        event.remove(live_recorder.engine,'before_cursor_execute',fail_insert)
+        await replace_external(ha_hass,0,(1,2))
+        before=await series(live_recorder,sid)
+        event.listen(live_recorder.engine,'before_cursor_execute',fail_insert)
+        with pytest.raises(HistoryReplacementError):
+            await replace_external(ha_hass,0,(5,5))
+    finally:
+        if event.contains(live_recorder.engine,'before_cursor_execute',fail_insert):
+            event.remove(live_recorder.engine,'before_cursor_execute',fail_insert)
+    assert await series(live_recorder,sid)==before
+    # HA's own metadata lookup was not poisoned by the rolled-back attempt.
+    assert (await replace_external(ha_hass,0,(1,2))).adjusted==0
+    read=await live_recorder.async_add_executor_job(statistics.statistics_during_period,ha_hass,hour(0),hour(2),{sid},'hour',None,{'sum'})
+    assert [row['sum'] for row in read[sid]]==[1,3]
+
+
+async def test_incompatible_external_metadata_is_refused_without_mutation(ha_hass,live_recorder):
+    from custom_components.intuis_connect.recorder_import import HistoryReplacementError
+    sid=statistic_id('home','room')
+    await replace_external(ha_hass,0,(1,))
+    def corrupt():
+        from sqlalchemy import update
+        from homeassistant.components.recorder.db_schema import StatisticsMeta
+        with live_recorder.get_session() as session, session.begin():
+            session.execute(update(StatisticsMeta).where(StatisticsMeta.statistic_id==sid).values(unit_of_measurement='Wh'))
+    await live_recorder.async_add_executor_job(corrupt)
+    before=await series(live_recorder,sid)
+    with pytest.raises(HistoryReplacementError,match='incompatible'):
+        await replace_external(ha_hass,0,(9,))
+    assert await series(live_recorder,sid)==before
+
+
+@pytest.mark.parametrize('case',['hole','misaligned','unsorted','recorder_source','wrong_unit','no_sum'])
+async def test_invalid_external_requests_are_refused_before_queueing(ha_hass,live_recorder,case):
+    from custom_components.intuis_connect.recorder_import import HistoryReplacementError, async_replace_external_history
+    meta=metadata('home','room','Room hourly energy')
+    start,end,samples=hour(0),hour(2),hourly(0,(1,1))
+    if case=='hole':
+        samples=samples[:1]
+    elif case=='misaligned':
+        start,samples=start+timedelta(minutes=30),((start+timedelta(minutes=30),1),(hour(1),1))
+    elif case=='unsorted':
+        samples=samples[::-1]
+    elif case=='recorder_source':
+        meta={**meta,'source':'recorder'}
+    elif case=='wrong_unit':
+        meta={**meta,'unit_of_measurement':'Wh'}
+    else:
+        meta={**meta,'has_sum':False}
+    with pytest.raises(HistoryReplacementError):
+        await async_replace_external_history(ha_hass,meta,start,end,samples)
+    assert await series(live_recorder,statistic_id('home','room')) is None
