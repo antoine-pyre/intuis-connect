@@ -55,7 +55,6 @@
 |-------------|------|-------------|
 | **Climate** | `climate.<room>` | Full thermostat control |
 | **Sensor** | `sensor.<room>_temperature` | Current room temperature (°C) |
-| **Sensor** | `sensor.<room>_target_temperature` | Current setpoint (°C) |
 | **Sensor** | `sensor.<room>_scheduled_temperature` | Temperature according to schedule |
 | **Sensor** | `sensor.<room>_energy` | Daily energy consumption (kWh) |
 | **Sensor** | `sensor.<room>_heating_minutes` | Heating time today |
@@ -63,14 +62,11 @@
 | **Binary Sensor** | `binary_sensor.<room>_presence` | Motion/presence detected |
 | **Binary Sensor** | `binary_sensor.<room>_open_window` | Window open detected |
 | **Binary Sensor** | `binary_sensor.<room>_anticipation` | Pre-heating active |
-| **Binary Sensor** | `binary_sensor.<room>_boost` | Boost mode active |
 
 ### Per Schedule
 
 | Entity Type | Name | Description |
 |-------------|------|-------------|
-| **Sensor** | `sensor.<schedule>_current_zone` | Currently active zone (Comfort, Night, Eco...) |
-| **Sensor** | `sensor.<schedule>_next_zone_change` | When the next zone starts |
 | **Sensor** | `sensor.<schedule>_summary` | Full schedule data (for cards) |
 | **Calendar** | `calendar.<schedule>` | Weekly schedule visualization |
 
@@ -79,6 +75,7 @@
 | Entity Type | Name | Description |
 |-------------|------|-------------|
 | **Select** | `select.intuis_active_schedule` | Switch between schedules |
+| **Sensor** | Current zone / next zone change | Active schedule transitions for this home |
 | **Sensor** | Various config sensors | Home settings and configuration |
 
 ---
@@ -91,7 +88,7 @@
 |------|-------------|
 | **Auto** | Follow the active schedule |
 | **Heat** | Manual temperature control |
-| **Off** | Frost protection only |
+| **Off** | Send the cloud off mode |
 
 ### Presets
 
@@ -99,10 +96,10 @@
 |-----------|-------------|
 | **Home**  | Return to automatic schedule (mapped to HA Home preset) |
 | **Away**  | Reduced temperature for extended absence |
-| **Boost** | Maximum heating for quick warmup |
+| **Boost** | Temporary boost using the configured setpoint |
 | **Eco**   | Minimum temperature for frost protection (mapped to HA Eco preset) |
 
-All preset durations and temperatures are configurable in the integration options.
+Manual, Away and Boost durations and the Away/Boost temperatures are configurable in the integration options. Frost protection uses the current defaults of 7°C and 365 days. Climate commands are shown as assumed state for at most 120 seconds while awaiting confirmation; subsequent cloud updates determine the displayed mode. See [heating state and persistence](docs/09-heating-overrides.md).
 
 ---
 
@@ -163,16 +160,16 @@ Accessible via **Settings → Devices & Services → Intuis Connect → Configur
 
 | Option | Default | Range | Description |
 |--------|---------|-------|-------------|
-| Manual Duration | 5 min | 1-720 min | How long manual temperature lasts |
-| Away Duration | 24 hours | 1-10080 min | How long away mode lasts |
-| Boost Duration | 30 min | 1-720 min | How long boost mode lasts |
+| Manual Duration | 60 min | Choices from 15-720 min | How long manual temperature lasts |
+| Away Duration | 4 hours | Choices from 60-10080 min | How long away mode lasts |
+| Boost Duration | 30 min | Choices from 15-720 min | How long boost mode lasts |
 
 ### Override Temperatures
 
 | Option | Default | Range | Description |
 |--------|---------|-------|-------------|
 | Away Temperature | 16°C | 5-30°C | Temperature during away mode |
-| Boost Temperature | 30°C | 5-30°C | Temperature during boost mode |
+| Boost Temperature | 22°C | 5-30°C | Temperature during boost mode |
 
 ### Energy Settings
 
@@ -180,7 +177,8 @@ Accessible via **Settings → Devices & Services → Intuis Connect → Configur
 |--------|---------|-------------|
 | Energy Scale | 1 day | Granularity: 5min, 30min, 1hour, or 1day |
 | Import History | Off | Import historical energy data on setup |
-| History Days | 30 | Days of history to import (7, 30, 90, 365) |
+| History Days | 365 | Setup choices: 30, 90, 180, 365, 730 days |
+| Energy Reset Hour | 02:00 | Configured boundary for daily counters |
 
 ### Special Modes
 
@@ -196,7 +194,7 @@ The integration tracks energy consumption per room:
 
 - **Daily consumption** in kWh
 - **Heating minutes** per day
-- **Historical import** available (up to 365 days)
+- **Historical import** available (up to 730 complete local days)
 - Historical imports replace complete local days only and preserve existing statistics on failure.
   Let energy sensors record their first live statistics before importing; if the automatic
   setup attempt reports a missing live baseline, wait and retry the import service.
@@ -204,8 +202,9 @@ The integration tracks energy consumption per room:
 - **Multiple tariff support** (aggregates all EJP tariffs)
 
 Energy data is fetched based on your configured scale:
-- `1day`: Cached daily totals (fetched after 2 AM)
-- `5min/30min/1hour`: Real-time tracking
+- `1day`: Successful measurements cached per room after the configured reset hour (02:00 by default); failed rooms retry on the next cycle
+- `5min/30min/1hour`: Measurements refreshed each polling cycle
+- Missing readings are not fabricated as zero. The last valid measurement retains its date and freshness attributes; an incomplete home aggregate is marked stale.
 
 ---
 
@@ -321,13 +320,13 @@ When enabled, the integration automatically re-applies manual overrides before t
 - Try the `refresh_schedules` service
 
 ### Energy data missing
-- Energy is only fetched after 2 AM for daily scale
+- Daily-scale energy is fetched after the configured reset hour (02:00 by default)
 - Check that rooms have associated bridge IDs
 - Try switching to a different energy scale
 
 ### Schedule changes not appearing
 - Click the refresh button or call `refresh_schedules`
-- Changes made in the Intuis app may take 2 minutes to sync
+- Call `refresh_schedules` after editing schedule definitions in the Intuis app; room status is polled normally
 
 ### Authentication errors
 - Re-authenticate by removing and re-adding the integration

@@ -64,12 +64,15 @@ Avant changements du produit : HA 2026.10.4 exécutait les **193 tests existants
 L’environnement HA 2024.6.4 échouait à la collecte avec des dépendances transitives
 historiques non bornées (`josepy`, puis l’import de `session_scope`). Les contraintes
 fixent notamment `josepy==1.14.0`, `pycares==4.4.0` et `habluetooth==0.11.0`.
-Le fallback de `session_scope` conserve le chemin historique de HA 2024.6.
-Après ce correctif de compatibilité, les 193 tests passent aussi sur le minimum.
+Un fallback de `session_scope` a d’abord rétabli le minimum au stade du socle.
+Le lot import a ensuite remplacé ces anciens helpers par un adaptateur recorder
+transactionnel vérifié sur les deux versions. Après le correctif initial, les
+193 tests existants passaient aussi sur le minimum.
 Ruff signalait initialement 40 défauts d’imports et variables inutilisés ; ils
 ont été corrigés sans refonte métier. La configuration active les règles de
 correction `E4`, `E7`, `E9` et `F` sur tout le dépôt, sans exclusions par fichier.
-Les extensions de règles et le refactoring restent dans le lot de consolidation.
+Ces règles restent le contrat de lint actif ; aucune exclusion par fichier ni
+refonte de style générale n’est ajoutée pendant la consolidation.
 
 Validation du socle : **197 tests passent** sur chaque environnement (193 tests
 existants et 4 smoke tests natifs). Ruff et la vérification de cohérence des
@@ -78,3 +81,43 @@ exécution distante n’a pas encore eu lieu. Dans le sandbox desktop, les réve
 de threads/executor peuvent être bloqués : les tests natifs ont été exécutés
 avec les primitives locales autorisées, en conservant l’interdiction des sockets
 externes via pytest-socket.
+
+## Consolidation finale
+
+La résolution des cibles est isolée dans `service_targets.py`, les écritures de
+planning dans `schedule_mutations.py`, les dérogations dans `overrides.py` et le
+remplacement recorder dans `recorder_import.py`. Les services et entités number
+partagent le même payload et les mêmes verrous ; climate et IntuisData partagent
+le même dictionnaire d’intentions. `OverrideIntent` décrit le format stocké sans
+le convertir. Les compteurs de minutes sont typés comme valeurs flottantes,
+conformément au mapper. La migration ne masque plus toutes les exceptions :
+les erreurs attendues de réseau, auth, limitation API et données utilisent le
+fallback ; les erreurs de programmation restent visibles.
+
+Les captures larges conservées dans le worker recorder et le gestionnaire
+d’import sont des frontières de terminaison : elles préservent le worker, le
+rollback et le statut d’échec, avec journalisation. Elles ne transforment pas
+une erreur en mesure valide ni en succès. Les drains d’annulation consomment les
+exceptions des tâches déjà engagées avant de propager l’annulation.
+
+Les anciens tests de services qui appelaient leurs mocks ou recopiaient les
+calculs sont remplacés par les tests des handlers enregistrés et de concurrence.
+Les tests de compatibilité utilisent les véritables setup/unload/setup,
+plateformes climate/sensor, registries et Store pour vérifier les IDs, les données
+et options de config, les versions et le format des dérogations. Le transport et
+le chargement effectif des plateformes dans HA sont les seules frontières
+simulées de ce parcours ; les factories des entités sont celles de production.
+
+Validation finale locale : **334 tests passent sur chacun des deux environnements**,
+avec les sockets externes interdites ; Ruff et les contraintes de dépendances
+sont vérifiés sur les deux environnements. Le total est inférieur aux 345 cas du
+lot précédent : 20 assertions redondantes ou sans parcours produit ont été
+retirées et 9 régressions de compatibilité/contrat ont été ajoutées. Ce nettoyage
+ne correspond pas à une baisse de couverture métier.
+
+Le minimum HA **2024.6** est conservé, ainsi que le devcontainer Python 3.12 et
+le format `hacs.json` existant. Aucune migration implicite d’identifiants, de
+config entry ou de stockage n’est nécessaire. La CI distante, Hassfest distant
+et les équipements/cloud réels n’ont pas été exécutés dans cette validation.
+Les changements OpenSpec restent ouverts jusqu’à la revue/livraison ; aucune
+publication ni release n’est réalisée par ces contrôles.

@@ -1,10 +1,12 @@
-"""Setup for Intuis Connect (v1.9.6)."""
+"""Set up and unload the Intuis Connect integration."""
 from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
 import datetime
 import logging
+
+import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -14,7 +16,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.storage import Store
 
-from .intuis_api.api import IntuisAPI, InvalidAuth, CannotConnect, APIError
+from .intuis_api.api import IntuisAPI, InvalidAuth, CannotConnect, APIError, RateLimitError
 from .utils.const import (
     DOMAIN,
     CONF_REFRESH_TOKEN,
@@ -37,7 +39,7 @@ from .history_import import (
     async_get_import_manager,
 )
 from .intuis_data import IntuisData
-from .overrides import OverrideManager
+from .overrides import OverrideManager, OverrideState
 from .services import (
     async_register_services,
     async_unregister_services_if_unused,
@@ -128,7 +130,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Load persisted overrides
     stored_data = await store.async_load()
-    overrides: dict[str, dict] = stored_data.get("overrides", {}) if stored_data else {}
+    overrides: OverrideState = stored_data.get("overrides", {}) if stored_data else {}
 
     if overrides:
         _LOGGER.info("Loaded %d persisted overrides from storage", len(overrides))
@@ -295,7 +297,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     home_name,
                     home_id,
                 )
-            except (InvalidAuth, CannotConnect, APIError) as err:
+            except (InvalidAuth, CannotConnect, APIError, RateLimitError) as err:
                 _LOGGER.warning(
                     "Migration: Could not fetch home name from API: %s",
                     err,
@@ -304,9 +306,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _LOGGER.warning(
                     "Migration: Timeout while fetching home name from API"
                 )
-            except Exception as err:
+            except (aiohttp.ClientError, KeyError, TypeError, ValueError) as err:
                 _LOGGER.warning(
-                    "Migration: Unexpected error fetching home name: %s",
+                    "Migration: Invalid or unavailable home name response: %s",
                     err,
                 )
 

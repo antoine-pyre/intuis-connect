@@ -1,4 +1,4 @@
-# Deliberately start with correctness/import rules; expand in the consolidation lot.
+# Correctness/import checks apply to production and tests without file exemptions.
 target-version = "py312"
 
 [lint]

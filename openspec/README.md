@@ -1,14 +1,14 @@
 # Plan de fiabilisation Intuis Connect
 
 Établi le **26 octobre 2026** à partir de la review globale du dépôt.
-État : **planification préparée, aucune correction implémentée**.
+État : **61 tâches implémentées et validées localement sur la branche `codex/reliability-fixes` ; consolidation en attente de revue finale et commit**.
 
 ## Organisation OpenSpec
 
 Workflow `spec-driven` : `proposal.md` → `specs/` et `design.md` → `tasks.md`.
 Chaque lot dispose de métadonnées `.openspec.yaml`, d’une proposition, d’un design,
-de delta specs et de tâches numérotées. Les cases décrivent l’implémentation future,
-pas le travail de planification. Les contrats sont ajoutés dans les changements ;
+de delta specs et de tâches numérotées. Les cases suivent l’implémentation effective et ses contrôles,
+pas le seul travail de planification. Les contrats sont ajoutés dans les changements ;
 `openspec/specs/` reste vide jusqu’à l’archivage de changements réellement livrés.
 
 Format de référence : [schéma officiel spec-driven](https://openspec.dev/docs/schemas/spec-driven).
@@ -101,3 +101,20 @@ Le 26 octobre 2026, avec **OpenSpec 1.15.0** installé temporairement dans `/tmp
 
 Ces résultats valident les documents de planification ; ils ne valident pas encore
 les corrections Python ni les tests d’implémentation futurs.
+
+## Bilan d’implémentation locale
+
+Les **61 tâches sur 61** des six changements sont cochées avec leurs preuves de
+validation. Le socle puis les lots API/énergie, import sécurisé, chauffage,
+plannings et multi-domicile ont été développés séquentiellement, relus et committés.
+Le lot de consolidation final a également été relu et validé indépendamment avant commit.
+Le [journal d’implémentation et de review](IMPLEMENTATION.md) trace chaque livraison.
+
+La matrice finale exécute **334 tests sur chacune des deux versions HA**,
+Ruff et les contrôles de dépendances. Les 345 cas du lot multi-domicile ont été
+consolidés en retirant 20 assertions sans couverture produit supplémentaire et
+en ajoutant 9 cas natifs/HTTP de compatibilité. OpenSpec strict valide les six
+changements. Les limites de l’import et du cloud sont documentées dans les lots.
+
+Les changements ne sont pas archivés : aucun push, déploiement, test cloud réel
+ou exécution de CI distante n’est inclus dans cette validation locale.

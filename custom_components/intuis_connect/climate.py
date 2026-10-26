@@ -26,7 +26,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.event import async_call_later
 
 from .intuis_api.api import IntuisAPI
-from .overrides import OverrideManager
+from .overrides import OverrideIntent, OverrideManager, OverrideState
 from .entity.intuis_room import IntuisRoom
 from .utils.const import (
     PRESET_AWAY,
@@ -131,7 +131,7 @@ class IntuisConnectClimate(
             )
         return manager
 
-    def _get_overrides(self) -> dict[str, dict]:
+    def _get_overrides(self) -> OverrideState:
         if self._entry_id not in self.hass.data.get(DOMAIN, {}):
             return {}
         return self._get_override_manager().overrides
@@ -187,7 +187,7 @@ class IntuisConnectClimate(
         temperature: float | None,
         hvac: HVACMode,
         preset: str | None,
-        intent: dict | None,
+        intent: OverrideIntent | None,
     ) -> None:
         if self._removed:
             return
@@ -260,7 +260,7 @@ class IntuisConnectClimate(
             and same_temperature
         )
 
-    def _observed_override(self) -> dict | None:
+    def _observed_override(self) -> OverrideIntent | None:
         room = self._get_room()
         if room is None:
             return None

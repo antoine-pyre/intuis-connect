@@ -1,4 +1,4 @@
-"""Constants for Intuis Connect integration (v1.9.6)."""
+"""Integration options, defaults and cloud endpoint constants."""
 
 DOMAIN = "intuis_connect"
 
