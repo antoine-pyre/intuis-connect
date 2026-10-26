@@ -822,6 +822,39 @@ class IntuisAPI:
                 raise APIError(f"Invalid daily energy response for room {room_id}") from err
         return self._parse_energy_samples(data, require_timestamps=True)
 
+    async def async_get_room_energy_hourly(self, room_id: str, date_begin: int,
+                                          date_end: int) -> list[tuple[int, float]]:
+        """Fetch bounded hourly chunks; identical boundary repeats are not summed."""
+        if (type(date_begin) is not int or type(date_end) is not int
+                or date_begin < 0 or date_end <= date_begin
+                or date_end - date_begin > 731 * 86400):
+            raise APIError("Invalid hourly request range")
+        values = {}
+        chunk = date_begin
+        while chunk < date_end:
+            end = min(chunk + 42 * 86400, date_end)
+            form = {"home_id": self.home_id, "room_id": room_id, "scale": "1hour",
+                    "type": ENERGY_MEASURE_TYPES, "date_begin": str(chunk), "date_end": str(end)}
+            async with await self._async_request("post", ROOMMEASURE_PATH, data=form) as resp:
+                try:
+                    data = await resp.json()
+                except (ValueError, aiohttp.ClientError) as err:
+                    raise APIError("Invalid hourly energy response") from err
+            samples = self._parse_energy_samples(data, require_timestamps=True)
+            # Hourly responses must explicitly declare their sample interval.
+            if any(m.get("step_time") != 3600 for m in data.get("body", []) if isinstance(m, dict)):
+                raise APIError("Hourly measures require step_time=3600")
+            for ts, wh in samples:
+                if ts == date_end:
+                    continue  # API may include the exclusive endpoint.
+                if not date_begin <= ts < date_end or ts % 3600:
+                    raise APIError("Hourly response lies outside aligned request period")
+                if ts in values and values[ts] != wh:
+                    raise APIError("Conflicting hourly chunk boundary")
+                values[ts] = wh
+            chunk = end
+        return sorted(values.items())
+
     async def async_get_schedule(
             self, home_id: str, schedule_id: int
     ) -> dict[str, list[dict[str, Any]]]:

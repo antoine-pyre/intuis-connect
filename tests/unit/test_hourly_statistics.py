@@ -40,3 +40,27 @@ async def test_external_series_import_query_and_energy_selection(ha_hass,live_re
     assert result[0]['source']=='intuis_connect'
     assert DEVICE_CONSUMPTION_SCHEMA({'stat_consumption':meta['statistic_id']})['stat_consumption']==meta['statistic_id']
     assert statistic_id('home',None)!=statistic_id('home','room')
+
+
+async def test_actual_http_hourly_chunk_boundaries_are_not_added(cloud_responses):
+    import aiohttp
+    from .test_api_energy import client
+    from custom_components.intuis_connect.utils.const import BASE_URLS, ROOMMEASURE_PATH
+    start=int(datetime(2026,1,1,tzinfo=timezone.utc).timestamp())
+    boundary=start+42*86400
+    cloud_responses.post(BASE_URLS[0]+ROOMMEASURE_PATH,payload={'body':[{'beg_time':boundary,'step_time':3600,'value':[[500]]}]})
+    cloud_responses.post(BASE_URLS[0]+ROOMMEASURE_PATH,payload={'body':[{'beg_time':boundary,'step_time':3600,'value':[[500]]}]})
+    async with aiohttp.ClientSession() as session:
+        result=await client(session).async_get_room_energy_hourly('room',start,boundary+3600)
+    assert result==[(boundary,500)]
+    assert sum(len(requests) for requests in cloud_responses.requests.values())==2
+
+
+def test_staging_deduplicates_but_rejects_conflicts_and_holes():
+    from custom_components.intuis_connect.hourly_series import stage_hourly
+    from custom_components.intuis_connect.intuis_api.api import APIError
+    result=stage_hourly([(0,500),(0,500),(3600,0)],0,7200)
+    assert [value for _,value in result]==[0.5,0]
+    for samples in ([(0,500),(0,600),(3600,0)],[(0,500)]):
+        with pytest.raises(APIError):
+            stage_hourly(samples,0,7200)
