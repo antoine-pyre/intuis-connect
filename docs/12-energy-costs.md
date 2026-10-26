@@ -2,8 +2,30 @@
 
 The cost implementation adapts **TheFab21 #22/#24**. Sources are linked in
 [CONTRIBUTORS.md](../CONTRIBUTORS.md); progress is in
-[the task journal](pr-integration-progress.md). This page describes the contract
-under development, not a published release.
+[the task journal](pr-integration-progress.md). Features below are implemented
+locally and validated offline; they are not part of a published release yet.
+
+## Activation
+
+1. Enable **Hourly statistics** in the integration options (energy step).
+2. In the **Energy Costs** step, enable cost statistics and choose a fixed price
+   or a price sensor reporting `<currency>/kWh`.
+3. New hours get costs automatically with the hourly updater. For hours already
+   imported, run `recalculate_cost_history` (see below).
+
+Disabling costs stops new cost writes and the display sensors are no longer
+provided (HA keeps their registry entries until you remove them); cost statistics
+already written are kept.
+
+## Using costs in Home Assistant
+
+The cost series appear in statistics pickers, for example in a **Statistics
+graph** card (`chart_type: bar`, `period: day`, `stat_types: change`). Home
+Assistant's energy dashboard has no per-device cost: per-room costs are for
+cards and automations. The home cost series is accepted as a grid source's
+"entity tracking the total costs" (`stat_cost`), but only use it there if the
+home hourly energy series is that grid source; otherwise keep the dashboard's
+own grid tariff and use the Intuis costs in cards.
 
 ## Currency, unit and precision
 

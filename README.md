@@ -181,6 +181,7 @@ Accessible via **Settings → Devices & Services → Intuis Connect → Configur
 | Energy Reset Hour | 02:00 | Configured boundary for daily counters |
 | Hourly Statistics | Off | Opt-in separate hourly statistics per room and home |
 | Hourly Update Interval | 2 hours | 1, 2, 4 or 6 hours between hourly updates |
+| Energy Costs | Off | Opt-in hourly costs from a fixed price or a price sensor (requires hourly statistics) |
 
 ### Special Modes
 
@@ -205,6 +206,10 @@ The integration tracks energy consumption per room:
   for the home, kept up to date automatically; `import_energy_history` with
   `granularity: hourly` fills older periods. The `1hour` energy scale is unrelated: it only
   refreshes the daily sensors. See [hourly energy statistics](docs/11-hourly-energy.md).
+- **Energy costs** (opt-in): hourly cost statistics per room and for the home from confirmed
+  hourly energy and an explicit price (fixed or a `<currency>/kWh` sensor); missing prices are
+  refused, never guessed. `recalculate_cost_history` rewrites past costs. See
+  [energy costs](docs/12-energy-costs.md).
 - **Multiple tariff support** (aggregates all EJP tariffs)
 
 Energy data is fetched based on your configured scale:
