@@ -20,3 +20,14 @@ are separate from recorder-owned daily sensor statistics. Energy dashboard devic
 consumption can select external sum/kWh series after their first confirmed write.
 Choose the home aggregate OR its rooms when configuring totals, to avoid counting
 the same consumption twice. The precise dashboard configuration is user-owned.
+
+## Prototype validation
+
+The native external import is accepted by both supported workers. The resulting
+sum/kWh metadata is listed by recorder and accepted as device consumption by the
+energy preferences schema. The daily import suite also exercises the real sensor
+statistics compiler. This validates the backend contract, not a manual browser
+selection. Tests use an explicit recorder queue barrier: Event on HA 2024.6,
+Future on HA 2026.10. Checking an empty queue alone can miss an in-flight job.
+Production writes will require an acknowledged transaction instead of assuming
+that the public enqueue call has committed.

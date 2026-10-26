@@ -5,7 +5,7 @@ Les cases cochées correspondent aux travaux réalisés et vérifiés ; voir doc
 ## 1. Contrat et prototype recorder
 
 - [x] 1.1 Définir identifiants externes, métadonnées, propriété des séries et comportement de sélection dans le tableau énergie, sans changer les capteurs journaliers.
-- [ ] 1.2 Valider un prototype avec le vrai worker/compilateur HA sur les deux versions ; consigner la preuve du contrat et les limites avant le développement complet.
+- [x] 1.2 Valider un prototype avec le vrai worker/compilateur HA sur les deux versions ; consigner la preuve du contrat et les limites avant le développement complet.
 
 ## 2. Collecte et staging
 
