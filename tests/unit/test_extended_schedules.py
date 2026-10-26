@@ -98,3 +98,18 @@ async def test_renamed_schedule_names_keep_identity_and_user_name(homes):
     assert registry.async_get(device.id).name=='Schedule Renamed'
     assert registry.async_get(device.id).name_by_user=='My custom device'
     assert (number.unique_id,calendar.unique_id)==ids
+
+
+async def test_actual_summary_has_all_days_inherited_zone_and_room_names(homes):
+    from types import SimpleNamespace
+    from custom_components.intuis_connect.entity.intuis_home_entity import IntuisScheduleSummarySensor
+    target = homes.second.home.schedules[0]
+    target.timetables = [target.timetables[1]]  # first transition Monday 08:00, cyclic all week
+    entity = IntuisScheduleSummarySensor(SimpleNamespace(data={'intuis_home':homes.second.home}), 'second',target)
+    attrs = entity.extra_state_attributes
+    assert attrs['home_id']=='second'
+    assert attrs['room_names']=={'room-second':'Room'}
+    assert len(attrs['weekly_timetable'])==7
+    assert attrs['weekly_timetable']['Monday'][0]=={'time':'00:00','zone':'Eco'}
+    assert attrs['weekly_timetable']['Tuesday']==[{'time':'00:00','zone':'Eco'}]
+    assert attrs['timetable']==[{'m_offset':480,'zone_id':2}]

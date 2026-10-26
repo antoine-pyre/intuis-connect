@@ -11,7 +11,7 @@ Les cases cochées correspondent aux travaux réalisés et vérifiés ; voir doc
 ## 2. Entités et UI
 
 - [x] 2.1 Actualiser les noms par défaut calendar/device number en conservant IDs et noms personnalisés.
-- [ ] 2.2 Enrichir les summaries réels avec home_id, room_names et sept jours/plages héritées ; éviter toute nouvelle classe de capteur inutilisée.
+- [x] 2.2 Enrichir les summaries réels avec home_id, room_names et sept jours/plages héritées ; éviter toute nouvelle classe de capteur inutilisée.
 
 ## 3. Validation et livraison
 

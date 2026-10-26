@@ -15,6 +15,7 @@ from .intuis_home import IntuisHome
 from .intuis_module import NMGIntuisModule
 from .intuis_schedule import IntuisThermSchedule, IntuisThermZone, IntuisTimetable
 from ..entity.intuis_entity import IntuisDataUpdateCoordinator
+from ..timetable import find_zone_at_offset
 from ..utils.const import DOMAIN, CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR
 
 _LOGGER = logging.getLogger(__name__)
@@ -416,6 +417,9 @@ class IntuisScheduleSummarySensor(CoordinatorEntity[IntuisDataUpdateCoordinator]
         if not schedule:
             return attrs
 
+        attrs["home_id"] = self._home_id
+        attrs["room_names"] = {str(rid): room.name for rid, room in home.rooms.items()} if home else {}
+        attrs["timetable"] = [{"m_offset": t.m_offset, "zone_id": t.zone_id} for t in schedule.timetables]
         attrs["schedule_id"] = schedule.id
         attrs["is_default"] = schedule.default
         attrs["is_active"] = schedule.selected
@@ -457,8 +461,11 @@ class IntuisScheduleSummarySensor(CoordinatorEntity[IntuisDataUpdateCoordinator]
                         "time": f"{hour:02d}:{minute:02d}",
                         "zone": zone_name or f"Zone {tt.zone_id}"
                     })
-            if day_entries:
-                weekly_summary[day_name] = day_entries
+            if not day_entries or day_entries[0]["time"] != "00:00":
+                zone_id = find_zone_at_offset(attrs["timetable"], day_start)
+                zone = next((z for z in schedule.zones if z.id == zone_id), None)
+                day_entries.insert(0, {"time": "00:00", "zone": zone.name if zone else f"Zone {zone_id}"})
+            weekly_summary[day_name] = day_entries
         attrs["weekly_timetable"] = weekly_summary
 
         # All available schedules (for switching)
