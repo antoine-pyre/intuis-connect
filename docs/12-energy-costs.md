@@ -105,3 +105,26 @@ response_variable: result
 The response lists, per home, `status`, `rooms_recalculated`, `hours`,
 `total_cost`, `currency`, `home_total` and `errors`. Running it twice with the
 same energy and price produces identical statistics.
+
+## Community #22 cost schemas
+
+Inventory of what TheFab21's #22/#24 builds created, from revisions
+`3174384d` (#22) and `fb39b93c` (#24), whose cost code is identical:
+
+| Item | #22/#24 | This integration |
+|---|---|---|
+| Options | `energy_cost_enabled`, `energy_price_mode`, `energy_fixed_price`, `energy_price_entity` | `cost_*` keys; old keys are neither read nor removed |
+| Cost entity unique IDs | `intuis_<home>_<room>_cost`, earlier `…_energy_cost` (and `_2`) | `intuis_<home>_<room>_hourly_cost`, `intuis_<home>_home_hourly_cost` |
+| Statistics | Recorder statistics on the cost entity (`sensor.<room>_cost`), plus hourly energy on `sensor.<room>_energy` | External `intuis_connect:cost_<digest>` / `energy_<digest>` series |
+| Storage | `intuis_connect.cost_stats_v1_<entry>`, `intuis_connect.hourly_stats_v3_<entry>` | No auxiliary storage |
+
+No migration runs. Old entities, options, statistics and storage files stay as
+they are; their history remains readable in HA. The #22 migration removed a
+foreign entity occupying its target ID and renamed recorder metadata: neither
+happens here. New display entities have their own unique IDs; when a suggested
+entity ID is taken (by any integration, including the energy dashboard's own
+`<entity>_cost` entities), HA assigns a distinct ID and the existing entity is
+untouched. Room renames and accented names do not change unique IDs or
+statistic IDs. To keep a continuous view, users can keep the old series in the
+energy dashboard for past periods and select the new external series from now
+on; any merge of old data would have to be an explicit, separate operation.
