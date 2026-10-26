@@ -4,6 +4,10 @@ The import replaces **complete days in the domicile's timezone**, ending at the
 start of the current local day. It excludes today's partial consumption. Existing
 sensor unique IDs, entity IDs, configuration entries and storage keys are retained.
 
+This page covers the default `granularity: daily`. Hourly imports
+(`granularity: hourly`) write separate external series without a live baseline;
+see [hourly energy statistics](11-hourly-energy.md).
+
 ## Preconditions and recovery
 
 An import requires a registered room energy sensor with recorder metadata in kWh
