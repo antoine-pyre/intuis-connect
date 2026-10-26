@@ -1,10 +1,10 @@
 # Tasks
 
-Toutes les tâches d’implémentation restent ouvertes. Les documents présents ne constituent pas leur réalisation.
+Les cases cochées correspondent aux travaux réalisés et vérifiés ; voir docs/pr-integration-progress.md.
 
 ## 1. Services et validation
 
-- [ ] 1.1 Ajouter les cibles schedule_name/schedule_id avec compatibilité des anciens appels et validation multi-domicile.
+- [x] 1.1 Ajouter les cibles schedule_name/schedule_id avec compatibilité des anciens appels et validation multi-domicile.
 - [ ] 1.2 Définir puis implémenter le schéma statique sync_schedule, la liste structurée/JSON, les bornes et les champs away/hg.
 - [ ] 1.3 Etendre le moteur de mutation partagé pour les remplacements complets et températures de planning sans modifier les chemins déjà validés.
 
