@@ -1,10 +1,10 @@
 # Tasks
 
-Toutes les tâches d’implémentation restent ouvertes. Les documents présents ne constituent pas leur réalisation.
+Les cases cochées correspondent aux travaux réalisés et vérifiés ; voir docs/pr-integration-progress.md.
 
 ## 1. Contrat et prototype recorder
 
-- [ ] 1.1 Définir identifiants externes, métadonnées, propriété des séries et comportement de sélection dans le tableau énergie, sans changer les capteurs journaliers.
+- [x] 1.1 Définir identifiants externes, métadonnées, propriété des séries et comportement de sélection dans le tableau énergie, sans changer les capteurs journaliers.
 - [ ] 1.2 Valider un prototype avec le vrai worker/compilateur HA sur les deux versions ; consigner la preuve du contrat et les limites avant le développement complet.
 
 ## 2. Collecte et staging
