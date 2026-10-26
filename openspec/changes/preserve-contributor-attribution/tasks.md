@@ -6,7 +6,7 @@ Les cases cochées correspondent aux travaux réalisés et vérifiés ; voir doc
 
 - [x] 1.1 Vérifier les auteurs et révisions sources des dix PRs puis consolider CONTRIBUTORS.md sans annoncer de fonctionnalités non livrées.
 - [x] 1.2 Harmoniser les liens README, release et bouton HACS ; conserver LICENSE et les notices originales.
-- [ ] 1.3 Définir les trailers et le format de provenance pour chaque lot et les sources complémentaires éventuelles.
+- [x] 1.3 Définir les trailers et le format de provenance pour chaque lot et les sources complémentaires éventuelles.
 
 ## 2. Validation et livraison
 
