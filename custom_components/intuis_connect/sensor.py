@@ -232,24 +232,33 @@ class IntuisEnergySensor(IntuisSensor):
         return logical_date.isoformat()
 
     @property
-    def native_value(self) -> float:
-        """Return the cumulative daily energy value (max seen today)."""
-        room = self._get_room() or self._room
-        if room is None:
-            return self._daily_max_energy
+    def available(self) -> bool:
+        """No first measurement is unavailable, not a fabricated zero."""
+        room = self._get_room()
+        return super().available and room is not None and room.energy is not None
 
-        #current_energy = room.energy.energy or 0.0
-        # room.energy is expected to be a float (kWh) in this integration.
-        # Some variants / refactors could potentially wrap it in an object;
-        # be defensive.
-        energy_val = room.energy
-        if hasattr(energy_val, "energy"):
-            energy_val = energy_val.energy
+    @property
+    def extra_state_attributes(self) -> dict:
+        room = self._get_room()
+        return {
+            "energy_stale": room.energy_stale if room else True,
+            "last_successful_update": room.energy_updated_at if room else None,
+            "measurement_day": room.energy_day if room else None,
+        }
 
-        current_energy = float(energy_val or 0.0)
-        now = dt_util.now()
+    @property
+    def native_value(self) -> float | None:
+        """Return a valid daily maximum, retaining its original measurement day."""
+        room = self._get_room()
+        if room is None or room.energy is None:
+            return None
+        current_energy = room.energy
+        # A stale value belongs to its last successful day, so it must not set
+        # the new day's maximum and prevent a legitimate lower daily reading.
+        current_logical_day = room.energy_day or self._get_logical_day(
+            dt_util.now(), self._get_reset_hour()
+        )
         reset_hour = self._get_reset_hour()
-        current_logical_day = self._get_logical_day(now, reset_hour)
 
         # Reset daily max on new logical day
         if self._last_logical_day is None:

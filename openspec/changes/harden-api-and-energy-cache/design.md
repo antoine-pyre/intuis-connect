@@ -33,3 +33,17 @@ Changer le contrat interne des mesures affecte tous les appelants : les inventor
 3. Exécuter les contrôles ciblés puis la suite et la matrice supportée.
 4. Documenter les changements de comportement et les limites de compatibilité.
 5. En cas de régression, revenir à la version de code précédente ; ne jamais supprimer les données utilisateur pour effectuer ce retour. Une transaction recorder déjà confirmée ne s’annule pas par simple rollback du code.
+
+## Implementation notes
+
+- Bulk readings use a dictionary of successfully measured IDs. Omission means
+  unavailable; individual/daily failures remain typed (`APIError`,
+  `EnergyDataUnavailable`, `CannotConnect`, `RateLimitError`).
+- Per-room cache entries carry value, scale, logical day and success timestamp.
+  New mapper objects receive those fields on each refresh; failure never writes
+  a cache success. The home's timezone defines the daily boundary.
+- A stale sensor retains its last measured day. The home aggregate requires all
+  rooms to refer to one day and exposes incomplete data instead of summing fake zeros.
+- History import already catches `APIError`, so the typed daily contract is
+  compatible with its error handler. Its pre-existing deletion-before-fetch
+  defect is deliberately left to `secure-energy-history-import`.

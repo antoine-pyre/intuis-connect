@@ -668,22 +668,32 @@ class IntuisHomeEnergySensor(CoordinatorEntity[IntuisDataUpdateCoordinator], Sen
             logical_date = now.date()
         return logical_date.isoformat()
 
-    def _get_total_energy(self) -> float:
-        """Sum energy from all rooms."""
+    def _get_total_energy(self) -> float | None:
+        """A partial home is not a measured zero or a complete total."""
         rooms = self.coordinator.data.get("rooms", {})
-        total = 0.0
-        for room in rooms.values():
-            if room.energy:
-                total += room.energy
-        return total
+        if not rooms or any(room.energy is None for room in rooms.values()):
+            return None
+        if len({room.energy_day for room in rooms.values()}) > 1:
+            return None
+        return sum(room.energy for room in rooms.values())
 
     @property
-    def native_value(self) -> float:
-        """Return the cumulative daily home energy value."""
+    def available(self) -> bool:
+        return super().available and (
+            self._get_total_energy() is not None or self._last_logical_day is not None
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        """Return a complete daily total or the last complete, now stale value."""
         current_energy = self._get_total_energy()
-        now = dt_util.now()
+        if current_energy is None:
+            return self._daily_max_energy if self._last_logical_day is not None else None
+        rooms = self.coordinator.data.get("rooms", {})
+        current_logical_day = next(iter(rooms.values())).energy_day or self._get_logical_day(
+            dt_util.now(), self._get_reset_hour()
+        )
         reset_hour = self._get_reset_hour()
-        current_logical_day = self._get_logical_day(now, reset_hour)
 
         if self._last_logical_day is None:
             self._daily_max_energy = current_energy
@@ -707,15 +717,17 @@ class IntuisHomeEnergySensor(CoordinatorEntity[IntuisDataUpdateCoordinator], Sen
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return room breakdown as attributes."""
+        """Identify missing/stale rooms rather than present a partial total as fresh."""
         rooms = self.coordinator.data.get("rooms", {})
-        room_breakdown = {}
-        for room in rooms.values():
-            if hasattr(room, 'name') and hasattr(room, 'energy'):
-                room_breakdown[room.name] = room.energy or 0.0
+        updated = [room.energy_updated_at for room in rooms.values()]
         return {
-            "room_breakdown": room_breakdown,
+            "room_breakdown": {room.name: room.energy for room in rooms.values()},
             "room_count": len(rooms),
+            "energy_stale": self._get_total_energy() is None or any(
+                room.energy_stale for room in rooms.values()
+            ),
+            "incomplete_rooms": [room.id for room in rooms.values() if room.energy is None or room.energy_stale],
+            "last_successful_update": min(updated) if updated and all(updated) else None,
         }
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -41,6 +42,16 @@ MIN_REAPPLY_INTERVAL = 120  # 2 minutes
 _LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class EnergyCacheEntry:
+    """Last successful room measurement; failure never advances this record."""
+
+    day: str
+    scale: str
+    kwh: float
+    updated_at: datetime
+
+
 class IntuisData:
     """Class to handle data fetching and processing for the Intuis Connect integration."""
 
@@ -54,7 +65,7 @@ class IntuisData:
     ) -> None:
         """Initialize the data handler."""
         self._api = api
-        self._energy_cache: dict[str, float] = {}
+        self._energy_cache: dict[str, EnergyCacheEntry] = {}
         self._minutes_counter: dict[str, int] = {}
         self._intuis_home = intuis_home
         self._last_update_timestamp: datetime | None = None
@@ -118,7 +129,6 @@ class IntuisData:
                 current_logical_day,
             )
             self._minutes_counter.clear()
-            self._energy_cache.clear()
 
         self._last_logical_day = current_logical_day
 
@@ -296,82 +306,52 @@ class IntuisData:
             )
             home_tz = timezone.utc
 
-        now_local = datetime.now(home_tz)
-        today_iso = now_local.date().isoformat()
+        now_local = now.astimezone(home_tz)
 
-        # For daily scale, only fetch after reset hour to ensure data is available
-        if not is_realtime and now_local.hour < reset_hour:
-            _LOGGER.debug(
-                "Skipping energy fetch before reset hour %02d:00 (daily mode)",
-                reset_hour,
-            )
-            return
-
-        # For daily scale, use caching. For real-time scales, always fetch fresh data.
-        if not is_realtime and self._energy_cache.get("_date") == today_iso:
-            # Use cached data
-            for room_id, room in data_by_room.items():
-                room.energy = self._energy_cache.get(room_id, 0.0)
-            return
-
-        # Build list of rooms with bridge_ids for the API call
+        logical_day = self._get_logical_day(now_local, reset_hour)
         rooms_for_api: list[dict[str, str]] = []
         for room_id, room in data_by_room.items():
+            cached = self._energy_cache.get(room_id)
+            room.energy = cached.kwh if cached else None
+            room.energy_day = cached.day if cached else None
+            room.energy_updated_at = cached.updated_at if cached else None
+            room.energy_stale = cached is None or cached.day != logical_day or cached.scale != scale
+            if not is_realtime and cached and cached.day == logical_day and cached.scale == scale:
+                continue
+            # The existing daily cadence waits until reset_hour. Keep last valid
+            # data visible before that boundary without fabricating a new value.
+            if not is_realtime and now_local.hour < reset_hour:
+                continue
+            room.energy_stale = True
             if room.bridge_id:
                 rooms_for_api.append({"id": room_id, "bridge": room.bridge_id})
-            else:
-                _LOGGER.debug("Room %s has no bridge_id, skipping energy fetch", room_id)
 
         if not rooms_for_api:
-            _LOGGER.debug("No rooms with bridge_id found, skipping energy fetch")
             return
 
         today_start = datetime.combine(now_local.date(), datetime.min.time(), tzinfo=home_tz)
         today_end = datetime.combine(now_local.date(), datetime.max.time(), tzinfo=home_tz)
-
-        if is_realtime:
-            date_end = int(now_local.timestamp())
-            end_display = now_local.isoformat()
-        else:
-            date_end = int(today_end.timestamp())
-            end_display = today_end.isoformat()
         date_begin = int(today_start.timestamp())
-
-        _LOGGER.debug(
-            "Fetching energy data for %d rooms (scale=%s, tz=%s, range=%s to %s)",
-            len(rooms_for_api),
-            scale,
-            home_tz,
-            today_start.isoformat(),
-            end_display,
-        )
-
+        date_end = int((now_local if is_realtime else today_end).timestamp())
         try:
             energy_data = await self._api.async_get_energy_measures(
                 rooms_for_api, date_begin, date_end, scale=scale
             )
-        except RateLimitError:
-            _LOGGER.warning(
-                "Rate limited while fetching energy data, will retry on next update"
-            )
-            return
-        except (APIError, CannotConnect) as err:
-            _LOGGER.warning(
-                "Failed to fetch energy data: %s, will retry on next update", err
-            )
+        except (RateLimitError, APIError, CannotConnect) as err:
+            _LOGGER.warning("Energy unavailable, retrying next update: %s", err)
             return
 
-        # Cache the results (for daily mode) and populate room.energy
-        # API returns Wh, convert to kWh for display
-        if not is_realtime:
-            self._energy_cache.clear()
-            self._energy_cache["_date"] = today_iso
-
-        for room_id, room in data_by_room.items():
-            wh = energy_data.get(room_id, 0.0)
-            kwh = wh / 1000.0  # Convert Wh to kWh
-            if not is_realtime:
-                self._energy_cache[room_id] = kwh
+        for requested_room in rooms_for_api:
+            room_id = requested_room["id"]
+            # Missing means no valid reading, never a measured zero. Successful
+            # rooms remain cached while failed rooms are retried next cycle.
+            if room_id not in energy_data:
+                continue
+            kwh = energy_data[room_id] / 1000.0
+            cached = EnergyCacheEntry(logical_day, scale, kwh, now_local)
+            self._energy_cache[room_id] = cached
+            room = data_by_room[room_id]
             room.energy = kwh
-
-        _LOGGER.debug("Energy data fetched (scale=%s): %s", scale, {k: f"{v:.3f} kWh" for k, v in energy_data.items()})
+            room.energy_day = logical_day
+            room.energy_updated_at = now_local
+            room.energy_stale = False
