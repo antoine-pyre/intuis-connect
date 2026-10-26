@@ -16,7 +16,7 @@ Les cases cochées correspondent aux travaux réalisés et vérifiés ; voir doc
 
 - [x] 3.1 Étendre le chemin recorder externe avec transaction, sommes continues, acquittement et idempotence ; conserver intégralement l’import quotidien actuel.
 - [x] 3.2 Ajouter granularity et ses alias au service, options opt-in, intervalle, updater 48 heures/rattrapage 7 jours et isolation par entrée ; fournir un cumul horaire de domicile distinct avec contrôle des pièces incomplètes.
-- [ ] 3.3 Tester import/updater concurrents, annulation fetch/INSERT/Store, renommage de capteur et reprise sans stockage auxiliaire.
+- [x] 3.3 Tester import/updater concurrents, annulation fetch/INSERT/Store, renommage de capteur et reprise sans stockage auxiliaire.
 
 ## 4. Livraison
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -300,3 +301,226 @@ async def test_service_rejects_unknown_granularity(homes, monkeypatch):
     with pytest.raises(vol.Invalid):
         await call(homes, "import_energy_history", days=2, granularity="5min")
     getter.assert_not_awaited()
+
+
+def blocking_fetch(responses):
+    """Hourly fetch that waits for its release; records each started call."""
+    started, release = asyncio.Event(), asyncio.Event()
+    calls = []
+
+    async def fetch(room_id, start, end):
+        calls.append((room_id, start, end))
+        started.set()
+        await release.wait()
+        return responses[room_id]
+
+    return SimpleNamespace(
+        api=SimpleNamespace(async_get_room_energy_hourly=fetch),
+        started=started,
+        release=release,
+        calls=calls,
+    )
+
+
+def one_room_home(home_id, name="Living"):
+    return SimpleNamespace(
+        id=home_id, name=home_id, rooms={"a": SimpleNamespace(name=name)}
+    )
+
+
+def register(ha_hass, entry, manager):
+    domain = ha_hass.data.setdefault(DOMAIN, {})
+    domain[entry.entry_id] = {}
+    domain.setdefault("import_managers", {})[entry.entry_id] = manager
+
+
+async def test_updater_waits_for_concurrent_manual_import(
+    ha_hass, ha_entry_factory, live_recorder, monkeypatch, frozen_clock
+):
+    frozen_clock.move_to(hour(3) + timedelta(minutes=20))
+    monkeypatch.setattr(
+        "custom_components.intuis_connect.history_import.API_DELAY_SECONDS", 0
+    )
+    entry = ha_entry_factory(home_id="home")
+    home = one_room_home("home")
+    manager = HistoryImportManager(ha_hass, entry.entry_id)
+    register(ha_hass, entry, manager)
+    fetch = blocking_fetch({"a": wh(0, (1, 2))})
+    assert manager.start(fetch.api, home, granularity="hourly", start=ts(0), end=ts(2))
+    await fetch.started.wait()
+    updater = HourlyStatisticsUpdater(ha_hass, entry, fetch.api, home, 60)
+    assert not await updater.async_update()  # deferred, never interleaved
+    fetch.release.set()
+    await manager._task
+    assert [r[2] for r in await series(live_recorder, statistic_id("home", "a"))] == [
+        0.001,
+        0.003,
+    ]
+    fetch.started.clear()
+    fetch.release.clear()
+    assert await updater.async_update()
+    await fetch.started.wait()
+    # Data is recent, so the updater re-reads the full 48 closed hours.
+    assert fetch.calls[-1] == ("a", ts(3) - 48 * H, ts(3))
+    fetch.release.set()
+    await manager._task
+
+
+async def test_unloading_one_home_cancels_fetch_while_other_home_continues(
+    ha_hass, ha_entry_factory, live_recorder, monkeypatch
+):
+    monkeypatch.setattr(
+        ha_hass.config_entries, "async_unload_platforms", AsyncMock(return_value=True)
+    )
+    homes_ = {}
+    for home_id in ("one", "two"):
+        entry = ha_entry_factory(home_id=home_id)
+        manager = HistoryImportManager(ha_hass, entry.entry_id)
+        register(ha_hass, entry, manager)
+        fetch = blocking_fetch({"a": wh(0, (1,))})
+        assert manager.start(
+            fetch.api,
+            one_room_home(home_id),
+            granularity="hourly",
+            start=ts(0),
+            end=ts(1),
+        )
+        await fetch.started.wait()
+        homes_[home_id] = SimpleNamespace(entry=entry, manager=manager, fetch=fetch)
+    one, two = homes_["one"], homes_["two"]
+    assert await async_unload_entry(ha_hass, one.entry)
+    assert one.manager.status == "cancelled" and not one.manager.is_running
+    one.fetch.release.set()
+    two.fetch.release.set()
+    await two.manager._task
+    assert two.manager.status == "completed"
+    assert await series(live_recorder, statistic_id("two", "a"))
+    # The unloaded home wrote nothing and cannot start again.
+    assert await series(live_recorder, statistic_id("one", "a")) is None
+    assert not one.manager.start(
+        one.fetch.api,
+        one_room_home("one"),
+        granularity="hourly",
+        start=ts(0),
+        end=ts(1),
+    )
+
+
+async def test_close_during_insert_drains_and_rolls_back(
+    ha_hass, live_recorder, monkeypatch
+):
+    import threading
+
+    from sqlalchemy import event
+
+    api, home, manager = await importer(ha_hass, monkeypatch, [wh(0, (1,))])
+    home.rooms = {"a": home.rooms["a"]}
+    entered, release = threading.Event(), threading.Event()
+
+    def block_insert(conn, cursor, statement, parameters, context, many):
+        if statement.startswith("INSERT INTO statistics ") and not entered.is_set():
+            entered.set()
+            release.wait(10)
+
+    event.listen(live_recorder.engine, "before_cursor_execute", block_insert)
+    try:
+        assert manager.start(api, home, granularity="hourly", start=ts(0), end=ts(1))
+        loop = asyncio.get_running_loop()
+        assert await loop.run_in_executor(None, entered.wait, 10)
+        closing = asyncio.create_task(manager.async_close())
+        await asyncio.sleep(0.05)
+        assert not closing.done()  # unload waits for the recorder acknowledgement
+        release.set()
+        await asyncio.wait_for(closing, 10)
+    finally:
+        release.set()
+        event.remove(live_recorder.engine, "before_cursor_execute", block_insert)
+    assert manager.status == "cancelled"
+    # Rolled back as a whole, including the metadata row created in the transaction.
+    assert await series(live_recorder, statistic_id("home", "a")) is None
+
+
+async def test_close_during_store_load_drains_without_starting(
+    ha_hass, ha_entry_factory, monkeypatch
+):
+    from homeassistant.helpers.storage import Store
+
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = Store.async_load
+
+    async def blocked_load(self):
+        entered.set()
+        await release.wait()
+        return await original(self)
+
+    monkeypatch.setattr(Store, "async_load", blocked_load)
+    window = AsyncMock(return_value=(0, 3600))
+    monkeypatch.setattr(
+        "custom_components.intuis_connect.hourly_stats.async_update_window", window
+    )
+    entry = ha_entry_factory(home_id="home")
+    ha_hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {}
+    api = SimpleNamespace(async_get_room_energy_hourly=AsyncMock())
+    updater = HourlyStatisticsUpdater(ha_hass, entry, api, one_room_home("home"), 60)
+    updater._schedule()
+    await entered.wait()
+    closing = asyncio.create_task(updater.async_close())
+    await asyncio.sleep(0.05)
+    assert not closing.done()  # the executor-backed load is not detached
+    release.set()
+    await asyncio.wait_for(closing, 10)
+    window.assert_not_awaited()
+    api.async_get_room_energy_hourly.assert_not_awaited()
+
+
+async def test_restart_resumes_from_recorder_without_auxiliary_storage(
+    ha_hass, ha_entry_factory, live_recorder, monkeypatch, frozen_clock
+):
+    from homeassistant.helpers.storage import Store
+
+    saves = []
+    monkeypatch.setattr(Store, "async_save", AsyncMock(side_effect=saves.append))
+    api, home, manager = await importer(ha_hass, monkeypatch, [wh(0, (1000, 1000))])
+    home.rooms = {"a": home.rooms["a"]}
+    await run(ha_hass, api, home, manager, 0, 2)
+    assert not saves  # hourly progress is the recorder itself
+    # A restart: fresh managers and no in-memory state, only the recorder rows.
+    ha_hass.data.pop(DOMAIN, None)
+    frozen_clock.move_to(hour(60) + timedelta(minutes=20))
+    entry = ha_entry_factory(home_id="home")
+    ha_hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {}
+    api.async_get_room_energy_hourly = AsyncMock(return_value=wh(2, (1000,) * 58))
+    updater = HourlyStatisticsUpdater(ha_hass, entry, api, home, 60)
+    assert await updater.async_update()
+    task = ha_hass.data[DOMAIN]["import_managers"][entry.entry_id]._task
+    await task
+    api.async_get_room_energy_hourly.assert_awaited_once_with("a", ts(2), ts(60))
+    rows = await series(live_recorder, statistic_id("home", "a"))
+    assert len(rows) == 60 and rows[-1][2] == 60 and not saves
+
+
+async def test_room_rename_keeps_one_continuous_series(
+    ha_hass, live_recorder, monkeypatch
+):
+    api, home, manager = await importer(
+        ha_hass, monkeypatch, [wh(0, (1000, 1000)), wh(2, (500,))]
+    )
+    home.rooms = {"a": SimpleNamespace(name="Living")}
+    await run(ha_hass, api, home, manager, 0, 2)
+    home.rooms["a"].name = "Lounge"
+    await run(ha_hass, api, home, manager, 2, 1)
+    rows = await series(live_recorder, statistic_id("home", "a"))
+    assert [r[2] for r in rows] == [1, 2, 2.5]
+
+    def names():
+        from homeassistant.components.recorder.db_schema import StatisticsMeta
+        from sqlalchemy import select
+
+        with live_recorder.get_session() as session:
+            return list(session.scalars(select(StatisticsMeta.name)))
+
+    # One identity; the label from creation is kept (no metadata churn).
+    assert await live_recorder.async_add_executor_job(names) == [
+        "Living hourly energy",
+        "House hourly energy",
+    ]
