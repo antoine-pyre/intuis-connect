@@ -1,10 +1,10 @@
 # Tasks
 
-Toutes les tâches d’implémentation restent ouvertes. Les documents présents ne constituent pas leur réalisation.
+Les cases cochées correspondent aux travaux réalisés et vérifiés ; voir docs/pr-integration-progress.md.
 
 ## 1. Tarifs et configuration
 
-- [ ] 1.1 Définir devise, précision, unité, prix horaire historique, trous et convention du tarif fixe ; documenter l’approximation intra-horaire.
+- [x] 1.1 Définir devise, précision, unité, prix horaire historique, trous et convention du tarif fixe ; documenter l’approximation intra-horaire.
 - [ ] 1.2 Implémenter options opt-in et sélecteurs valides, lecture du prix historique et validation des données sur les deux versions HA.
 
 ## 2. Statistiques et service
