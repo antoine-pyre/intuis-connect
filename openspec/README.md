@@ -1,5 +1,10 @@
 # Plan de fiabilisation Intuis Connect
 
+Le plan suivant est distinct du socle de fiabilisation ci-dessous :
+[intégration des apports des PRs et crédit des contributeurs](../docs/pr-integration-plan.md).
+Il ajoute cinq changements planifiés, dont les 36 tâches d’implémentation restent
+ouvertes ; les fonctionnalités concernées ne sont pas encore livrées.
+
 Établi le **26 octobre 2026** à partir de la review globale du dépôt.
 État : **61 tâches implémentées et validées localement sur la branche `codex/reliability-fixes` ; consolidation en attente de revue finale et commit**.
 

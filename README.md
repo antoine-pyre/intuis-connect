@@ -357,6 +357,9 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 Created by [antoine-pyre](https://github.com/antoine-pyre)
 
+See [Contributors and contribution sources](CONTRIBUTORS.md) for contributor
+credits, original pull requests, and attribution of planned adaptations.
+
 Based on reverse-engineering of the Intuis/Netatmo API.
 
 ## Development
