@@ -94,3 +94,33 @@ Aucun push, déploiement ni appel vers un compte Intuis réel n’est effectué.
   cette pièce. Les services sans cette restriction conservent leurs défauts
   historiques ; les mutations de planning sans cible avertissent et choisissent
   la première entrée chargée.
+
+## Consolidation qualité et validation finale — 26 octobre 2026
+
+- Agent : `quality_consolidation`, groupes 2 et 3 de `strengthen-quality-workflow`.
+- Review : extractions déjà livrées, suppression de tests recopiés/de mocks,
+  annotations des intentions, exceptions attendues en migration et documentation.
+- Corrections demandées puis testées : garde des paramètres absents avant commande
+  API et maintien du fallback de migration en cas de RateLimitError.
+- Les 20 anciens cas retirés sont remplacés/couverts par les vrais services et
+  neuf nouveaux cas natifs/HTTP ; pas de baisse masquée d’une mesure de couverture.
+- Le parcours setup → unload → setup utilise les factories climate/sensor,
+  registries et Store natifs ; il préserve unique_id, entity_id, données/options,
+  identifiants et versions de l’entrée ainsi que le stockage des dérogations.
+- Validation finale indépendante : **334 tests réussis sur HA 2024.6.4/Python
+  3.12.14 et HA 2026.10.4/Python 3.14.4**, Ruff réussi, diff-check depuis main
+  réussi, OpenSpec strict **6/6** et suivi **61 tâches terminées / 0 restante**.
+- Les liens locaux OpenSpec ont été vérifiés. Les contraintes de dépendances
+  ont été vérifiées par l’agent sur les deux environnements.
+- Minimum HA conservé ; code applicatif, documentation et plan de tests alignés.
+  Les changements restent consultables dans openspec/changes jusqu’à leur archivage
+  après livraison. Aucun push, déploiement ou passage de CI distante n’est revendiqué.
+
+## Résultat
+
+Tous les lots demandés ont été développés par des agents dédiés, séquentiellement,
+relus par l’agent principal et committés sur la branche de correctifs. Les limites
+conservatrices de l’import historique et l’absence d’arbitrage serveur avec
+l’application externe sont documentées ; aucune opération cloud réelle n’a été
+nécessaire aux tests. Les validations locales ne remplacent pas un essai sur
+l’installation physique ni la future exécution des checks distants.

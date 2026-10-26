@@ -35,3 +35,26 @@ Une hausse de version minimale HA est un changement de compatibilité : d’abor
 3. Exécuter les contrôles ciblés puis la suite et la matrice supportée.
 4. Documenter les changements de comportement et les limites de compatibilité.
 5. En cas de régression, revenir à la version de code précédente ; ne jamais supprimer les données utilisateur pour effectuer ce retour. Une transaction recorder déjà confirmée ne s’annule pas par simple rollback du code.
+
+## Réalisation et limites de la consolidation
+
+Les extractions prévues ont été réalisées dans les lots fonctionnels :
+`service_targets.py`, `schedule_mutations.py` et `overrides.py` remplacent la
+résolution cachée, les payloads dupliqués et les sources d’intentions séparées.
+La consolidation ne rajoute pas de couche générique au-dessus de ces modules.
+
+Les tests sans appel produit ont été supprimés uniquement après remplacement
+par les suites natives des services, plannings et compatibilité. Un parcours
+setup → unload → setup utilise les factories d’entités de production et le
+registry pour comparer les identifiants effectivement calculés et persistés.
+La migration V2 native conserve identité/données même lors d’une erreur de
+réseau, d’une limitation API ou d’une réponse malformée ; elle ne masque plus
+les erreurs de programmation non prévues. Les exceptions larges de terminaison
+du worker/import sont conservées pour garantir rollback, statut et drainage.
+
+Le format stocké des dérogations est documenté par un TypedDict permissif aux
+anciennes entrées partielles, sans conversion à l’exécution. Les annotations et
+valeurs par défaut documentées sont alignées sur les objets existants. Aucun
+minimum HA/HACS n’est relevé ; la matrice vérifie le minimum annoncé et une
+version récente précise. La validation locale ne remplace pas l’exécution de
+CI distante ni un test sur de vrais radiateurs.

@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .overrides import OverrideManager
+from .overrides import OverrideManager, OverrideState
 from .entity.intuis_home import IntuisHome
 from .entity.intuis_home_config import IntuisHomeConfig
 from .intuis_api.api import IntuisAPI, APIError, CannotConnect, RateLimitError
@@ -60,7 +60,7 @@ class IntuisData:
         self,
         api: IntuisAPI,
         intuis_home: IntuisHome,
-        overrides: dict[str, dict] | None = None,
+        overrides: OverrideState | None = None,
         get_options: Callable[[], dict[str, Any]] | None = None,
         save_overrides_callback: Callable[[], Awaitable[None]] | None = None,
         override_manager: OverrideManager | None = None,
@@ -68,7 +68,7 @@ class IntuisData:
         """Initialize the data handler."""
         self._api = api
         self._energy_cache: dict[str, EnergyCacheEntry] = {}
-        self._minutes_counter: dict[str, int] = {}
+        self._minutes_counter: dict[str, float] = {}
         self._intuis_home = intuis_home
         self._last_update_timestamp: datetime | None = None
         # Track the last "logical day" we processed (based on reset hour, not midnight)

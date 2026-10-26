@@ -16,6 +16,7 @@ from homeassistant.helpers.selector import (
     TimeSelectorConfig,
 )
 
+from .entity.intuis_home import IntuisHome
 from .entity.intuis_schedule import IntuisThermSchedule
 from .history_import import (
     async_get_import_manager,
@@ -120,7 +121,7 @@ IMPORT_ENERGY_HISTORY_SCHEMA = vol.Schema(
 )
 
 
-def _schedule_by_name(home, name: str) -> IntuisThermSchedule:
+def _schedule_by_name(home: IntuisHome, name: str) -> IntuisThermSchedule:
     schedule = next(
         (
             s
@@ -134,7 +135,7 @@ def _schedule_by_name(home, name: str) -> IntuisThermSchedule:
     return schedule
 
 
-def _room_by_name(home, name: str) -> str:
+def _room_by_name(home: IntuisHome, name: str) -> str:
     room_id = next(
         (
             rid

@@ -5,9 +5,25 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 import time
-from typing import Any
+from typing import TYPE_CHECKING, TypedDict
 
 from .utils.const import API_MODE_HOME, API_MODE_OFF
+
+if TYPE_CHECKING:
+    from .intuis_api.api import IntuisAPI
+
+
+class OverrideIntent(TypedDict, total=False):
+    """Existing persisted shape; optional keys allow legacy partial records."""
+
+    mode: str
+    temp: float | None
+    end: int
+    sticky: bool
+    last_reapply: int
+
+
+OverrideState = dict[str, OverrideIntent]
 
 
 class OverrideManager:
@@ -15,7 +31,7 @@ class OverrideManager:
 
     def __init__(
         self,
-        overrides: dict[str, dict] | None = None,
+        overrides: OverrideState | None = None,
         save_callback: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self.overrides = overrides if overrides is not None else {}
@@ -31,7 +47,7 @@ class OverrideManager:
             async with self._save_lock:
                 await self._save_callback()
 
-    def discard(self, room_id: str, expected: dict | None = None) -> bool:
+    def discard(self, room_id: str, expected: OverrideIntent | None = None) -> bool:
         """An expired snapshot must never delete a newer command after an await."""
         if room_id not in self.overrides:
             return False
@@ -40,9 +56,11 @@ class OverrideManager:
         del self.overrides[room_id]
         return True
 
-    def record(self, room_id: str, mode: str, temp: float, duration: int) -> dict:
+    def record(
+        self, room_id: str, mode: str, temp: float, duration: int
+    ) -> OverrideIntent:
         now = int(time.time())
-        intent = {
+        intent: OverrideIntent = {
             "mode": mode,
             "temp": float(temp),
             "end": now + duration * 60,
@@ -54,18 +72,24 @@ class OverrideManager:
 
     async def async_command(
         self,
-        api: Any,
+        api: IntuisAPI,
         room_id: str,
         mode: str,
         temp: float | None = None,
         duration: int | None = None,
-        on_success: Callable[[dict | None], None] | None = None,
+        on_success: Callable[[OverrideIntent | None], None] | None = None,
     ) -> None:
         """Record only accepted commands; retain them if disk persistence fails.
 
         on_success publishes the bounded pending state before awaiting disk I/O,
         because a storage failure does not mean the equipment command was refused.
         """
+        if mode not in (API_MODE_HOME, API_MODE_OFF) and (
+            temp is None or duration is None
+        ):
+            raise ValueError(
+                "A timed heating command requires temperature and duration"
+            )
         async with self.room_lock(room_id):
             if mode in (API_MODE_HOME, API_MODE_OFF):
                 await api.async_set_room_state(room_id, mode)
@@ -82,9 +106,9 @@ class OverrideManager:
 
     async def async_reapply(
         self,
-        api: Any,
+        api: IntuisAPI,
         room_id: str,
-        expected: dict,
+        expected: OverrideIntent,
         duration: int,
     ) -> bool:
         """Reapply only if a concurrent user command has not replaced the intent."""
