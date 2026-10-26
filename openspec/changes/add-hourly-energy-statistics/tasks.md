@@ -21,4 +21,4 @@ Les cases cochées correspondent aux travaux réalisés et vérifiés ; voir doc
 ## 4. Livraison
 
 - [x] 4.1 Exécuter les tests ciblés puis la matrice complète, Ruff et dépendances ; documenter choix de série, reprise, API et distinction avec scale 1hour.
-- [ ] 4.2 Tracer précisément les adaptations de TheFab21 (#17/#22/#24) dans commits, crédits et notes de version avant livraison.
+- [x] 4.2 Tracer précisément les adaptations de TheFab21 (#17/#22/#24) dans commits, crédits et notes de version avant livraison.

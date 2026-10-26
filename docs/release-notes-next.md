@@ -41,3 +41,41 @@ noms actualisés et summaries à sept jours avec noms de pièces. Les anciens
 appels continuent de viser le planning actif. Les IDs et noms personnalisés
 restent conservés. Les mutations partagent le verrou services/number existant.
 La validation couvre schémas, erreurs, concurrence, refresh et retrait d’entrée.
+
+## Énergie horaire — réalisé localement
+
+Adaptation des propositions de **TheFab21**
+([#22](https://github.com/antoine-pyre/intuis-connect/pull/22) à
+`3174384d9222bdca5310721940ece95fe6d1fce6`,
+[#24](https://github.com/antoine-pyre/intuis-connect/pull/24) à
+`fb39b93c1eaf2a498c7274210b566864a2497669`, issues de
+[#17](https://github.com/antoine-pyre/intuis-connect/pull/17)).
+
+Problème : le scale `1hour` rafraîchit seulement les capteurs journaliers ; aucune
+statistique horaire exacte ni import historique horaire n’existait.
+
+Comportement nouveau : statistiques externes horaires par pièce et pour le
+domicile, mise à jour facultative (désactivée par défaut, 120 min), relecture des
+48 dernières heures closes et rattrapage jusqu’à 7 jours depuis le recorder, et
+`granularity: daily|hourly` (alias `1day|1hour`) pour `import_energy_history`.
+
+Compatibilité : capteurs journaliers, IDs, statistiques existantes, défaut
+quotidien du service et import journalier inchangés. Désactiver l’option ne
+supprime aucune statistique.
+
+Sources et adaptations : reprises de TheFab21 — méthode API horaire découpée,
+statistiques horaires périodiques avec intervalle, historique jusqu’à 730 jours
+avec granularité et alias, total cumulé du domicile. Réécrits ici : identités
+externes stables, validation stricte (heures closes, DST, doublons, trous),
+remplacement transactionnel acquitté, reprise sans stockage auxiliaire et total
+domicile refusé tant qu’une pièce manque. Commits d’implémentation : `0efa760`,
+`d02eab9`, `4e4c49d`, `5ab1822`, `e570d36`, `b232d8c`, `c046590`, `6d26ad6`,
+avec trailers `Adapted-from`/`Original-author`.
+
+Vérifications : 410 tests sur HA 2024.6.4 et 2026.10.4, dont le vrai worker
+recorder (rollback, annulation, concurrence, deux domiciles), Ruff et contraintes.
+
+Limites : comportement réel du cloud et du matériel non éprouvé hors ligne ;
+le libellé d’une série reste celui de sa création après renommage d’une pièce ;
+la sélection dans le tableau énergie est validée côté schéma, pas dans le
+navigateur.
