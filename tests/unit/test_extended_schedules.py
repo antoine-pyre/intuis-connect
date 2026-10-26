@@ -113,3 +113,52 @@ async def test_actual_summary_has_all_days_inherited_zone_and_room_names(homes):
     assert attrs['weekly_timetable']['Monday'][0]=={'time':'00:00','zone':'Eco'}
     assert attrs['weekly_timetable']['Tuesday']==[{'time':'00:00','zone':'Eco'}]
     assert attrs['timetable']==[{'m_offset':480,'zone_id':2}]
+
+
+async def test_complete_save_serializes_with_number_and_refresh(homes):
+    import asyncio
+    from types import SimpleNamespace
+    from custom_components.intuis_connect.number import IntuisZoneTemperatureNumber
+    h = homes.second
+    schedule = h.home.schedules[0]
+    zone = schedule.zones[0]
+    coordinator = SimpleNamespace(data={'intuis_home':h.home},async_request_refresh=h.coordinator.async_request_refresh)
+    number = IntuisZoneTemperatureNumber(coordinator,h.api,'second',schedule,zone,zone.rooms_temp[0],'Room')
+    number.hass=homes.hass
+    number.async_write_ha_state=lambda: None
+    entered, release = asyncio.Event(), asyncio.Event()
+    payloads=[]
+    async def sync(**payload):
+        payloads.append(deepcopy(payload))
+        if len(payloads)==1:
+            entered.set()
+            await release.wait()
+    h.api.async_sync_schedule.side_effect=sync
+    first=asyncio.create_task(call(homes,'sync_schedule',home_id='second',away_temp=18.5,timetable=[{'m_offset':500,'zone_id':2}]))
+    await entered.wait()
+    second=asyncio.create_task(number.async_set_native_value(19.5))
+    await asyncio.sleep(0)
+    assert len(payloads)==1
+    h.home.schedules=deepcopy(h.home.schedules)
+    release.set()
+    await first
+    await second
+    assert payloads[1]['away_temp']==18.5
+    assert payloads[1]['timetable']==[{'m_offset':500,'zone_id':2}]
+    assert payloads[1]['zones'][0]['rooms_temp'][0]['temp']==19.5
+
+
+async def test_complete_save_late_ack_does_not_refresh_unloaded_entry(homes):
+    import asyncio
+    from custom_components.intuis_connect.utils.const import DOMAIN
+    entered,release=asyncio.Event(),asyncio.Event()
+    async def sync(**payload):
+        entered.set()
+        await release.wait()
+    homes.second.api.async_sync_schedule.side_effect=sync
+    task=asyncio.create_task(call(homes,'sync_schedule',home_id='second',hg_temp=8.5))
+    await entered.wait()
+    homes.hass.data[DOMAIN].pop(homes.second.entry.entry_id)
+    release.set()
+    await task
+    homes.second.coordinator.async_request_refresh.assert_not_awaited()

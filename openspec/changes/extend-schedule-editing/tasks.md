@@ -15,5 +15,5 @@ Les cases cochées correspondent aux travaux réalisés et vérifiés ; voir doc
 
 ## 3. Validation et livraison
 
-- [ ] 3.1 Tester planning inactif, erreurs cloud, ID/nom discordants, semaine cyclique/DST, demi-degrés, payload excessif et concurrence service/number/refresh/unload.
+- [x] 3.1 Tester planning inactif, erreurs cloud, ID/nom discordants, semaine cyclique/DST, demi-degrés, payload excessif et concurrence service/number/refresh/unload.
 - [ ] 3.2 Exécuter matrice complète et Ruff ; documenter les services et attribuer les apports #17/#22/#24 à TheFab21.
