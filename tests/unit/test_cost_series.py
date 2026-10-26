@@ -342,3 +342,187 @@ async def test_service_refuses_disabled_costs_and_busy_homes(
     with pytest.raises(ServiceValidationError, match="not enabled"):
         await recalc(ha_hass, days=1)
     assert await series(live_recorder, statistic_id("home", "a", "cost")) is None
+
+
+# ---- Prices, failures and cancellation never touch kWh (task 2.3) ---------
+
+from custom_components.intuis_connect.cost_stats import async_recalculate_costs  # noqa: E402
+
+from .test_cost_stats import record  # noqa: E402
+
+H = 3600
+HOUSE = SimpleNamespace(
+    id="home",
+    name="House",
+    rooms={"a": SimpleNamespace(name="Living"), "b": SimpleNamespace(name="Bed")},
+)
+
+
+async def energy_rows(recorder):
+    return [
+        await series(recorder, statistic_id("home", room)) for room in ("a", "b", None)
+    ]
+
+
+async def test_entity_prices_change_per_hour_including_negative(
+    ha_hass, live_recorder, monkeypatch, frozen_clock
+):
+    ha_hass.config.currency = "EUR"
+    # HA 2024.6 returns the price in force at a period start only within a run.
+    run_start = live_recorder.recorder_runs_manager.recording_start.timestamp()
+    b = (int(run_start) // H + 2) * H
+    await record(ha_hass, live_recorder, frozen_clock, b - 600, "0.10")
+    await record(ha_hass, live_recorder, frozen_clock, b + 2 * H, "-0.05")
+    monkeypatch.setattr(
+        "custom_components.intuis_connect.history_import.API_DELAY_SECONDS", 0
+    )
+    api = SimpleNamespace(
+        async_get_room_energy_hourly=AsyncMock(
+            side_effect=[[(b + i * H, 1000) for i in range(4)]] * 2
+        )
+    )
+    manager = HistoryImportManager(ha_hass, "entry")
+    await manager.async_load()
+    await async_import_hourly_history(
+        ha_hass, api, HOUSE, manager, start=b, end=b + 4 * H
+    )
+    kwh = await energy_rows(live_recorder)
+    options = {
+        CONF_COST_STATISTICS: True,
+        CONF_COST_PRICE_MODE: "entity",
+        CONF_COST_PRICE_ENTITY: "sensor.price",
+    }
+    result = await async_recalculate_costs(
+        ha_hass, "entry", HOUSE, options, b, b + 4 * H
+    )
+    assert result["status"] == "completed"
+    assert costs(await series(live_recorder, statistic_id("home", "a", "cost"))) == [
+        (0.1, 0.1),
+        (0.1, 0.2),
+        (-0.05, 0.15),
+        (-0.05, 0.1),
+    ]
+    assert await energy_rows(live_recorder) == kwh
+
+
+async def recalculated(ha_hass, **kwargs):
+    return await async_recalculate_costs(
+        ha_hass, "entry", HOUSE, kwargs.pop("options", FIXED), ts(0), ts(2), **kwargs
+    )
+
+
+async def test_failed_cost_transaction_keeps_costs_and_kwh(
+    ha_hass, live_recorder, monkeypatch
+):
+    from sqlalchemy import event
+
+    ha_hass.config.currency = "EUR"
+    await job(
+        ha_hass, monkeypatch, [wh(0, (1000, 500)), wh(0, (0, 0))], cost_options=FIXED
+    )
+    kwh, before = (
+        await energy_rows(live_recorder),
+        await series(live_recorder, statistic_id("home", "a", "cost")),
+    )
+
+    def fail_insert(conn, cursor, statement, parameters, context, many):
+        if statement.startswith("INSERT INTO statistics "):
+            raise RuntimeError("injected insertion failure")
+
+    event.listen(live_recorder.engine, "before_cursor_execute", fail_insert)
+    try:
+        result = await recalculated(
+            ha_hass, options={**FIXED, CONF_COST_FIXED_PRICE: 0.9}
+        )
+    finally:
+        event.remove(live_recorder.engine, "before_cursor_execute", fail_insert)
+    assert result["status"] == "failed" and "injected" in result["errors"][0]
+    assert await series(live_recorder, statistic_id("home", "a", "cost")) == before
+    assert await energy_rows(live_recorder) == kwh
+
+
+async def test_unload_during_recalculation_drains_and_rolls_back(
+    ha_hass, live_recorder, monkeypatch
+):
+    import asyncio
+    import threading
+
+    from sqlalchemy import event
+
+    ha_hass.config.currency = "EUR"
+    await job(
+        ha_hass, monkeypatch, [wh(0, (1000, 500)), wh(0, (0, 0))], cost_options=FIXED
+    )
+    kwh, before = (
+        await energy_rows(live_recorder),
+        await series(live_recorder, statistic_id("home", "a", "cost")),
+    )
+    manager = HistoryImportManager(ha_hass, "entry")
+    entered, release = threading.Event(), threading.Event()
+
+    def block_insert(conn, cursor, statement, parameters, context, many):
+        if statement.startswith("INSERT INTO statistics ") and not entered.is_set():
+            entered.set()
+            release.wait(10)
+
+    event.listen(live_recorder.engine, "before_cursor_execute", block_insert)
+    try:
+        running = asyncio.create_task(
+            manager.async_run_exclusive(
+                async_recalculate_costs(
+                    ha_hass,
+                    "entry",
+                    HOUSE,
+                    {**FIXED, CONF_COST_FIXED_PRICE: 0.9},
+                    ts(0),
+                    ts(2),
+                )
+            )
+        )
+        loop = asyncio.get_running_loop()
+        assert await loop.run_in_executor(None, entered.wait, 10)
+        closing = asyncio.create_task(manager.async_close())
+        await asyncio.sleep(0.05)
+        assert not closing.done()  # unload waits for the recorder acknowledgement
+        release.set()
+        await asyncio.wait_for(closing, 10)
+        with pytest.raises(asyncio.CancelledError):
+            await running
+    finally:
+        release.set()
+        event.remove(live_recorder.engine, "before_cursor_execute", block_insert)
+    assert await series(live_recorder, statistic_id("home", "a", "cost")) == before
+    assert await energy_rows(live_recorder) == kwh
+    assert await manager.async_run_exclusive(recalculated(ha_hass)) is None
+
+
+async def test_currency_change_through_service_is_refused(
+    ha_hass, ha_entry_factory, live_recorder, monkeypatch, frozen_clock
+):
+    await service_home(ha_hass, ha_entry_factory, monkeypatch, frozen_clock)
+    await recalc(ha_hass, days=1)
+    before = await series(live_recorder, statistic_id("home", "a", "cost"))
+    kwh = await energy_rows(live_recorder)
+    ha_hass.config.currency = "CHF"
+    with pytest.raises(HomeAssistantError, match="incompatible"):
+        await recalc(ha_hass, days=1)
+    assert await series(live_recorder, statistic_id("home", "a", "cost")) == before
+    assert await energy_rows(live_recorder) == kwh
+
+
+async def test_energy_reimport_then_recalculation_follows_new_kwh(
+    ha_hass, live_recorder, monkeypatch
+):
+    ha_hass.config.currency = "EUR"
+    await job(ha_hass, monkeypatch, [wh(0, (1000, 500)), wh(0, (0, 0))])
+    await recalculated(ha_hass)
+    # A late cloud correction re-imports energy without costs.
+    await job(ha_hass, monkeypatch, [wh(0, (2000, 500)), wh(0, (0, 0))])
+    kwh = await energy_rows(live_recorder)
+    result = await recalculated(ha_hass)
+    assert result["total_cost"] == pytest.approx(0.5)
+    assert costs(await series(live_recorder, statistic_id("home", "a", "cost"))) == [
+        (0.4, 0.4),
+        (0.1, 0.5),
+    ]
+    assert await energy_rows(live_recorder) == kwh
