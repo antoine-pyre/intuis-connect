@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 from homeassistant.components.climate import HVACAction, HVACMode
 
@@ -17,7 +17,6 @@ from custom_components.intuis_connect.utils.const import (
     PRESET_AWAY,
     PRESET_BOOST,
     PRESET_SCHEDULE,
-    DOMAIN,
 )
 
 

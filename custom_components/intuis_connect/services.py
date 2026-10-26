@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import voluptuous as vol
 import yaml
@@ -43,9 +42,6 @@ from .timetable import (
     MINUTES_PER_DAY,
 )
 from .utils.const import DOMAIN
-
-if TYPE_CHECKING:
-    from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

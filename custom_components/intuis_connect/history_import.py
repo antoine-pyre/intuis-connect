@@ -26,7 +26,10 @@ from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.recorder import session_scope
+try:
+    from homeassistant.helpers.recorder import session_scope
+except ImportError:  # Home Assistant 2024.6 keeps this helper in the component.
+    from homeassistant.components.recorder.util import session_scope
 from homeassistant.helpers.storage import Store
 from sqlalchemy import delete, select, and_
 

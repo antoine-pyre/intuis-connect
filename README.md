@@ -342,3 +342,8 @@ MIT License - see [LICENSE](LICENSE) for details.
 Created by [antoine-pyre](https://github.com/antoine-pyre)
 
 Based on reverse-engineering of the Intuis/Netatmo API.
+
+## Development
+
+See [Development and validation](docs/development.md) for the pinned Python/Home
+Assistant test matrix, offline test fixtures, and the same checks used in CI.

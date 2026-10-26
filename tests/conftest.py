@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import pytest
+from homeassistant.core import HomeAssistant
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from typing import Any
 
 # Add the custom_components to the path
@@ -336,3 +337,94 @@ def climate_entity_factory(mock_hass, mock_coordinator, mock_api, mock_config_en
         return entity
 
     return _factory
+
+
+# Native fixtures for regression tests. Existing unit tests retain their mocks.
+@pytest.fixture
+async def ha_hass(tmp_path):
+    """A real HA event loop, service registry, config entries and temporary storage."""
+    from homeassistant.config_entries import ConfigEntries
+
+    hass = HomeAssistant(str(tmp_path))
+    hass.config_entries = ConfigEntries(hass, {})
+    yield hass
+    await hass.async_stop(force=True)
+
+
+@pytest.fixture
+def ha_entry_factory(ha_hass):
+    """Create native config entries without running the cloud integration setup."""
+    import inspect
+    from homeassistant.config_entries import ConfigEntry
+
+    def create(*, home_id="home_123", data=None, options=None):
+        values = {
+            "version": 3,
+            "minor_version": 1,
+            "domain": "intuis_connect",
+            "title": home_id,
+            "data": {"home_id": home_id, "refresh_token": "test-only", **(data or {})},
+            "options": options or {},
+            "source": "user",
+            "unique_id": home_id,
+        }
+        # These required fields were added after HA 2024.6.
+        parameters = inspect.signature(ConfigEntry).parameters
+        if "discovery_keys" in parameters:
+            from types import MappingProxyType
+            values["discovery_keys"] = MappingProxyType({})
+        if "subentries_data" in parameters:
+            values["subentries_data"] = []
+        entry = ConfigEntry(**values)
+        # Only fixture code touches this HA implementation detail. Using async_add
+        # would set up the integration, which must never contact Intuis in tests.
+        ha_hass.config_entries._entries[entry.entry_id] = entry
+        return entry
+
+    return create
+
+
+@pytest.fixture
+def recorder_session_factory(tmp_path):
+    """Real SQLite transactions using the installed HA recorder schema.
+
+    This fixture does not start the recorder worker. Tests of queued recorder jobs
+    must additionally set up the actual recorder component and await its queue.
+    """
+    from homeassistant.components.recorder.db_schema import Base
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'recorder.db'}")
+    Base.metadata.create_all(engine)
+    yield sessionmaker(bind=engine)
+    engine.dispose()
+
+
+@pytest.fixture
+def cloud_responses(monkeypatch):
+    """Simulate actual aiohttp request/response behavior; unmatched calls fail."""
+    import inspect
+    from functools import partial
+    from types import SimpleNamespace
+    from aiohttp import ClientResponse
+    from aioresponses import aioresponses
+
+    # aioresponses 0.7.9 omits the new required aiohttp 3.14 keyword.
+    # Keep the actual ClientResponse class and semantics; supply only this
+    # constructor compatibility default for synthetic, connectionless responses.
+    if "stream_writer" in inspect.signature(ClientResponse).parameters:
+        monkeypatch.setattr(
+            "aioresponses.core.ClientResponse", partial(ClientResponse, stream_writer=SimpleNamespace(output_size=0))
+        )
+    with aioresponses() as responses:
+        yield responses
+
+
+@pytest.fixture
+def frozen_clock():
+    """Freeze wall time without freezing asyncio's monotonic clock."""
+    from freezegun import freeze_time
+
+    with freeze_time("2026-10-26 12:00:00", real_asyncio=True) as clock:
+        yield clock

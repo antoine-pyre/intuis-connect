@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from typing import Any
 
 # Sample home data for tests
 SAMPLE_HOMES_SINGLE = [
