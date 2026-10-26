@@ -179,6 +179,8 @@ Accessible via **Settings → Devices & Services → Intuis Connect → Configur
 | Import History | Off | Import historical energy data on setup |
 | History Days | 365 | Setup choices: 30, 90, 180, 365, 730 days |
 | Energy Reset Hour | 02:00 | Configured boundary for daily counters |
+| Hourly Statistics | Off | Opt-in separate hourly statistics per room and home |
+| Hourly Update Interval | 2 hours | 1, 2, 4 or 6 hours between hourly updates |
 
 ### Special Modes
 
@@ -199,6 +201,10 @@ The integration tracks energy consumption per room:
   Let energy sensors record their first live statistics before importing; if the automatic
   setup attempt reports a missing live baseline, wait and retry the import service.
   See [safe import prerequisites and recovery](docs/08-safe-energy-history-import.md).
+- **Hourly statistics** (opt-in): closed hours in separate external statistics per room and
+  for the home, kept up to date automatically; `import_energy_history` with
+  `granularity: hourly` fills older periods. The `1hour` energy scale is unrelated: it only
+  refreshes the daily sensors. See [hourly energy statistics](docs/11-hourly-energy.md).
 - **Multiple tariff support** (aggregates all EJP tariffs)
 
 Energy data is fetched based on your configured scale:
