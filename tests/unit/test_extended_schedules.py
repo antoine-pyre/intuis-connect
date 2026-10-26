@@ -29,3 +29,22 @@ async def test_invalid_target_rejected_before_transport(homes,target):
     with pytest.raises(ServiceValidationError):
         await call(homes,'set_schedule_slot',home_id='second',**target,**args('set_schedule_slot'))
     homes.second.api.async_sync_schedule.assert_not_awaited()
+
+
+@pytest.mark.parametrize('payload', [
+    {}, {'timetable': []}, {'timetable': [{'m_offset': True,'zone_id': 1}]},
+    {'timetable': [{'m_offset': 0,'zone_id': 1}]*2}, {'away_temp': 25.5},
+    {'hg_temp': 15.5}, {'away_temp': float('nan')}, {'timetable':'not json'},
+    {'timetable': [{'m_offset': i,'zone_id': 1} for i in range(513)]},
+])
+def test_complete_schedule_schema_rejects_invalid_payloads(payload):
+    import voluptuous as vol
+    from custom_components.intuis_connect.services import SYNC_SCHEDULE_SCHEMA
+    with pytest.raises(vol.Invalid):
+        SYNC_SCHEDULE_SCHEMA(payload)
+
+
+def test_complete_schedule_schema_parses_original_json_without_mutation():
+    from custom_components.intuis_connect.services import SYNC_SCHEDULE_SCHEMA
+    result = SYNC_SCHEDULE_SCHEMA({'timetable':'[{"zone_id":2,"m_offset":0}]','away_temp':19.5})
+    assert result == {'timetable':[{'zone_id':2,'m_offset':0}],'away_temp':19.5}

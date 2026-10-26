@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
@@ -122,6 +123,55 @@ IMPORT_ENERGY_HISTORY_SCHEMA = vol.Schema(
         vol.Optional(ATTR_ROOM_NAME): str,
     }
 )
+
+
+def _timetable_payload(value):
+    """Accept structured transitions or the original planning JSON representation."""
+    if isinstance(value, str):
+        if len(value) > 65536:
+            raise vol.Invalid("Timetable payload too large")
+        try:
+            value = json.loads(value)
+        except (ValueError, TypeError) as err:
+            raise vol.Invalid("Invalid timetable JSON") from err
+    if not isinstance(value, list) or not 1 <= len(value) <= 512:
+        raise vol.Invalid("Timetable must contain 1 to 512 transitions")
+    result, offsets = [], set()
+    for row in value:
+        if not isinstance(row, dict) or set(row) != {"m_offset", "zone_id"}:
+            raise vol.Invalid("Transitions require only m_offset and zone_id")
+        offset, zone = row["m_offset"], row["zone_id"]
+        if (type(offset) is not int or not 0 <= offset < 10080
+                or offset in offsets or type(zone) is not int):
+            raise vol.Invalid("Invalid or duplicate timetable offset/zone")
+        offsets.add(offset)
+        result.append({"m_offset": offset, "zone_id": zone})
+    return sorted(result, key=lambda row: row["m_offset"])
+
+
+def _planning_temperature(maximum):
+    def validate(value):
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not 5 <= value <= maximum or not float(value * 2).is_integer()):
+            raise vol.Invalid("Planning temperatures require half degrees in range")
+        return float(value)
+    return validate
+
+
+def _has_changes(value):
+    if not any(key in value for key in ("timetable", "away_temp", "hg_temp")):
+        raise vol.Invalid("At least one timetable or temperature change is required")
+    return value
+
+
+SYNC_SCHEDULE_SCHEMA = vol.All(vol.Schema({
+    **HOME_FIELD,
+    vol.Optional(ATTR_SCHEDULE_ID): _nonempty_name,
+    vol.Optional(ATTR_SCHEDULE_NAME): _nonempty_name,
+    vol.Optional("timetable"): _timetable_payload,
+    vol.Optional("away_temp"): _planning_temperature(25),
+    vol.Optional("hg_temp"): _planning_temperature(15),
+}), _has_changes)
 
 
 def _schedule_by_name(home: IntuisHome, name: str) -> IntuisThermSchedule:

@@ -109,6 +109,36 @@
           "description": "Leave empty for all rooms. Without home_id, only homes containing this room are imported."
         }
       }
+    },
+    "sync_schedule": {
+      "name": "Sync Schedule",
+      "description": "Replace a complete weekly timetable and/or away/frost temperatures after validation. Defaults to the active schedule.",
+      "fields": {
+        "home_id": {
+          "name": "Home Id",
+          "description": "Target Intuis home ID."
+        },
+        "schedule_id": {
+          "name": "Schedule Id",
+          "description": "Stable schedule ID."
+        },
+        "schedule_name": {
+          "name": "Schedule Name",
+          "description": "Current schedule name; must match ID if supplied."
+        },
+        "timetable": {
+          "name": "Timetable",
+          "description": "List or JSON of unique m_offset/zone_id transitions (maximum 512)."
+        },
+        "away_temp": {
+          "name": "Away Temp",
+          "description": "Away temperature, 5–25 °C in half degrees."
+        },
+        "hg_temp": {
+          "name": "Hg Temp",
+          "description": "Frost temperature, 5–15 °C in half degrees."
+        }
+      }
     }
   },
   "config": {

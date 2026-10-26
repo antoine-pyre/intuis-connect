@@ -109,6 +109,36 @@
           "description": "Laisser vide pour toutes les pièces. Sans home_id, seuls les domiciles contenant cette pièce sont importés."
         }
       }
+    },
+    "sync_schedule": {
+      "name": "Synchroniser le planning",
+      "description": "Remplacer le planning complet et/ou ses températures absence et hors-gel après validation.",
+      "fields": {
+        "home_id": {
+          "name": "Home Id",
+          "description": "Target Intuis home ID."
+        },
+        "schedule_id": {
+          "name": "Schedule Id",
+          "description": "Stable schedule ID."
+        },
+        "schedule_name": {
+          "name": "Schedule Name",
+          "description": "Current schedule name; must match ID if supplied."
+        },
+        "timetable": {
+          "name": "Timetable",
+          "description": "List or JSON of unique m_offset/zone_id transitions (maximum 512)."
+        },
+        "away_temp": {
+          "name": "Away Temp",
+          "description": "Away temperature, 5–25 °C in half degrees."
+        },
+        "hg_temp": {
+          "name": "Hg Temp",
+          "description": "Frost temperature, 5–15 °C in half degrees."
+        }
+      }
     }
   },
   "config": {
