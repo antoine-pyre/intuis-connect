@@ -1,12 +1,12 @@
-# Static descriptions: names are validated against current home data by each handler.
 switch_schedule:
   name: Switch Schedule
-  description: Activate a schedule in the selected home. Names are validated against its current schedules.
+  description: Activate a schedule in the selected home. Names are validated against
+    its current schedules.
   fields:
     home_id:
       name: Home ID
-      description: Target a loaded home by its Intuis home ID. Without a target, uses the first loaded
-        home (and warns if several are loaded).
+      description: Target a loaded home by its Intuis home ID. Without a target, uses
+        the first loaded home (and warns if several are loaded).
       required: false
       selector:
         text: {}
@@ -18,24 +18,25 @@ switch_schedule:
         text: {}
 refresh_schedules:
   name: Refresh Schedules
-  description: Fetch the current schedules for the selected home, or all homes if omitted.
+  description: Fetch the current schedules for the selected home, or all homes if
+    omitted.
   fields:
     home_id:
       name: Home ID
-      description: Target a loaded home by its Intuis home ID. Without a target, applies to all loaded
-        homes.
+      description: Target a loaded home by its Intuis home ID. Without a target, applies
+        to all loaded homes.
       required: false
       selector:
         text: {}
 set_schedule_slot:
   name: Set Schedule Slot
-  description: Replace a complete interval in the selected home’s active weekly schedule. Supply start_day
-    and end_day, or the legacy day field for both.
+  description: Replace a complete interval in the selected home’s active weekly schedule.
+    Supply start_day and end_day, or the legacy day field for both.
   fields:
     home_id:
       name: Home ID
-      description: Target a loaded home by its Intuis home ID. Without a target, uses the first loaded
-        home (and warns if several are loaded).
+      description: Target a loaded home by its Intuis home ID. Without a target, uses
+        the first loaded home (and warns if several are loaded).
       required: false
       selector:
         text: {}
@@ -67,7 +68,8 @@ set_schedule_slot:
       selector: *id001
     day:
       name: Day (Legacy)
-      description: Compatibility alias supplying both days when start_day/end_day are omitted.
+      description: Compatibility alias supplying both days when start_day/end_day
+        are omitted.
       required: false
       selector: *id001
     start_time:
@@ -88,14 +90,26 @@ set_schedule_slot:
       required: true
       selector:
         text: {}
+    schedule_name:
+      name: Schedule Name
+      description: Optional current name; defaults to active schedule.
+      required: false
+      selector:
+        text: {}
+    schedule_id:
+      name: Schedule ID
+      description: Optional stable ID; must match schedule_name if both are supplied.
+      required: false
+      selector:
+        text: {}
 set_zone_temperature:
   name: Set Zone Temperature
   description: Set a room’s temperature in a schedule zone, preserving half degrees.
   fields:
     home_id:
       name: Home ID
-      description: Target a loaded home by its Intuis home ID. Without a target, uses the first loaded
-        home (and warns if several are loaded).
+      description: Target a loaded home by its Intuis home ID. Without a target, uses
+        the first loaded home (and warns if several are loaded).
       required: false
       selector:
         text: {}
@@ -130,13 +144,13 @@ set_zone_temperature:
           unit_of_measurement: °C
 import_energy_history:
   name: Import Energy History
-  description: Import complete local days with validated coverage. Requires existing live recorder statistics;
-    failures preserve history.
+  description: Import complete local days with validated coverage. Requires existing
+    live recorder statistics; failures preserve history.
   fields:
     home_id:
       name: Home ID
-      description: Target a loaded home by its Intuis home ID. Without a target, applies to all loaded
-        homes.
+      description: Target a loaded home by its Intuis home ID. Without a target, applies
+        to all loaded homes.
       required: false
       selector:
         text: {}
@@ -153,7 +167,8 @@ import_energy_history:
       default: 365
     room_name:
       name: Room (Optional)
-      description: Leave empty for all rooms. Without home_id, only homes containing this room are imported.
+      description: Leave empty for all rooms. Without home_id, only homes containing
+        this room are imported.
       required: false
       selector:
         text: {}

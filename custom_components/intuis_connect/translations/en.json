@@ -55,6 +55,14 @@
         "zone_name": {
           "name": "Zone Name",
           "description": "Zone name in the active schedule of the selected home."
+        },
+        "schedule_name": {
+          "name": "Schedule Name",
+          "description": "Optional current name; defaults to active schedule."
+        },
+        "schedule_id": {
+          "name": "Schedule ID",
+          "description": "Optional stable ID; must match schedule_name if both are supplied."
         }
       }
     },

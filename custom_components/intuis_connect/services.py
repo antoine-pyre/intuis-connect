@@ -46,6 +46,7 @@ SERVICES = (
 
 ATTR_ROOM_ID = "room_id"
 ATTR_SCHEDULE_NAME = "schedule_name"
+ATTR_SCHEDULE_ID = "schedule_id"
 ATTR_HOME_ID = "home_id"
 ATTR_DAY = "day"
 ATTR_START_DAY = "start_day"
@@ -87,6 +88,8 @@ SWITCH_SCHEDULE_SCHEMA = vol.Schema(
 SET_SCHEDULE_SLOT_SCHEMA = vol.Schema(
     {
         **HOME_FIELD,
+        vol.Optional(ATTR_SCHEDULE_NAME): _nonempty_name,
+        vol.Optional(ATTR_SCHEDULE_ID): _nonempty_name,
         vol.Optional(ATTR_DAY): vol.Any(str, int),
         vol.Optional(ATTR_START_DAY): vol.Any(str, int),
         vol.Optional(ATTR_END_DAY): vol.Any(str, int),
@@ -133,6 +136,20 @@ def _schedule_by_name(home: IntuisHome, name: str) -> IntuisThermSchedule:
     if schedule is None:
         raise ServiceValidationError(f"Schedule {name} not found in home {home.id}")
     return schedule
+
+
+def resolve_schedule(home: IntuisHome, schedule_id=None, schedule_name=None):
+    """Resolve optional IDs/names within one home; omission retains active default."""
+    candidates = [s for s in home.schedules if isinstance(s, IntuisThermSchedule)]
+    if schedule_id is None and schedule_name is None:
+        candidates = [s for s in candidates if s.selected]
+    else:
+        candidates = [s for s in candidates
+                      if (schedule_id is None or s.id == schedule_id)
+                      and (schedule_name is None or s.name == schedule_name)]
+    if len(candidates) != 1:
+        raise ServiceValidationError("Schedule target is unknown, ambiguous or inconsistent")
+    return candidates[0]
 
 
 def _room_by_name(home: IntuisHome, name: str) -> str:
@@ -184,16 +201,10 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
 
     async def set_schedule_slot(call: ServiceCall) -> None:
         entry_id, data = first_target(hass, call.data.get(ATTR_HOME_ID))
-        schedule = next(
-            (
-                s
-                for s in data["intuis_home"].schedules
-                if isinstance(s, IntuisThermSchedule) and s.selected
-            ),
-            None,
+        schedule = resolve_schedule(
+            data["intuis_home"], call.data.get(ATTR_SCHEDULE_ID),
+            call.data.get(ATTR_SCHEDULE_NAME),
         )
-        if schedule is None:
-            raise ServiceValidationError("No active heating schedule found")
         try:
             start, end = schedule_slot_offsets(
                 call.data.get(ATTR_START_DAY, call.data.get(ATTR_DAY)),

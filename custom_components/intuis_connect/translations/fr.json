@@ -55,6 +55,14 @@
         "zone_name": {
           "name": "Nom de la zone",
           "description": "Nom de la zone dans le planning ciblé."
+        },
+        "schedule_name": {
+          "name": "Schedule Name",
+          "description": "Optional current name; defaults to active schedule."
+        },
+        "schedule_id": {
+          "name": "Schedule ID",
+          "description": "Optional stable ID; must match schedule_name if both are supplied."
         }
       }
     },
