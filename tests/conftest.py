@@ -203,7 +203,7 @@ def intuis_data_factory(mock_api, mock_intuis_home, mock_save_overrides, get_opt
         return IntuisData(
             api=api or mock_api,
             intuis_home=mock_intuis_home,
-            overrides=overrides or {},
+            overrides=overrides if overrides is not None else {},
             get_options=get_options_factory(options or default_options),
             save_overrides_callback=save_callback or mock_save_overrides,
         )

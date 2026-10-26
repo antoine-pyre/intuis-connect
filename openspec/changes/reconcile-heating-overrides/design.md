@@ -33,3 +33,24 @@ Le cloud peut présenter un léger retard : les tests doivent couvrir confirmati
 3. Exécuter les contrôles ciblés puis la suite et la matrice supportée.
 4. Documenter les changements de comportement et les limites de compatibilité.
 5. En cas de régression, revenir à la version de code précédente ; ne jamais supprimer les données utilisateur pour effectuer ce retour. Une transaction recorder déjà confirmée ne s’annule pas par simple rollback du code.
+
+## Décisions d’implémentation — 26 octobre 2026
+
+- `OverrideManager` conserve l’identité du dictionnaire et le format de stockage.
+  Les locks par pièce sérialisent commandes/reapply ; la suppression d’une
+  expiration vérifie l’identité du snapshot pour préserver les commandes récentes.
+- L’état optimiste est distinct de l’intention : `PendingCommand`, délai monotone
+  de 120 secondes et minuterie locale indépendante de la fin du preset.
+  `assumed_state` est vrai uniquement pendant l’attente.
+- La confirmation passe par le callback de DataUpdateCoordinator. Modes auto/home
+  équivalents, consigne et boost observés servent à confirmer. Pour les presets
+  encodés manual+temp, une expiration fournie doit correspondre à 60 secondes près.
+  Les limites de cette observation sans expiration sont documentées.
+- L’intention d’une commande acceptée et l’état en attente sont publiés avant la
+  sauvegarde : une erreur disque remonte sans faire croire que l’envoi a échoué.
+  La closure de persistance du setup capture une copie profonde du dictionnaire.
+- Les timers d’optimisme et de fin sont remplacés par commande, la fin est
+  replanifiée après prolongation, et les deux sont annulés au retrait HA. Un
+  acquittement réseau tardif ne réactive pas l’entité retirée.
+- Tests sur véritables mapping, coordinateur et Store ; retrait par `async_remove`
+  afin de vérifier aussi le désabonnement du listener du coordinateur.

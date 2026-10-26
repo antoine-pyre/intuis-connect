@@ -1,9 +1,14 @@
 """Climate platform for Intuis Connect."""
+
 from __future__ import annotations
 
 import logging
 import time
 from typing import Any
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from homeassistant.core import callback
 
 from homeassistant.components.climate import (
     ClimateEntity,
@@ -21,18 +26,54 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.event import async_call_later
 
 from .intuis_api.api import IntuisAPI
+from .overrides import OverrideManager
 from .entity.intuis_room import IntuisRoom
 from .utils.const import (
-    PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE, PRESET_FROST_PROTECT, API_MODE_OFF, API_MODE_AUTO, API_MODE_MANUAL,
-    API_MODE_AWAY, API_MODE_BOOST, API_MODE_HG, API_MODE_HOME, DEFAULT_AWAY_TEMP, DEFAULT_AWAY_DURATION, DEFAULT_BOOST_TEMP,
-    DEFAULT_BOOST_DURATION, DEFAULT_FROST_PROTECT_TEMP, DEFAULT_FROST_PROTECT_DURATION, DEFAULT_MANUAL_DURATION, DOMAIN,
-    CONF_MANUAL_DURATION, CONF_AWAY_DURATION, CONF_BOOST_DURATION, CONF_FROST_PROTECT_DURATION,
-    CONF_AWAY_TEMP, CONF_BOOST_TEMP, CONF_FROST_PROTECT_TEMP,
+    PRESET_AWAY,
+    PRESET_BOOST,
+    PRESET_SCHEDULE,
+    PRESET_FROST_PROTECT,
+    API_MODE_OFF,
+    API_MODE_AUTO,
+    API_MODE_MANUAL,
+    API_MODE_AWAY,
+    API_MODE_BOOST,
+    API_MODE_HG,
+    API_MODE_HOME,
+    DEFAULT_AWAY_TEMP,
+    DEFAULT_AWAY_DURATION,
+    DEFAULT_BOOST_TEMP,
+    DEFAULT_BOOST_DURATION,
+    DEFAULT_FROST_PROTECT_TEMP,
+    DEFAULT_FROST_PROTECT_DURATION,
+    DEFAULT_MANUAL_DURATION,
+    DOMAIN,
+    CONF_MANUAL_DURATION,
+    CONF_AWAY_DURATION,
+    CONF_BOOST_DURATION,
+    CONF_FROST_PROTECT_DURATION,
+    CONF_AWAY_TEMP,
+    CONF_BOOST_TEMP,
+    CONF_FROST_PROTECT_TEMP,
 )
 from .entity.intuis_entity import IntuisEntity, IntuisDataUpdateCoordinator
 from .utils.helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
+
+
+# A pending command is a short-lived display hint, never a persisted state.
+OPTIMISTIC_TIMEOUT = 120
+
+
+@dataclass(frozen=True)
+class PendingCommand:
+    api_mode: str
+    temperature: float | None
+    hvac_mode: HVACMode
+    preset_mode: str | None
+    deadline: float
+    end_ts: int | None = None
 
 
 class IntuisConnectClimate(
@@ -41,46 +82,59 @@ class IntuisConnectClimate(
     """Climate entity for an Intuis Connect-compatible device."""
 
     _attr_hvac_modes = [HVACMode.AUTO, HVACMode.HEAT, HVACMode.OFF]
-    _attr_preset_modes = [PRESET_AWAY, PRESET_BOOST, PRESET_SCHEDULE, PRESET_FROST_PROTECT]
+    _attr_preset_modes = [
+        PRESET_AWAY,
+        PRESET_BOOST,
+        PRESET_SCHEDULE,
+        PRESET_FROST_PROTECT,
+    ]
     _attr_supported_features = (
-            ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
+        ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
     )
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_has_entity_name = True
 
     def __init__(
-            self,
-            coordinator: IntuisDataUpdateCoordinator,
-            home_id: str,
-            room: IntuisRoom,
-            api: IntuisAPI,
-            entry_id: str,
+        self,
+        coordinator: IntuisDataUpdateCoordinator,
+        home_id: str,
+        room: IntuisRoom,
+        api: IntuisAPI,
+        entry_id: str,
     ) -> None:
         """Initialize the climate entity."""
         CoordinatorEntity.__init__(self, coordinator)
         ClimateEntity.__init__(self)
-        IntuisEntity.__init__(self, coordinator, room, home_id, f"{room.name} Climate", "climate")
+        IntuisEntity.__init__(
+            self, coordinator, room, home_id, f"{room.name} Climate", "climate"
+        )
         self._home_id = home_id
         self._api = api
         self._entry_id = entry_id
-        # We have real state from the coordinator, not assumed state
         self._attr_assumed_state = False
-        self._attr_hvac_mode: HVACMode | None = None
-        self._attr_preset_mode: str | None = None
-        self._attr_target_temperature: float | None = None
+        self._attr_hvac_mode = None
+        self._attr_preset_mode = None
+        self._attr_target_temperature = None
+        self._pending: PendingCommand | None = None
+        self._cancel_pending: Callable[[], None] | None = None
+        self._cancel_end: Callable[[], None] | None = None
+        self._removed = False
+        self._scheduled_end_ts: int | None = None
+
+    def _get_override_manager(self) -> OverrideManager:
+        data = self.hass.data[DOMAIN][self._entry_id]
+        manager = data.get("override_manager")
+        if manager is None:
+            manager = data["override_manager"] = OverrideManager(
+                data.setdefault("overrides", {}),
+                data.get("save_overrides"),
+            )
+        return manager
 
     def _get_overrides(self) -> dict[str, dict]:
-        data = self.hass.data.get(DOMAIN, {}).get(self._entry_id, {})
-        return data.get("overrides", {})
-    
-    def _get_intuis_home(self):
-        """Get the IntuisHome object from coordinator data."""
-        return self.coordinator.data.get("intuis_home")
-
-    def _get_save_overrides(self):
-        """Get the save_overrides callback."""
-        data = self.hass.data.get(DOMAIN, {}).get(self._entry_id, {})
-        return data.get("save_overrides")
+        if self._entry_id not in self.hass.data.get(DOMAIN, {}):
+            return {}
+        return self._get_override_manager().overrides
 
     def _get_option(self, key: str, default: Any) -> Any:
         """Get an option value from the config entry."""
@@ -89,12 +143,172 @@ class IntuisConnectClimate(
             return entry.options.get(key, default)
         return default
 
+    def _cancel_timer(self, name: str) -> None:
+        cancel = getattr(self, name)
+        if cancel is not None:
+            cancel()
+            setattr(self, name, None)
+
+    def _clear_pending(self) -> None:
+        self._cancel_timer("_cancel_pending")
+        self._pending = None
+        self._attr_hvac_mode = self._attr_preset_mode = (
+            self._attr_target_temperature
+        ) = None
+        self._attr_assumed_state = False
+
+    def _active_pending(self) -> PendingCommand | None:
+        if self._pending is not None and time.monotonic() >= self._pending.deadline:
+            self._clear_pending()
+        return self._pending
+
     def _schedule_end_refresh(self, end_ts: int) -> None:
-        # Schedule a refresh slightly after end time
-        delay = max(0, end_ts - int(time.time()) + 1)
-        async def _cb(_now):
+        self._cancel_timer("_cancel_end")
+        self._scheduled_end_ts = end_ts
+
+        async def expired(_now):
+            self._cancel_end = None
+            self._scheduled_end_ts = None
+            if self._removed:
+                return
+            self._clear_pending()
+            self.async_write_ha_state()
             await self.coordinator.async_request_refresh()
-        async_call_later(self.hass, delay, _cb)
+
+        self._cancel_end = async_call_later(
+            self.hass,
+            max(0, end_ts - int(time.time()) + 1),
+            expired,
+        )
+
+    def _publish_pending(
+        self,
+        mode: str,
+        temperature: float | None,
+        hvac: HVACMode,
+        preset: str | None,
+        intent: dict | None,
+    ) -> None:
+        if self._removed:
+            return
+        self._clear_pending()
+        self._cancel_timer("_cancel_end")
+        self._pending = PendingCommand(
+            mode,
+            temperature,
+            hvac,
+            preset,
+            time.monotonic() + OPTIMISTIC_TIMEOUT,
+            intent["end"] if intent is not None else None,
+        )
+        self._attr_hvac_mode, self._attr_preset_mode = hvac, preset
+        self._attr_target_temperature = temperature
+        self._attr_assumed_state = True
+
+        @callback
+        def expire_pending(_now):
+            self._cancel_pending = None
+            if not self._removed:
+                self._clear_pending()
+                # State clears even if cloud refreshes fail. The normal poll
+                # remains responsible for fetching data; this deadline is local.
+                self.async_write_ha_state()
+
+        self._cancel_pending = async_call_later(
+            self.hass, OPTIMISTIC_TIMEOUT, expire_pending
+        )
+        if intent is not None:
+            self._schedule_end_refresh(intent["end"])
+        self.async_write_ha_state()
+
+    @staticmethod
+    def _observes_command(
+        room: IntuisRoom,
+        mode: str,
+        temperature: float | None,
+        end_ts: int | None = None,
+    ) -> bool:
+        observed_end = getattr(room, "therm_setpoint_end_time", None)
+        if (
+            end_ts is not None
+            and isinstance(observed_end, (int, float))
+            and observed_end > 0
+            and abs(observed_end - end_ts) > 60
+        ):
+            return False
+        if mode == API_MODE_HOME:
+            return (
+                room.mode in (API_MODE_AUTO, API_MODE_HOME)
+                and room.boost_status != "in_progress"
+            )
+        if mode == API_MODE_BOOST and room.boost_status == "in_progress":
+            return True
+        try:
+            same_temperature = (
+                temperature is not None
+                and abs(float(room.target_temperature) - float(temperature)) < 0.01
+            )
+        except (TypeError, ValueError):
+            same_temperature = False
+        if room.mode == mode:
+            return temperature is None or same_temperature
+        # Intuis often exposes away/hg/boost as a manual temperature override.
+        return (
+            mode in (API_MODE_AWAY, API_MODE_HG, API_MODE_BOOST)
+            and room.mode == API_MODE_MANUAL
+            and temperature is not None
+            and same_temperature
+        )
+
+    def _observed_override(self) -> dict | None:
+        room = self._get_room()
+        if room is None:
+            return None
+        intent = self._get_overrides().get(room.id)
+        if intent is None:
+            return None
+        try:
+            active = int(intent.get("end", 0)) > int(time.time())
+        except (ValueError, TypeError):
+            return None
+        if active and self._observes_command(
+            room, intent.get("mode"), intent.get("temp"), intent.get("end")
+        ):
+            return intent
+        return None
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        pending = self._active_pending()
+        room = self._get_room()
+        if (
+            self.coordinator.last_update_success
+            and room is not None
+            and pending is not None
+            and self._observes_command(
+                room, pending.api_mode, pending.temperature, pending.end_ts
+            )
+        ):
+            self._clear_pending()
+        if self.coordinator.last_update_success and not self._removed:
+            intent = self._get_overrides().get(self._room.id)
+            try:
+                end = int(intent["end"]) if intent is not None else 0
+            except (KeyError, ValueError, TypeError):
+                end = 0
+            if end > int(time.time()) and end != self._scheduled_end_ts:
+                self._schedule_end_refresh(end)
+            elif end <= int(time.time()):
+                self._cancel_timer("_cancel_end")
+                self._scheduled_end_ts = None
+        super()._handle_coordinator_update()
+
+    async def async_will_remove_from_hass(self) -> None:
+        self._removed = True
+        self._clear_pending()
+        self._cancel_timer("_cancel_end")
+        self._scheduled_end_ts = None
+        await super().async_will_remove_from_hass()
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -103,299 +317,174 @@ class IntuisConnectClimate(
 
     @property
     def current_temperature(self) -> StateType:
-        """Return the current temperature."""
-        return self._get_room().temperature
+        room = self._get_room()
+        return room.temperature if room is not None else None
 
     @property
     def target_temperature(self) -> StateType:
-        """Return the target temperature."""
-        return self._get_room().target_temperature
+        pending = self._active_pending()
+        if pending is not None and pending.temperature is not None:
+            return pending.temperature
+        room = self._get_room()
+        return room.target_temperature if room is not None else None
 
     @property
     def hvac_mode(self) -> HVACMode | None:
-        """Return hvac operation ie. heat, cool mode."""
-        if self._attr_hvac_mode is not None:
-            return self._attr_hvac_mode
-        
-        # Check if boost is active first (detected via boost_status, not therm_setpoint_mode)
+        pending = self._active_pending()
+        if pending is not None:
+            return pending.hvac_mode
+        room = self._get_room()
+        if room is None:
+            return None
         if self._is_boost_active():
             return HVACMode.HEAT
-        
-        mode = self._get_room().mode
-        if mode == API_MODE_OFF:
+        if room.mode == API_MODE_OFF:
             return HVACMode.OFF
-        if mode in (API_MODE_AUTO, API_MODE_AWAY, API_MODE_HOME, API_MODE_HG):
+        intent = self._observed_override()
+        if intent is not None and intent["mode"] in (API_MODE_AWAY, API_MODE_HG):
             return HVACMode.AUTO
-        if mode in (API_MODE_MANUAL, API_MODE_BOOST):
-            return HVACMode.HEAT
-        _LOGGER.warning("Unhandled HVAC mode: %s", mode)
+        if room.mode in (API_MODE_AUTO, API_MODE_AWAY, API_MODE_HOME, API_MODE_HG):
+            return HVACMode.AUTO
         return HVACMode.HEAT
 
     @property
     def preset_mode(self) -> str | None:
-        """Return the current preset mode."""
-        if self._attr_preset_mode is not None:
-            return self._attr_preset_mode
-        
+        pending = self._active_pending()
+        if pending is not None:
+            return pending.preset_mode
         room = self._get_room()
-        if not room:
+        if room is None:
             return None
-        
-        room_id = room.id
-        
-        # First, check overrides to see if away/boost mode is active
-        # This is more reliable than therm_setpoint_mode which only returns "auto" or "manual"
-        # Overrides are set when we programmatically set away/boost modes
-        overrides = self._get_overrides()
-        override = overrides.get(room_id)
-        
-        if override:
-            override_mode = override.get("mode")
-            if override_mode == API_MODE_AWAY:
-                return PRESET_AWAY
-            if override_mode == API_MODE_BOOST:
-                return PRESET_BOOST
-            if override_mode == API_MODE_HG:
-                return PRESET_FROST_PROTECT
-            # If override is manual, it's not a preset (user-set temperature)
-            if override_mode == API_MODE_MANUAL:
-                return None
-        
-        # Check room's boost_status (from API homestatus)
-        # boost_status indicates "in_progress" when boost is active, "disabled" otherwise
-        # This is the primary method to detect boost mode
         if room.boost_status == "in_progress":
             return PRESET_BOOST
-        
-        # Fallback: check therm_setpoint_mode (though it may not have away/boost)
-        # This often only returns "auto" or "manual", not "away" or "boost"
-        # But it can also return "hg" for Hors-Gel (Frost Protection) mode
-        # Note: Some installations may return "boost" in therm_setpoint_mode for compatibility
-        mode = room.mode
-        if mode == API_MODE_AWAY:
-            return PRESET_AWAY
-        if mode == API_MODE_BOOST:
-            # Fallback for installations that return boost in therm_setpoint_mode
-            return PRESET_BOOST
-        if mode == API_MODE_HG:
-            return PRESET_FROST_PROTECT
-        
-        # If in AUTO mode, return schedule preset
+        intent = self._observed_override()
+        mode = intent["mode"] if intent is not None else room.mode
+        preset = {
+            API_MODE_AWAY: PRESET_AWAY,
+            API_MODE_BOOST: PRESET_BOOST,
+            API_MODE_HG: PRESET_FROST_PROTECT,
+        }.get(mode)
+        if preset is not None:
+            return preset
         return PRESET_SCHEDULE if self.hvac_mode == HVACMode.AUTO else None
 
     def _is_boost_active(self) -> bool:
-        """Check if boost preset is currently active."""
         room = self._get_room()
-        if not room:
+        if room is None:
             return False
-        
-        # Check if boost_status indicates boost is in progress
-        if room.boost_status == "in_progress":
-            return True
-        
-        # Check overrides
-        room_id = room.id
-        overrides = self._get_overrides()
-        override = overrides.get(room_id)
-        if override and override.get("mode") == API_MODE_BOOST:
-            return True
-        
-        # Check therm_setpoint_mode as fallback
-        if room.mode == API_MODE_BOOST:
-            return True
-        
-        return False
+        # A persisted intent alone never proves that the equipment is heating.
+        return room.boost_status == "in_progress" or room.mode == API_MODE_BOOST
 
     @property
     def hvac_action(self) -> HVACAction | None:
-        """Return the current running hvac operation."""
         if self.hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
-        
         room = self._get_room()
-        if not room:
+        if room is None:
             return HVACAction.IDLE
-        
-        # If boost is active, always return HEATING
-        if self._is_boost_active():
-            return HVACAction.HEATING
-        
-        # Otherwise, use the room's heating status
         return (
             HVACAction.HEATING
-            if self._get_room().heating
+            if room.heating or self._is_boost_active()
             else HVACAction.IDLE
         )
 
-    async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set new target temperature."""
-        temp = kwargs.get("temperature")
-        if temp is None:
-            return
-        room_id = self._get_room().id
-        manual_duration = self._get_option(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION)
-        await self._api.async_set_room_state(
-            room_id, API_MODE_MANUAL, float(temp), manual_duration
+    async def _async_command(
+        self,
+        mode: str,
+        hvac: HVACMode,
+        preset: str | None,
+        temperature: float | None = None,
+        duration: int | None = None,
+    ) -> None:
+        room = self._get_room()
+        if self._removed or room is None:
+            raise ValueError("Room is unavailable")
+        await self._get_override_manager().async_command(
+            self._api,
+            room.id,
+            mode,
+            temperature,
+            duration,
+            on_success=lambda intent: self._publish_pending(
+                mode, temperature, hvac, preset, intent
+            ),
         )
-        now_ts = int(time.time())
-        end_ts = now_ts + manual_duration * 60
-        overrides = self._get_overrides()
-        overrides[room_id] = {
-            "mode": API_MODE_MANUAL,
-            "temp": float(temp),
-            "end": end_ts,
-            "sticky": True,
-            "last_reapply": now_ts,
-        }
-        # Persist overrides to storage
-        save_overrides = self._get_save_overrides()
-        if save_overrides:
-            await save_overrides()
-        self._schedule_end_refresh(end_ts)
-        self._attr_target_temperature = temp
-        self._attr_hvac_mode = HVACMode.HEAT
-        self._attr_preset_mode = None
-        self.async_write_ha_state()
-        await self.coordinator.async_request_refresh()
+        if not self._removed:
+            await self.coordinator.async_request_refresh()
+
+    async def async_set_temperature(self, **kwargs: Any) -> None:
+        temperature = kwargs.get("temperature")
+        if temperature is not None:
+            await self._async_command(
+                API_MODE_MANUAL,
+                HVACMode.HEAT,
+                None,
+                float(temperature),
+                self._get_option(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION),
+            )
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Set new hvac mode."""
-        room_id = self._get_room().id
-        overrides = self._get_overrides()
-        overrides_changed = False
-
         if hvac_mode == HVACMode.OFF:
-            await self._api.async_set_room_state(room_id, API_MODE_OFF)
-            if room_id in overrides:
-                overrides.pop(room_id, None)
-                overrides_changed = True
-            self._attr_hvac_mode = HVACMode.OFF
-            self._attr_preset_mode = None
+            await self._async_command(API_MODE_OFF, HVACMode.OFF, None)
         elif hvac_mode == HVACMode.AUTO:
-            await self._api.async_set_room_state(room_id, API_MODE_HOME)
-            if room_id in overrides:
-                overrides.pop(room_id, None)
-                overrides_changed = True
-            self._attr_hvac_mode = HVACMode.AUTO
-            self._attr_preset_mode = PRESET_SCHEDULE
+            await self._async_command(API_MODE_HOME, HVACMode.AUTO, PRESET_SCHEDULE)
         elif hvac_mode == HVACMode.HEAT:
-            temp = float(self.target_temperature or 20.0)
-            manual_duration = self._get_option(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION)
-            await self._api.async_set_room_state(
-                room_id, API_MODE_MANUAL, temp, manual_duration
+            await self._async_command(
+                API_MODE_MANUAL,
+                HVACMode.HEAT,
+                None,
+                float(self.target_temperature or 20.0),
+                self._get_option(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION),
             )
-            now_ts = int(time.time())
-            end_ts = now_ts + manual_duration * 60
-            overrides[room_id] = {
-                "mode": API_MODE_MANUAL,
-                "temp": temp,
-                "end": end_ts,
-                "sticky": True,
-                "last_reapply": now_ts,
-            }
-            overrides_changed = True
-            self._schedule_end_refresh(end_ts)
-            self._attr_hvac_mode = HVACMode.HEAT
-            self._attr_preset_mode = None
-
-        # Persist overrides to storage
-        if overrides_changed:
-            save_overrides = self._get_save_overrides()
-            if save_overrides:
-                await save_overrides()
-
-        self.async_write_ha_state()
-        await self.coordinator.async_request_refresh()
+        else:
+            raise ValueError(f"Unsupported HVAC mode: {hvac_mode}")
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
-        """Set new preset mode."""
-        room_id = self._get_room().id
-        overrides = self._get_overrides()
-        overrides_changed = False
-
         if preset_mode == PRESET_SCHEDULE:
-            await self._api.async_set_room_state(room_id, API_MODE_HOME)
-            self._attr_hvac_mode = HVACMode.AUTO
-            if room_id in overrides:
-                overrides.pop(room_id, None)
-                overrides_changed = True
-        elif preset_mode == PRESET_AWAY:
-            away_temp = self._get_option(CONF_AWAY_TEMP, DEFAULT_AWAY_TEMP)
-            away_duration = self._get_option(CONF_AWAY_DURATION, DEFAULT_AWAY_DURATION)
-            await self._api.async_set_room_state(
-                room_id,
+            await self._async_command(API_MODE_HOME, HVACMode.AUTO, PRESET_SCHEDULE)
+            return
+        settings = {
+            PRESET_AWAY: (
                 API_MODE_AWAY,
-                away_temp,
-                away_duration,
-            )
-            self._attr_hvac_mode = HVACMode.AUTO
-            now_ts = int(time.time())
-            end_ts = now_ts + away_duration * 60
-            overrides[room_id] = {
-                "mode": API_MODE_AWAY,
-                "temp": float(away_temp),
-                "end": end_ts,
-                "sticky": True,
-                "last_reapply": now_ts,
-            }
-            overrides_changed = True
-            self._schedule_end_refresh(end_ts)
-        elif preset_mode == PRESET_BOOST:
-            boost_temp = self._get_option(CONF_BOOST_TEMP, DEFAULT_BOOST_TEMP)
-            boost_duration = self._get_option(CONF_BOOST_DURATION, DEFAULT_BOOST_DURATION)
-            await self._api.async_set_room_state(
-                room_id,
+                HVACMode.AUTO,
+                CONF_AWAY_TEMP,
+                DEFAULT_AWAY_TEMP,
+                CONF_AWAY_DURATION,
+                DEFAULT_AWAY_DURATION,
+            ),
+            PRESET_BOOST: (
                 API_MODE_BOOST,
-                boost_temp,
-                boost_duration,
-            )
-            self._attr_hvac_mode = HVACMode.HEAT
-            now_ts = int(time.time())
-            end_ts = now_ts + boost_duration * 60
-            overrides[room_id] = {
-                "mode": API_MODE_BOOST,
-                "temp": float(boost_temp),
-                "end": end_ts,
-                "sticky": True,
-                "last_reapply": now_ts,
-            }
-            overrides_changed = True
-            self._schedule_end_refresh(end_ts)
-        elif preset_mode == PRESET_FROST_PROTECT:
-            frost_protect_temp = self._get_option(CONF_FROST_PROTECT_TEMP, DEFAULT_FROST_PROTECT_TEMP)
-            frost_protect_duration = self._get_option(CONF_FROST_PROTECT_DURATION, DEFAULT_FROST_PROTECT_DURATION)
-            await self._api.async_set_room_state(
-                room_id,
+                HVACMode.HEAT,
+                CONF_BOOST_TEMP,
+                DEFAULT_BOOST_TEMP,
+                CONF_BOOST_DURATION,
+                DEFAULT_BOOST_DURATION,
+            ),
+            PRESET_FROST_PROTECT: (
                 API_MODE_HG,
-                frost_protect_temp,
-                frost_protect_duration,
-            )
-            self._attr_hvac_mode = HVACMode.AUTO
-            now_ts = int(time.time())
-            end_ts = now_ts + frost_protect_duration * 60
-            overrides[room_id] = {
-                "mode": API_MODE_HG,
-                "temp": float(frost_protect_temp),
-                "end": end_ts,
-                "sticky": True,
-                "last_reapply": now_ts,
-            }
-            overrides_changed = True
-            self._schedule_end_refresh(end_ts)
-
-        # Persist overrides to storage
-        if overrides_changed:
-            save_overrides = self._get_save_overrides()
-            if save_overrides:
-                await save_overrides()
-
-        self._attr_preset_mode = preset_mode
-        self.async_write_ha_state()
-        await self.coordinator.async_request_refresh()
+                HVACMode.AUTO,
+                CONF_FROST_PROTECT_TEMP,
+                DEFAULT_FROST_PROTECT_TEMP,
+                CONF_FROST_PROTECT_DURATION,
+                DEFAULT_FROST_PROTECT_DURATION,
+            ),
+        }
+        if preset_mode not in settings:
+            raise ValueError(f"Unsupported preset: {preset_mode}")
+        mode, hvac, temp_key, temp_default, duration_key, duration_default = settings[
+            preset_mode
+        ]
+        await self._async_command(
+            mode,
+            hvac,
+            preset_mode,
+            self._get_option(temp_key, temp_default),
+            self._get_option(duration_key, duration_default),
+        )
 
 
 async def async_setup_entry(
-        hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up the climate entities."""
     coordinator, home_id, rooms, api = get_basic_utils(hass, entry)
@@ -403,6 +492,8 @@ async def async_setup_entry(
     entities = []
     for room_id in rooms:
         entities.append(
-            IntuisConnectClimate(coordinator, home_id, rooms.get(room_id), api, entry.entry_id)
+            IntuisConnectClimate(
+                coordinator, home_id, rooms.get(room_id), api, entry.entry_id
+            )
         )
     async_add_entities(entities, update_before_add=True)
