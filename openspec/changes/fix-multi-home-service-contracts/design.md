@@ -33,3 +33,20 @@ Les listes dynamiques deviennent des saisies de noms validées à l’exécution
 3. Exécuter les contrôles ciblés puis la suite et la matrice supportée.
 4. Documenter les changements de comportement et les limites de compatibilité.
 5. En cas de régression, revenir à la version de code précédente ; ne jamais supprimer les données utilisateur pour effectuer ce retour. Une transaction recorder déjà confirmée ne s’annule pas par simple rollback du code.
+
+## Décisions d’implémentation
+
+- La résolution commune prend un snapshot des entrées chargées et les handlers
+  vérifient leur identité après les attentes réseau/chargement. Les services ne
+  capturent pas les choix ni le domicile de la première entrée.
+- Un home_id fourni vide ou composé d’espaces est invalide ; son absence seule
+  active les valeurs par défaut historiques.
+- Sans home_id, un filtre room_name non vide sélectionne les domiciles contenant
+  cette pièce ; aucun match est une erreur avant création de tâche. Avec une
+  cible, une pièce inconnue est également rejetée avant tout lancement.
+- Les noms de pièces sont actualisés avec les plannings lors du refresh.
+- Le dernier déchargement réussi retire les services ; un déchargement refusé
+  les conserve. Les acquittements tardifs ne rafraîchissent pas le coordinateur
+  d’une entrée retirée.
+- Les noms deviennent des champs texte validés à l’appel ; aucun fichier du
+  composant n’est écrit au setup ou au refresh.

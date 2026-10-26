@@ -1,58 +1,104 @@
 {
   "services": {
     "switch_schedule": {
-      "name": "Changer de programme",
-      "description": "Passe a un autre programme de chauffage. Le programme s'applique a toutes les pieces de la maison.",
+      "name": "Changer de planning",
+      "description": "Activer un planning dans le domicile ciblé. Les noms sont validés sur les données actuelles.",
       "fields": {
+        "home_id": {
+          "name": "Identifiant du domicile",
+          "description": "Identifiant Intuis d’un domicile chargé. Sans cible, le premier domicile chargé est utilisé, avec avertissement si plusieurs sont chargés."
+        },
         "schedule_name": {
-          "name": "Nom du programme",
-          "description": "Le nom du programme a activer."
+          "name": "Nom du planning",
+          "description": "Nom exact du planning dans le domicile ciblé."
         }
       }
     },
     "refresh_schedules": {
-      "name": "Rafraichir les programmes",
-      "description": "Force la mise a jour de toutes les donnees de programme et de la maison depuis l'API Intuis.",
+      "name": "Actualiser les plannings",
+      "description": "Actualiser les plannings du domicile ciblé, ou de tous les domiciles si aucune cible n’est fournie.",
       "fields": {
         "home_id": {
-          "name": "ID de la maison",
-          "description": "Cible une maison specifique (optionnel). Si non fourni, rafraichit toutes les maisons configurees."
+          "name": "Identifiant du domicile",
+          "description": "Identifiant Intuis d’un domicile chargé. Sans cible, tous les domiciles chargés sont ciblés."
         }
       }
     },
     "set_schedule_slot": {
-      "name": "Definir un creneau horaire",
-      "description": "Definit une zone pour une plage horaire dans le programme de chauffage actif. Cree un creneau de l'heure de debut a l'heure de fin avec la zone specifiee.",
+      "name": "Modifier une plage horaire",
+      "description": "Remplacer toute une plage du planning actif. Fournir start_day et end_day, ou day pour les deux jours.",
       "fields": {
+        "home_id": {
+          "name": "Identifiant du domicile",
+          "description": "Identifiant Intuis d’un domicile chargé. Sans cible, le premier domicile chargé est utilisé, avec avertissement si plusieurs sont chargés."
+        },
+        "start_day": {
+          "name": "Jour de début",
+          "description": "Jour de début : 0=lundi, 6=dimanche. Requis si day est absent."
+        },
+        "end_day": {
+          "name": "Jour de fin",
+          "description": "Jour de fin : 0=lundi, 6=dimanche. Requis si day est absent."
+        },
         "day": {
-          "name": "Jour de la semaine",
-          "description": "Jour de la semaine pour le creneau horaire (0=Lundi, 6=Dimanche)."
+          "name": "Jour (ancien format)",
+          "description": "Alias de compatibilité pour les deux jours lorsque start_day/end_day sont absents."
         },
         "start_time": {
-          "name": "Heure de debut",
-          "description": "Quand la zone doit commencer (format HH:MM, 24 heures)."
+          "name": "Heure de début",
+          "description": "Heure HH:MM ; les secondes doivent être nulles."
         },
         "end_time": {
           "name": "Heure de fin",
-          "description": "Quand la zone doit se terminer et revenir a la zone precedente (format HH:MM, 24 heures)."
+          "description": "Heure HH:MM. Pour le même jour, 00:00 signifie le minuit suivant."
         },
         "zone_name": {
           "name": "Nom de la zone",
-          "description": "Le nom de la zone (ex: Nuit, Jour, Eco)."
+          "description": "Nom de la zone dans le planning ciblé."
+        }
+      }
+    },
+    "set_zone_temperature": {
+      "name": "Modifier la température d’une zone",
+      "description": "Définir la température d’une pièce dans une zone de planning, par pas de 0,5 °C.",
+      "fields": {
+        "home_id": {
+          "name": "Identifiant du domicile",
+          "description": "Identifiant Intuis d’un domicile chargé. Sans cible, le premier domicile chargé est utilisé, avec avertissement si plusieurs sont chargés."
+        },
+        "schedule_name": {
+          "name": "Nom du planning",
+          "description": "Nom exact du planning dans le domicile ciblé."
+        },
+        "zone_name": {
+          "name": "Nom de la zone",
+          "description": "Nom de la zone dans le planning ciblé."
+        },
+        "room_name": {
+          "name": "Nom de la pièce",
+          "description": "Nom de la pièce dans la zone et le domicile ciblés."
+        },
+        "temperature": {
+          "name": "Température",
+          "description": "Température de 5 à 30 °C par pas de 0,5 °C."
         }
       }
     },
     "import_energy_history": {
-      "name": "Importer l'historique energetique",
-      "description": "Importe les donnees historiques de consommation d'energie depuis le cloud Intuis vers les entites capteurs existantes. Les donnees apparaissent sur les memes capteurs d'energie utilises dans le tableau de bord Energie.",
+      "name": "Importer l’historique énergétique",
+      "description": "Importer des jours locaux terminés après validation. Des statistiques recorder en direct sont nécessaires ; un échec préserve l’historique.",
       "fields": {
+        "home_id": {
+          "name": "Identifiant du domicile",
+          "description": "Identifiant Intuis d’un domicile chargé. Sans cible, tous les domiciles chargés sont ciblés."
+        },
         "days": {
-          "name": "Jours a importer",
-          "description": "Nombre de jours d'historique a importer (1-730). Par defaut 365 jours."
+          "name": "Jours à importer",
+          "description": "Nombre entier de jours locaux terminés à importer (1–730)."
         },
         "room_name": {
-          "name": "Piece",
-          "description": "Importer uniquement cette piece. Laisser vide pour toutes les pieces."
+          "name": "Pièce (facultative)",
+          "description": "Laisser vide pour toutes les pièces. Sans home_id, seuls les domiciles contenant cette pièce sont importés."
         }
       }
     }

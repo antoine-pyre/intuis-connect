@@ -79,3 +79,18 @@ Aucun push, déploiement ni appel vers un compte Intuis réel n’est effectué.
   automatique a pu être relancée et a réussi après reprise de la conversation.
 - Limite documentée : sérialisation locale ; l’API ne fournit pas de mécanisme
   de comparaison atomique avec les modifications provenant de l’application Intuis.
+
+## Services multi-domicile — 26 octobre 2026
+
+- Agent : `multi_home_services`, changement `fix-multi-home-service-contracts`.
+- Review : cinq schémas home_id, descriptions statiques et traductions, résolution
+  des données courantes, défauts sans cible et cycle de vie des inscriptions.
+- Points demandés couverts : refus des cibles explicitement vides, validation des
+  pièces avant lancement d’import, snapshots des entrées et gardes après réponse
+  tardive, installation en lecture seule, ajout et retrait des entrées.
+- Validation indépendante : 345 tests réussis sur chacune des deux versions HA,
+  Ruff et diff-check réussis ; 46 nouvelles régressions par services enregistrés.
+- Précision documentée : room_name sans home_id filtre les domiciles contenant
+  cette pièce. Les services sans cette restriction conservent leurs défauts
+  historiques ; les mutations de planning sans cible avertissent et choisissent
+  la première entrée chargée.

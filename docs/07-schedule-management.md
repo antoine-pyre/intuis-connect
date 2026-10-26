@@ -258,7 +258,7 @@ truncated to 19.
 ### `intuis_connect.refresh_schedules`
 
 Fetch the current home schedules from the cloud. Targeting and lifecycle of
-multi-home services are described by the dedicated multi-home contract.
+multi-home services are described in [multi-home service contracts](10-multi-home-services.md).
 
 ## Mutation implementation and failure guarantees
 
