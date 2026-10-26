@@ -65,3 +65,21 @@ The price history of an entity comes from the recorder. Hours older than the
 recorder purge horizon (`purge_keep_days`, 10 days by default) have no recorded
 price and are refused; keep enough history, or use a fixed price explicitly, for
 older recalculations.
+
+## Series and display
+
+Each room and the home get an external cost series, separate from energy:
+`intuis_connect:cost_<digest>` from the same `[home_id, room_id]` identity as the
+energy series. Costs are written by the hourly import and updater, right after
+the room's kWh are confirmed, from those exact kWh; each series is replaced in
+one acknowledged recorder transaction. The home cost is the sum of room costs and
+is only written when every room has a cost for the same hours.
+
+A price problem never blocks or changes the energy import: the job reports
+`costs` as `complete`, `partial` or `failed`, and the error names the cause.
+
+A display sensor per room and for the home (`<name> Hourly Cost`, monetary, two
+decimals) shows the last confirmed cumulative cost. It has no state class, so the
+recorder does not compile a second cost series from it; select the external cost
+series in the energy dashboard. Display sensors read the recorder at startup and
+after each acknowledged write of their own home only.

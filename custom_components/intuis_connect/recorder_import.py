@@ -49,11 +49,11 @@ class ReplacementResult:
 
 @dataclass(frozen=True)
 class ExternalReplacementResult:
-    """Committed external hourly replacement."""
+    """Committed external hourly replacement (kWh or currency)."""
 
     statistic_id: str
     hours: int
-    energy_kwh: float
+    total: float
     final_sum: float
     cleared: int
     adjusted: int
@@ -324,7 +324,11 @@ def _running_instance(hass: Any) -> Any:
 
 
 def _validate_samples(
-    start: datetime, end: datetime, samples: tuple[tuple[datetime, float], ...]
+    start: datetime,
+    end: datetime,
+    samples: tuple[tuple[datetime, float], ...],
+    *,
+    allow_negative: bool = False,
 ) -> None:
     if not samples or start.tzinfo is None or end.tzinfo is None or start >= end:
         raise HistoryReplacementError("Invalid or empty replacement period")
@@ -341,7 +345,7 @@ def _validate_samples(
             raise HistoryReplacementError(
                 "Sample timestamps must be unique and chronological"
             )
-        if not _finite(energy) or energy < 0:
+        if not _finite(energy) or (energy < 0 and not allow_negative):
             raise HistoryReplacementError(
                 "Sample energy must be finite and nonnegative"
             )
@@ -407,16 +411,24 @@ async def async_replace_external_history(
 
     Coverage must be complete: a hole would silently delete confirmed hours.
     Replaying the same samples rewrites identical rows and adjusts nothing.
+    Energy series are in kWh and nonnegative; cost series are in a currency
+    and may be negative (negative tariffs).
     """
     instance = _running_instance(hass)
+    sid = str(meta_data.get("statistic_id", ""))
+    unit = meta_data.get("unit_of_measurement")
+    is_cost = sid.startswith(f"{DOMAIN}:cost_")
     if (
         meta_data.get("source") != DOMAIN
-        or not str(meta_data.get("statistic_id", "")).startswith(f"{DOMAIN}:")
-        or meta_data.get("unit_of_measurement") != "kWh"
+        or not sid.startswith(f"{DOMAIN}:")
         or meta_data.get("has_sum") is not True
+        or not (
+            (is_cost and isinstance(unit, str) and unit and unit != "kWh")
+            or (sid.startswith(f"{DOMAIN}:energy_") and unit == "kWh")
+        )
     ):
-        raise HistoryReplacementError("Invalid external energy statistics metadata")
-    _validate_samples(start, end, samples)
+        raise HistoryReplacementError("Invalid external statistics metadata")
+    _validate_samples(start, end, samples, allow_negative=is_cost)
     start_ts, end_ts = start.timestamp(), end.timestamp()
     if (
         start_ts % HOUR

@@ -128,6 +128,7 @@ class HistoryImportManager:
         self.total_days = 0
         self.last_error: str | None = None
         self.hourly_home_total: str | None = None
+        self.cost_status: str | None = None
 
     async def async_load(self) -> None:
         if self._loaded:

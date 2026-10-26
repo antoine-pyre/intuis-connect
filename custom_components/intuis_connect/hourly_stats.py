@@ -17,10 +17,19 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 
+from .cost_stats import (
+    CostPriceError,
+    async_hour_prices,
+    async_publish_costs,
+    async_write_costs,
+    cost_metadata,
+    hourly_costs,
+)
 from .external_statistics import metadata, statistic_id
 from .hourly_series import HOUR, closed_hour_end, stage_hourly
 from .intuis_api.api import APIError, CannotConnect, InvalidAuth, RateLimitError
 from .recorder_import import HistoryReplacementError, async_replace_external_history
+from .utils.const import CONF_COST_STATISTICS
 
 if TYPE_CHECKING:
     from .entity.intuis_home import IntuisHome
@@ -69,6 +78,11 @@ async def async_update_window(
     return max(start, end - CATCH_UP_WINDOW), end
 
 
+def entry_cost_options(options: Any) -> dict[str, Any] | None:
+    """Cost settings of one entry, only when that entry enabled costs."""
+    return dict(options) if options.get(CONF_COST_STATISTICS) else None
+
+
 def _home_total(
     confirmed: dict[str, tuple[tuple[datetime, float], ...]],
 ) -> tuple[tuple[datetime, float], ...]:
@@ -90,11 +104,14 @@ async def async_import_hourly_history(
     end: int,
     room_filter: str | None = None,
     home_id: str | None = None,
+    cost_options: dict[str, Any] | None = None,
 ) -> dict:
     """Fetch, stage, then replace one external series transaction per room.
 
     The home total is written only when every room of the home was confirmed
     for the same hours; otherwise the last complete total is left untouched.
+    With cost options, each confirmed room also gets its cost series from the
+    same confirmed kWh; a price problem never blocks or alters the energy.
     """
     from .history_import import API_DELAY_SECONDS
 
@@ -112,7 +129,11 @@ async def async_import_hourly_history(
         "total_energy_kwh": 0.0,
         "errors": [],
         "home_total": "skipped",
+        "costs": "disabled",
+        "cost_errors": [],
     }
+    cost_errors: list[str] = results["cost_errors"]
+    costed: dict[str, tuple[tuple[datetime, float], ...]] = {}
     try:
         home_id = home_id or intuis_home.id
         rooms = [
@@ -125,6 +146,15 @@ async def async_import_hourly_history(
         if not rooms:
             results["errors"].append("No matching rooms")
         confirmed: dict[str, tuple[tuple[datetime, float], ...]] = {}
+        currency = hass.config.currency
+        prices = None
+        if cost_options and rooms:
+            try:
+                prices = await async_hour_prices(
+                    hass, cost_options, currency, range(start, end, HOUR)
+                )
+            except Exception as err:  # noqa: BLE001 - costs never block energy
+                cost_errors.append(f"Costs: {err}")
         for room_id, room_name in rooms:
             if manager._cancelled:
                 raise asyncio.CancelledError
@@ -143,7 +173,7 @@ async def async_import_hourly_history(
                 )
                 confirmed[room_id] = samples
                 results["rooms_imported"] += 1
-                results["total_energy_kwh"] += committed.energy_kwh
+                results["total_energy_kwh"] += committed.total
                 manager.days_imported = committed.hours // 24
             except RateLimitError as err:
                 manager.status = "rate_limited"
@@ -162,6 +192,20 @@ async def async_import_hourly_history(
                 manager.last_error = str(err)
                 results["errors"].append(f"{room_name}: {err}")
                 _LOGGER.warning("Hourly import failed for %s: %s", room_name, err)
+            if prices is not None and room_id in confirmed:
+                if manager._cancelled:
+                    raise asyncio.CancelledError
+                try:
+                    costs = hourly_costs(confirmed[room_id], prices)
+                    await async_write_costs(
+                        hass,
+                        cost_metadata(home_id, room_id, room_name, currency),
+                        costs,
+                    )
+                    costed[room_id] = costs
+                except (CostPriceError, HistoryReplacementError) as err:
+                    cost_errors.append(f"{room_name} cost: {err}")
+                    _LOGGER.warning("Hourly cost failed for %s: %s", room_name, err)
             manager.rooms_completed += 1
             if manager.rooms_completed < len(rooms):
                 await asyncio.sleep(API_DELAY_SECONDS)
@@ -188,6 +232,29 @@ async def async_import_hourly_history(
                 except HistoryReplacementError as err:
                     results["home_total"] = "incomplete"
                     results["errors"].append(f"Home hourly total: {err}")
+        if prices is not None and room_filter is None and rooms:
+            missing = [name for rid, name in rooms if rid not in costed]
+            if missing:
+                cost_errors.append(
+                    "Home hourly cost kept at its last complete value; missing: "
+                    + ", ".join(missing)
+                )
+            else:
+                if manager._cancelled:
+                    raise asyncio.CancelledError
+                try:
+                    await async_write_costs(
+                        hass,
+                        cost_metadata(home_id, None, intuis_home.name, currency),
+                        _home_total(costed),
+                    )
+                except HistoryReplacementError as err:
+                    cost_errors.append(f"Home hourly cost: {err}")
+        if cost_options:
+            results["costs"] = (
+                "complete" if not cost_errors else "partial" if costed else "failed"
+            )
+        manager.cost_status = results["costs"]
         manager.hourly_home_total = results["home_total"]
         if manager.status != "rate_limited":
             manager.status = (
@@ -210,8 +277,11 @@ async def async_import_hourly_history(
         manager.current_room = None
         if manager._task is asyncio.current_task():
             manager._task = None
-    if results["errors"]:
-        manager.last_error = "; ".join(results["errors"])
+        if costed:
+            # Display sensors only ever reflect acknowledged cost writes.
+            async_publish_costs(hass, manager.entry_id)
+    if results["errors"] or cost_errors:
+        manager.last_error = "; ".join(results["errors"] + cost_errors)
     results["status"] = manager.status
     return results
 
@@ -276,6 +346,7 @@ class HourlyStatisticsUpdater:
             start=start,
             end=end,
             home_id=self.intuis_home.id,
+            cost_options=entry_cost_options(self.entry.options),
         )
         if not started:
             _LOGGER.debug("Hourly update deferred: import running or entry unloading")
