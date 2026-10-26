@@ -172,3 +172,52 @@ import_energy_history:
       required: false
       selector:
         text: {}
+sync_schedule:
+  name: Sync Schedule
+  description: Replace a complete weekly timetable and/or away/frost temperatures
+    after validation. Defaults to the active schedule.
+  fields:
+    home_id:
+      name: Home Id
+      description: Target Intuis home ID.
+      required: false
+      selector:
+        text: {}
+    schedule_id:
+      name: Schedule Id
+      description: Stable schedule ID.
+      required: false
+      selector:
+        text: {}
+    schedule_name:
+      name: Schedule Name
+      description: Current schedule name; must match ID if supplied.
+      required: false
+      selector:
+        text: {}
+    timetable:
+      name: Timetable
+      description: List or JSON of unique m_offset/zone_id transitions (maximum 512).
+      required: false
+      selector:
+        object: {}
+    away_temp:
+      name: Away Temp
+      description: Away temperature, 5–25 °C in half degrees.
+      required: false
+      selector:
+        number:
+          min: 5
+          max: 25
+          step: 0.5
+          mode: box
+    hg_temp:
+      name: Hg Temp
+      description: Frost temperature, 5–15 °C in half degrees.
+      required: false
+      selector:
+        number:
+          min: 5
+          max: 15
+          step: 0.5
+          mode: box

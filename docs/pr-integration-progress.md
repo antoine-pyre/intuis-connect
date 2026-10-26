@@ -10,3 +10,4 @@ Chaque ligne est enregistrée dans le commit de la tâche concernée.
 | preserve-contributor-attribution | 2.1 | docs: verify contribution source and identity register | Liens locaux et dix SHA vérifiés ; métadonnées GitHub concordantes ; aucune adresse inventée |
 | preserve-contributor-attribution | 2.2 | docs: prepare credited release description and notes | Notes de livraison distinguant réalisé et planifié ; aucun message externe publié |
 | extend-schedule-editing | 1.1 | feat: target inactive schedules by name or ID | 49 tests services/ciblage réussis sur HA 2026.10 ; Ruff passe |
+| extend-schedule-editing | 1.2 | feat: validate complete timetable and planning temperature payloads | 13 tests ciblés passent ; Ruff ; JSON et limites validés |

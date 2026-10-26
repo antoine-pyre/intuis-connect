@@ -5,7 +5,7 @@ Les cases cochées correspondent aux travaux réalisés et vérifiés ; voir doc
 ## 1. Services et validation
 
 - [x] 1.1 Ajouter les cibles schedule_name/schedule_id avec compatibilité des anciens appels et validation multi-domicile.
-- [ ] 1.2 Définir puis implémenter le schéma statique sync_schedule, la liste structurée/JSON, les bornes et les champs away/hg.
+- [x] 1.2 Définir puis implémenter le schéma statique sync_schedule, la liste structurée/JSON, les bornes et les champs away/hg.
 - [ ] 1.3 Etendre le moteur de mutation partagé pour les remplacements complets et températures de planning sans modifier les chemins déjà validés.
 
 ## 2. Entités et UI
