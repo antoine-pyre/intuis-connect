@@ -62,3 +62,20 @@ Aucun push, déploiement ni appel vers un compte Intuis réel n’est effectué.
 - Format de stockage et identifiants préservés. Limite documentée : sans mode ni
   expiration permettant de le distinguer, un changement externe strictement
   identique à l’intention précédente ne peut pas être reconnu.
+
+## Édition des plannings — 26 octobre 2026
+
+- Agent : `schedule_mutations`, changement `correct-schedule-mutations`.
+- Review : transformation cyclique semi-ouverte, suppression des transitions
+  internes, restauration de la zone finale et préservation hors intervalle.
+- Chemin partagé service/number : validation des demi-degrés, copie sous verrou,
+  résolution du modèle courant et publication après succès cloud uniquement.
+- Points demandés couverts : entrée non mutée, vérification minute par minute,
+  dimanche/minuit, absence d’offset zéro, alias day, concurrence service/number
+  avec remplacement du modèle pendant une requête.
+- Validation indépendante : 299 tests réussis sur chacune des deux versions HA,
+  Ruff et diff-check réussis ; 42 nouvelles régressions.
+- La vérification HA récente initialement empêchée par une limite de la revue
+  automatique a pu être relancée et a réussi après reprise de la conversation.
+- Limite documentée : sérialisation locale ; l’API ne fournit pas de mécanisme
+  de comparaison atomique avec les modifications provenant de l’application Intuis.

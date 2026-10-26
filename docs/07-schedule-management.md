@@ -40,7 +40,7 @@ Where `day` is 0-6 (Monday=0, Sunday=6).
 | Monday | 06:00 | 360 |
 | Monday | 22:00 | 1320 |
 | Tuesday | 06:00 | 1800 |
-| Sunday | 22:00 | 10000 |
+| Sunday | 22:00 | 9960 |
 
 ### Zone
 
@@ -188,123 +188,108 @@ Allows switching between available schedules.
 
 ## Home Assistant Services
 
-### intuis_connect.set_schedule_slot
+### `intuis_connect.set_schedule_slot`
 
-Set a zone for a specific time slot in the active heating schedule.
+Replace the full interval in the active schedule, including transitions previously
+inside that interval. The interval is **[start, end)**: the selected zone starts at
+the beginning; the zone originally scheduled at the end is restored there.
+Everything outside the interval keeps its previous zone, including week wrap.
 
-**Service Data:**
+| Field | Required | Description |
+|---|---|---|
+| `start_day` | Yes, unless `day` is supplied | `"0"` Monday through `"6"` Sunday |
+| `end_day` | Yes, unless `day` is supplied | End day, with week wrap supported |
+| `start_time` | Yes | `HH:MM` or `HH:MM:00`, minute precision |
+| `end_time` | Yes | End time, with the midnight rules below |
+| `zone_name` | Yes | Existing zone name, case-insensitive |
+| `day` | Optional legacy alias | Supplies both days when they are omitted |
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| day | int | Yes | Day of week (0=Monday, 6=Sunday) |
-| start_time | string | Yes | Start time in HH:MM format |
-| zone_id | int | No* | Zone ID to set |
-| zone_name | string | No* | Zone name (case-insensitive) |
-
-*Either `zone_id` or `zone_name` must be provided.
-
-**Example:**
+For example, this replaces every previous transition between 07:00 and 11:00 on
+Monday. An old 08:00 transition will no longer interrupt Eco:
 
 ```yaml
 service: intuis_connect.set_schedule_slot
 data:
-  day: 3  # Thursday
+  start_day: "0"
   start_time: "07:00"
+  end_day: "0"
+  end_time: "11:00"
+  zone_name: "Eco"
+```
+
+A range may cross the week boundary:
+
+```yaml
+service: intuis_connect.set_schedule_slot
+data:
+  start_day: "4"      # Friday
+  start_time: "22:00"
+  end_day: "0"        # Following Monday
+  end_time: "06:00"
   zone_name: "Night"
 ```
 
-### intuis_connect.switch_schedule
+On the **same day**, an end of `00:00` means the end of that day. On a different
+end day, `00:00` means the beginning of that day. Thus Sunday 22:00 → Sunday
+00:00 ends at the following Monday boundary, serialized as offset 0 rather than
+10080. A same-day end before or equal to the start is rejected, except for the
+explicit end-of-day midnight rule. Whole-week/equal cyclic boundaries are
+rejected as ambiguous. Nonzero seconds, invalid clocks and invalid days are
+rejected instead of silently rounded.
 
-Switch to a different heating schedule.
+### `intuis_connect.set_zone_temperature`
 
-**Service Data:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| schedule_id | string | No* | Schedule ID |
-| schedule_name | string | No* | Schedule name |
-
-*Either `schedule_id` or `schedule_name` must be provided.
-
-### intuis_connect.refresh_schedules
-
-Force refresh of schedule data from the API.
-
-## Implementation Details
-
-### Preventing Consecutive Duplicates
-
-When setting a schedule slot, the implementation:
-
-1. Retrieves the current timetable
-2. Inserts or updates the entry at the specified m_offset
-3. Sorts by m_offset
-4. Removes consecutive entries with the same zone_id
-5. Syncs to the API
-
-```python
-# Remove consecutive duplicate zones
-cleaned_timetable = []
-prev_zone_id = None
-for entry in timetable:
-    if entry["zone_id"] != prev_zone_id:
-        cleaned_timetable.append(entry)
-        prev_zone_id = entry["zone_id"]
-```
-
-### Zone Payload Format
-
-The API requires zones to use `rooms_temp` format only:
-
-```python
-zones_payload = []
-for zone in active_schedule.zones:
-    zone_data = {
-        "id": zone.id,
-        "name": zone.name,
-        "type": zone.type,
-        "rooms_temp": [
-            {"room_id": rt.room_id, "temp": rt.temp}
-            for rt in zone.rooms_temp
-        ]
-    }
-    zones_payload.append(zone_data)
-```
-
-## Usage Examples
-
-### Automation: Set Night Mode at 22:00
+Set a room's temperature in an existing zone of a named schedule:
 
 ```yaml
-automation:
-  - alias: "Set Night Mode"
-    trigger:
-      - platform: time
-        at: "22:00:00"
-    action:
-      - service: intuis_connect.set_schedule_slot
-        data:
-          day: "{{ now().weekday() }}"
-          start_time: "22:00"
-          zone_name: "Night"
+service: intuis_connect.set_zone_temperature
+data:
+  schedule_name: "Week"
+  zone_name: "Eco"
+  room_name: "Living Room"
+  temperature: 19.5
 ```
 
-### Script: Quick Eco Mode
+Both this service and the zone-temperature `number` entities retain half degrees.
+Accepted values are finite temperatures from **5 to 30 °C in 0.5 °C steps**.
+A value such as 19.25 is rejected; 19.5 is sent and retained as 19.5 rather than
+truncated to 19.
 
-```yaml
-script:
-  quick_eco_mode:
-    sequence:
-      - service: intuis_connect.set_schedule_slot
-        data:
-          day: "{{ now().weekday() }}"
-          start_time: "{{ now().strftime('%H:%M') }}"
-          zone_name: "Eco"
-```
+### `intuis_connect.refresh_schedules`
+
+Fetch the current home schedules from the cloud. Targeting and lifecycle of
+multi-home services are described by the dedicated multi-home contract.
+
+## Mutation implementation and failure guarantees
+
+`replace_timetable_interval` in `timetable.py` performs a pure cyclic-week
+transformation. It captures the original end zone, removes transitions inside
+the interval, inserts the two boundaries, sorts and removes consecutive duplicate
+zones. It never modifies its input and supports schedules without an offset-0
+entry. The regression suite checks every minute of a complete week to verify the
+preservation of the complement.
+
+`schedule_mutations.py` is shared by the service handlers and `number` entities.
+The API client owns a typed lock map, one lock per schedule. Each mutation:
+
+1. Acquires the schedule's lock and resolves the latest home/schedule model.
+2. Builds a private copy and applies the interval or temperature change.
+3. Sends one common payload, using `rooms_temp` only.
+4. Resolves the model again and publishes the confirmed copy only after API success.
+5. Lets the entry point request a coordinator refresh.
+
+A cloud error leaves the confirmed timetable and temperatures intact and is
+returned to the caller. Invalid input is rejected before any command is sent.
+Mutations from services and `number` entities serialize on the same client lock;
+a waiting edit starts from the first edit's confirmed result, even when a refresh
+has replaced the model object during the first request.
+
+These locks coordinate this integration's in-process edits. They cannot provide
+a server-side compare-and-swap against simultaneous edits made by other Intuis
+clients, because the API does not expose a revision contract here. Entity unique
+IDs, configuration and storage formats are unchanged.
 
 ## Debugging
-
-Enable debug logging for schedule operations:
 
 ```yaml
 logger:
@@ -314,8 +299,6 @@ logger:
     custom_components.intuis_connect.intuis_api.api: debug
 ```
 
-Log messages to look for:
-- `Setting zone 'X' (ID: Y) at day Z (m_offset: N)` - Service called
-- `Sync schedule payload: {...}` - Payload sent to API
-- `Schedule X synced successfully` - API success
-- `sync_schedule failed: ...` - API error with details
+An API failure is surfaced by the service or entity command; a successful write
+is followed by the coordinator refresh. The local model is never changed before
+the write is acknowledged.
