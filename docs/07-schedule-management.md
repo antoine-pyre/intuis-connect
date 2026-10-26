@@ -302,3 +302,45 @@ logger:
 An API failure is surfaced by the service or entity command; a successful write
 is followed by the coordinator refresh. The local model is never changed before
 the write is acknowledged.
+
+## Extended planning services (TheFab21 #22/#24 adaptations)
+
+`set_schedule_slot` accepts optional `schedule_id` and `schedule_name`. Without
+both it retains the active schedule default. If both are supplied they must
+identify the same schedule in the selected `home_id`; inactive schedules can
+be edited without activating them.
+
+`sync_schedule` replaces a complete weekly timetable and/or changes the
+schedule's away/frost temperatures. It shares the confirmed mutation lock with
+zone services and number entities. Failed writes preserve the previous model.
+
+```yaml
+service: intuis_connect.sync_schedule
+data:
+  home_id: "my-home-id"
+  schedule_id: "my-schedule-id"
+  timetable:
+    - m_offset: 0
+      zone_id: 1
+    - m_offset: 480
+      zone_id: 2
+  away_temp: 16.5
+  hg_temp: 7.5
+```
+
+A timetable contains 1–512 transitions, with unique integer minute offsets in
+0–10079 and known zone IDs. A JSON string is also accepted for compatibility
+with the original HTML proposal. The weekly wrap inherits its last zone when
+there is no offset zero. `away_temp` accepts 5–25 °C and `hg_temp` 5–15 °C,
+in half degrees. Omitting the timetable permits temperature-only updates.
+An empty save is rejected. Existing fields not supplied are preserved.
+
+The schedule summary includes `home_id`, `room_names`, raw `timetable` and
+`weekly_timetable` with all seven days, including inherited 00:00 zones.
+Calendar labels and schedule device default names follow renames; user names
+and entity/device IDs are retained.
+
+These capabilities adapt TheFab21's proposals
+[#22](https://github.com/antoine-pyre/intuis-connect/pull/22) and
+[#24](https://github.com/antoine-pyre/intuis-connect/pull/24) to the shared,
+transaction-confirmed scheduling path. See [contribution provenance](contribution-provenance.md).

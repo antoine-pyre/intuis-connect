@@ -32,3 +32,12 @@ harmonisés, aucune modification de comportement ou d’identité d’entité.
 
 Validation : métadonnées des dix PRs consultées, SHA/auteurs/statuts concordants,
 liens locaux contrôlés et notices préservées. Aucun message externe publié.
+
+## Planning étendu — réalisé localement
+
+Adaptation des propositions de **TheFab21 #22/#24** : ciblage d’un planning
+inactif par nom/ID, sauvegarde complète par `sync_schedule`, températures away/hg,
+noms actualisés et summaries à sept jours avec noms de pièces. Les anciens
+appels continuent de viser le planning actif. Les IDs et noms personnalisés
+restent conservés. Les mutations partagent le verrou services/number existant.
+La validation couvre schémas, erreurs, concurrence, refresh et retrait d’entrée.
