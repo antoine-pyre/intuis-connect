@@ -48,3 +48,25 @@ def test_complete_schedule_schema_parses_original_json_without_mutation():
     from custom_components.intuis_connect.services import SYNC_SCHEDULE_SCHEMA
     result = SYNC_SCHEDULE_SCHEMA({'timetable':'[{"zone_id":2,"m_offset":0}]','away_temp':19.5})
     assert result == {'timetable':[{'zone_id':2,'m_offset':0}],'away_temp':19.5}
+
+
+async def test_full_save_and_temperature_only_confirmed(homes):
+    target = homes.second.home.schedules[0]
+    await call(homes,'sync_schedule', home_id='second', timetable=[{'m_offset':500,'zone_id':2}],away_temp=19.5,hg_temp=8.5)
+    assert [(t.m_offset,t.zone_id) for t in target.timetables] == [(500,2)]
+    assert (target.away_temp,target.hg_temp)==(19.5,8.5)
+    await call(homes,'sync_schedule',home_id='second',away_temp=16.5)
+    assert [(t.m_offset,t.zone_id) for t in target.timetables]==[(500,2)]
+    assert target.away_temp==16.5
+
+
+async def test_unknown_zone_and_cloud_error_preserve_state(homes):
+    from custom_components.intuis_connect.intuis_api.api import APIError
+    target = homes.second.home.schedules[0]
+    with pytest.raises(ServiceValidationError):
+        await call(homes,'sync_schedule',home_id='second',timetable=[{'m_offset':0,'zone_id':999}])
+    homes.second.api.async_sync_schedule.assert_not_awaited()
+    homes.second.api.async_sync_schedule.side_effect=APIError('offline')
+    with pytest.raises(APIError):
+        await call(homes,'sync_schedule',home_id='second',away_temp=19.5)
+    assert target.away_temp==16

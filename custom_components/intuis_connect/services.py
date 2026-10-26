@@ -24,7 +24,7 @@ from .history_import import (
     DEFAULT_HISTORY_DAYS,
     MAX_HISTORY_DAYS,
 )
-from .schedule_mutations import async_set_schedule_slot, async_set_zone_temperature
+from .schedule_mutations import async_set_schedule_slot, async_set_zone_temperature, async_sync_schedule
 from .service_targets import first_target, is_loaded, require_targets, target_entries
 from .timetable import schedule_slot_offsets
 from .utils.const import DOMAIN
@@ -37,12 +37,14 @@ SERVICE_REFRESH_SCHEDULES = "refresh_schedules"
 SERVICE_SET_SCHEDULE_SLOT = "set_schedule_slot"
 SERVICE_SET_ZONE_TEMPERATURE = "set_zone_temperature"
 SERVICE_IMPORT_ENERGY_HISTORY = "import_energy_history"
+SERVICE_SYNC_SCHEDULE = "sync_schedule"
 SERVICES = (
     SERVICE_SWITCH_SCHEDULE,
     SERVICE_REFRESH_SCHEDULES,
     SERVICE_SET_SCHEDULE_SLOT,
     SERVICE_SET_ZONE_TEMPERATURE,
     SERVICE_IMPORT_ENERGY_HISTORY,
+    SERVICE_SYNC_SCHEDULE,
 )
 
 ATTR_ROOM_ID = "room_id"
@@ -164,14 +166,19 @@ def _has_changes(value):
     return value
 
 
-SYNC_SCHEDULE_SCHEMA = vol.All(vol.Schema({
+class PlanningSchema(vol.Schema):
+    def __call__(self, data):
+        return _has_changes(super().__call__(data))
+
+
+SYNC_SCHEDULE_SCHEMA = PlanningSchema({
     **HOME_FIELD,
     vol.Optional(ATTR_SCHEDULE_ID): _nonempty_name,
     vol.Optional(ATTR_SCHEDULE_NAME): _nonempty_name,
     vol.Optional("timetable"): _timetable_payload,
     vol.Optional("away_temp"): _planning_temperature(25),
     vol.Optional("hg_temp"): _planning_temperature(15),
-}), _has_changes)
+})
 
 
 def _schedule_by_name(home: IntuisHome, name: str) -> IntuisThermSchedule:
@@ -294,6 +301,19 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
         if is_loaded(hass, entry_id, data) and (coordinator := data.get("coordinator")):
             await coordinator.async_request_refresh()
 
+    async def sync_schedule(call: ServiceCall) -> None:
+        entry_id, data = first_target(hass, call.data.get(ATTR_HOME_ID))
+        schedule = resolve_schedule(data["intuis_home"], call.data.get(ATTR_SCHEDULE_ID),
+                                    call.data.get(ATTR_SCHEDULE_NAME))
+        try:
+            await async_sync_schedule(data["api"], lambda: data["intuis_home"], schedule.id,
+                                      **{key: call.data[key] for key in
+                                         ("timetable", "away_temp", "hg_temp") if key in call.data})
+        except ValueError as err:
+            raise ServiceValidationError(str(err)) from err
+        if is_loaded(hass, entry_id, data) and (coordinator := data.get("coordinator")):
+            await coordinator.async_request_refresh()
+
     async def import_energy_history(call: ServiceCall) -> None:
         entries = require_targets(hass, call.data.get(ATTR_HOME_ID))
         room_name = call.data.get(ATTR_ROOM_NAME) or None
@@ -335,6 +355,7 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
                 )
 
     handlers = {
+        SERVICE_SYNC_SCHEDULE: (sync_schedule, SYNC_SCHEDULE_SCHEMA),
         SERVICE_SWITCH_SCHEDULE: (switch_schedule, SWITCH_SCHEDULE_SCHEMA),
         SERVICE_REFRESH_SCHEDULES: (refresh_schedules, REFRESH_SCHEDULES_SCHEMA),
         SERVICE_SET_SCHEDULE_SLOT: (set_schedule_slot, SET_SCHEDULE_SLOT_SCHEMA),
