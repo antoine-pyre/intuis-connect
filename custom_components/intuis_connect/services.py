@@ -26,6 +26,7 @@ from .history_import import (
     MAX_HISTORY_DAYS,
 )
 from .hourly_series import closed_hour_end
+from .hourly_stats import entry_cost_options
 from .schedule_mutations import async_set_schedule_slot, async_set_zone_temperature, async_sync_schedule
 from .service_targets import first_target, is_loaded, require_targets, target_entries
 from .timetable import schedule_slot_offsets
@@ -368,10 +369,13 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
             manager = await async_get_import_manager(hass, entry_id)
             if not is_loaded(hass, entry_id, data):
                 continue
+            entry_job = dict(job)
+            if job.get("granularity") == "hourly":
+                entry_job["cost_options"] = entry_cost_options(data.get("options", {}))
             if not manager.start(
                 data["api"],
                 data["intuis_home"],
-                **job,
+                **entry_job,
                 room_filter=room_name,
                 home_id=data["intuis_home"].id,
             ):

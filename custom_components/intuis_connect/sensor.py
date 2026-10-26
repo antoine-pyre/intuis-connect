@@ -7,7 +7,12 @@ from datetime import datetime, timedelta, timezone
 import homeassistant.util.dt as dt_util
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfTemperature, UnitOfEnergy, EntityCategory
+from homeassistant.core import callback
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from .cost_stats import async_last_cost, cost_signal
 
 from .entity.intuis_entity import IntuisEntity
 from .entity.intuis_home_entity import provide_home_sensors
@@ -15,7 +20,12 @@ from .entity.intuis_module import NMHIntuisModule
 from .entity.intuis_room import IntuisRoom
 from .entity.intuis_schedule import IntuisThermSchedule, IntuisThermZone
 from .timetable import MINUTES_PER_DAY
-from .utils.const import DOMAIN, CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR
+from .utils.const import (
+    CONF_COST_STATISTICS,
+    CONF_ENERGY_RESET_HOUR,
+    DEFAULT_ENERGY_RESET_HOUR,
+    DOMAIN,
+)
 from .utils.helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,6 +54,77 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     entities += provide_home_sensors(coordinator, home_id, intuis_home)
     async_add_entities(entities, update_before_add=True)
+    if entry.options.get(CONF_COST_STATISTICS):
+        currency = hass.config.currency
+        async_add_entities(
+            [
+                IntuisCostSensor(entry.entry_id, home_id, room.id, room.name, currency)
+                for room in rooms.values()
+            ]
+            + [IntuisCostSensor(entry.entry_id, home_id, None, "Intuis Home", currency)]
+        )
+
+
+class IntuisCostSensor(SensorEntity):
+    """Display of the last confirmed cumulative cost of one external series.
+
+    No state_class: the external cost series is the only statistics writer.
+    """
+
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_suggested_display_precision = 2
+    _attr_icon = "mdi:cash"
+
+    def __init__(
+        self,
+        entry_id: str,
+        home_id: str,
+        room_id: str | None,
+        label: str,
+        currency: str,
+    ) -> None:
+        self._entry_id = entry_id
+        self._home_id = home_id
+        self._room_id = room_id
+        self._attr_native_unit_of_measurement = currency
+        self._attr_name = f"{label} Hourly Cost"
+        if room_id is None:
+            self._attr_unique_id = f"intuis_{home_id}_home_hourly_cost"
+            self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, f"{home_id}_home")})
+        else:
+            self._attr_unique_id = f"intuis_{home_id}_{room_id}_hourly_cost"
+            self._attr_device_info = IntuisEntity._build_device_info(
+                home_id, room_id, label
+            )
+        self._attr_native_value = None
+        self._attr_extra_state_attributes = {"last_hour_end": None}
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, cost_signal(self._entry_id), self._schedule_refresh
+            )
+        )
+        await self.async_refresh_from_recorder()
+
+    @callback
+    def _schedule_refresh(self) -> None:
+        # Must run in the event loop: a plain function would go to the executor.
+        self.hass.async_create_task(self.async_refresh_from_recorder())
+
+    async def async_refresh_from_recorder(self) -> None:
+        """Read the acknowledged cumulative cost; keep the last value on errors."""
+        try:
+            last = await async_last_cost(self.hass, self._home_id, self._room_id)
+        except Exception:  # noqa: BLE001 - recorder unavailable: keep display
+            _LOGGER.debug("Cost display refresh failed", exc_info=True)
+            return
+        if last is not None:
+            self._attr_native_value = last[0]
+            self._attr_extra_state_attributes = {"last_hour_end": last[1].isoformat()}
+        if self.hass is not None and self.entity_id:
+            self.async_write_ha_state()
 
 
 class IntuisSensor(CoordinatorEntity, SensorEntity, IntuisEntity):

@@ -13,11 +13,15 @@ from datetime import datetime, timedelta, timezone
 import math
 from typing import Any
 
-from homeassistant.components.recorder import get_instance, history
+from homeassistant.components.recorder import get_instance, history, statistics
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
+from .external_statistics import metadata, statistic_id
 from .hourly_series import HOUR
+from .recorder_import import ExternalReplacementResult, async_replace_external_history
 from .utils.const import (
+    DOMAIN,
     CONF_COST_FIXED_PRICE,
     CONF_COST_PRICE_ENTITY,
     CONF_COST_PRICE_MODE,
@@ -187,3 +191,51 @@ async def async_hour_prices(
         currency,
     )
     return prices_at_hours(changes, hours)
+
+
+def cost_signal(entry_id: str) -> str:
+    """Per-entry signal: one home's cost writes never refresh another's sensors."""
+    return f"{DOMAIN}_cost_updated_{entry_id}"
+
+
+def cost_metadata(
+    home_id: str, room_id: str | None, label: str, currency: str
+) -> dict[str, Any]:
+    return metadata(
+        home_id, room_id, f"{label} hourly cost", kind="cost", currency=currency
+    )
+
+
+async def async_write_costs(
+    hass: HomeAssistant,
+    meta_data: dict[str, Any],
+    costs: tuple[tuple[datetime, float], ...],
+) -> ExternalReplacementResult:
+    """Replace one cost series in a single acknowledged transaction."""
+    return await async_replace_external_history(
+        hass,
+        meta_data,
+        costs[0][0],
+        datetime.fromtimestamp(costs[-1][0].timestamp() + HOUR, timezone.utc),
+        costs,
+    )
+
+
+def async_publish_costs(hass: HomeAssistant, entry_id: str) -> None:
+    """Notify display sensors; called only after an acknowledged write."""
+    async_dispatcher_send(hass, cost_signal(entry_id))
+
+
+async def async_last_cost(
+    hass: HomeAssistant, home_id: str, room_id: str | None
+) -> tuple[float, datetime] | None:
+    """Last confirmed cumulative cost and the hour it ends, from the recorder."""
+    sid = statistic_id(home_id, room_id, "cost")
+    rows = await get_instance(hass).async_add_executor_job(
+        statistics.get_last_statistics, hass, 1, sid, False, {"sum"}
+    )
+    if not rows.get(sid) or rows[sid][0].get("sum") is None:
+        return None
+    start = rows[sid][0]["start"]
+    start_ts = start.timestamp() if isinstance(start, datetime) else start
+    return rows[sid][0]["sum"], datetime.fromtimestamp(start_ts + HOUR, timezone.utc)

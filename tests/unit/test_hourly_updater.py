@@ -184,7 +184,13 @@ async def test_updater_defers_to_running_import_and_stops_on_close(
     assert not await updater.async_update()  # manual import running
     assert await updater.async_update()
     manager.start.assert_called_with(
-        "api", home, granularity="hourly", start=0, end=7200, home_id="home"
+        "api",
+        home,
+        granularity="hourly",
+        start=0,
+        end=7200,
+        home_id="home",
+        cost_options=None,
     )
     updater.async_start()
     await updater.async_close()
@@ -288,6 +294,7 @@ async def test_service_granularity_aliases(
             "end": end,
             "room_filter": None,
             "home_id": "second",
+            "cost_options": None,
         }
     else:
         assert kwargs == {"days": 2, "room_filter": None, "home_id": "second"}
