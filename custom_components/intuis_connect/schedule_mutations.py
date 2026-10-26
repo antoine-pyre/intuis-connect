@@ -14,7 +14,7 @@ from .entity.intuis_schedule import (
     IntuisTimetable,
 )
 from .intuis_api.api import IntuisAPI
-from .timetable import replace_timetable_interval
+from .timetable import replace_timetable_interval, remove_consecutive_duplicates
 
 
 def validate_temperature(value: float) -> float:
@@ -80,6 +80,8 @@ async def _async_mutate(
         current = _schedule(get_home(), schedule_id)
         current.timetables = proposed.timetables
         current.zones = proposed.zones
+        current.away_temp = proposed.away_temp
+        current.hg_temp = proposed.hg_temp
 
 
 async def async_set_schedule_slot(
@@ -150,4 +152,35 @@ async def async_set_zone_temperature(
             raise ValueError("Room not found in the selected zone")
         room.temp = temperature
 
+    await _async_mutate(api, get_home, schedule_id, mutate)
+
+
+async def async_sync_schedule(api, get_home, schedule_id, *, timetable=None,
+                              away_temp=None, hg_temp=None):
+    """Adapt TheFab21 #22/#24 full saves to the shared confirmed mutation path."""
+    def mutate(schedule):
+        if timetable is not None:
+            zone_ids = {z.id for z in schedule.zones if isinstance(z, IntuisThermZone)}
+            offsets = set()
+            if not isinstance(timetable, list) or not 1 <= len(timetable) <= 512:
+                raise ValueError("Timetable requires 1 to 512 transitions")
+            for row in timetable:
+                if (not isinstance(row, dict) or set(row) != {"m_offset", "zone_id"}
+                        or type(row["m_offset"]) is not int
+                        or not 0 <= row["m_offset"] < 10080
+                        or row["m_offset"] in offsets
+                        or type(row["zone_id"]) is not int
+                        or row["zone_id"] not in zone_ids):
+                    raise ValueError("Invalid timetable offset or unknown zone")
+                offsets.add(row["m_offset"])
+            schedule.timetables = [IntuisTimetable(**row) for row in
+                                   remove_consecutive_duplicates(deepcopy(timetable))]
+        for key, value, maximum in (("away_temp", away_temp, 25), ("hg_temp", hg_temp, 15)):
+            if value is not None:
+                temp = validate_temperature(value)
+                if temp > maximum:
+                    raise ValueError("Planning temperature out of range")
+                setattr(schedule, key, temp)
+    if timetable is None and away_temp is None and hg_temp is None:
+        raise ValueError("No schedule changes supplied")
     await _async_mutate(api, get_home, schedule_id, mutate)

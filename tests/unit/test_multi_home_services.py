@@ -101,6 +101,7 @@ def args(service):
             "room_name": "Room",
             "temperature": 19.5,
         },
+        "sync_schedule": {"away_temp": 17.5},
         "refresh_schedules": {},
         "import_energy_history": {"days": 2},
     }[service]
