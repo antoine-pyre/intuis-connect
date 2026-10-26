@@ -79,3 +79,43 @@ Limites : comportement réel du cloud et du matériel non éprouvé hors ligne ;
 le libellé d’une série reste celui de sa création après renommage d’une pièce ;
 la sélection dans le tableau énergie est validée côté schéma, pas dans le
 navigateur.
+
+## Coûts énergétiques — réalisé localement
+
+Adaptation des propositions de **TheFab21**
+([#22](https://github.com/antoine-pyre/intuis-connect/pull/22) à
+`3174384d9222bdca5310721940ece95fe6d1fce6`,
+[#24](https://github.com/antoine-pyre/intuis-connect/pull/24) à
+`fb39b93c1eaf2a498c7274210b566864a2497669`, code coût identique entre les deux).
+
+Problème : aucun coût, prix historique ni recalcul n’existait. Le code de #22
+avait des sélecteurs rejetés par HA, une migration pouvant supprimer une entité
+étrangère, un repli silencieux sur le prix courant et un service de recalcul
+appelant une méthode absente.
+
+Comportement nouveau : statistiques horaires de coût par pièce et pour le
+domicile, depuis l’énergie horaire confirmée et un prix fixe ou un capteur
+`<devise>/kWh` lu à chaque début d’heure ; capteurs d’affichage sans
+`state_class` ; service `recalculate_cost_history` avec réponse.
+
+Compatibilité : désactivé par défaut et dépendant des statistiques horaires ;
+kWh, capteurs et identifiants existants inchangés. Les options, entités,
+statistiques et fichiers créés par #22/#24 sont inventoriés et laissés intacts ;
+aucune migration ne s’exécute.
+
+Sources et adaptations : reprises de TheFab21 — prix fixe ou entité, historique
+de prix via le recorder, capteur et statistiques de coût, recalcul de
+l’historique. Réécrits ici : clés d’options distinctes, sélecteurs valides,
+trou de prix refusé au lieu d’un repli, coûts dérivés des kWh confirmés, séries
+externes en transaction acquittée, devise unique par série, réservation commune
+avec les imports, publication publique après acquittement. Commits : `8e716b1`,
+`a9d7d74`, `c3944a8`, `790f27b`, `b2ca359`, `1dcd500` et le commit de livraison,
+avec trailers `Adapted-from`/`Original-author`.
+
+Vérifications : 472 tests sur HA 2024.6.4 et 2026.10.4, dont le vrai worker
+recorder (prix enregistrés, échec, annulation, devise, réimport), la réponse du
+service réel et le schéma énergie ; Ruff et contraintes.
+
+Limites : prix au début de l’heure (approximation intra-horaire documentée) ;
+historique de prix limité à la rétention du recorder ; pas de coût par appareil
+dans le tableau énergie de HA ; comportement réel non éprouvé hors ligne.

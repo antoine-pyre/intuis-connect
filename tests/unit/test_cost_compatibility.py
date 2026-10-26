@@ -171,3 +171,33 @@ def test_accented_names_do_not_change_identities(name):
     assert display.unique_id == "intuis_home_a_hourly_cost"
     assert name not in statistic_id("home", "a", "cost")
     assert display.name == f"{name} Hourly Cost"
+
+
+async def test_cost_series_is_listed_and_accepted_as_grid_cost_statistic(
+    ha_hass, live_recorder, monkeypatch
+):
+    from homeassistant.components.energy.data import FLOW_FROM_GRID_SOURCE_SCHEMA
+    from homeassistant.components.recorder import statistics
+
+    ha_hass.config.currency = "EUR"
+    await job(
+        ha_hass, monkeypatch, [wh(0, (1000, 0)), wh(0, (0, 0))], cost_options=FIXED
+    )
+    listed = {
+        row["statistic_id"]: row
+        for row in await live_recorder.async_add_executor_job(
+            statistics.list_statistic_ids, ha_hass, None, "sum"
+        )
+    }
+    cost = listed[statistic_id("home", None, "cost")]
+    assert cost["statistics_unit_of_measurement"] == "EUR"
+    assert cost["source"] == DOMAIN and cost["has_sum"]
+    flow = FLOW_FROM_GRID_SOURCE_SCHEMA(
+        {
+            "stat_energy_from": statistic_id("home", None),
+            "stat_cost": statistic_id("home", None, "cost"),
+            "entity_energy_price": None,
+            "number_energy_price": None,
+        }
+    )
+    assert flow["stat_cost"] == statistic_id("home", None, "cost")

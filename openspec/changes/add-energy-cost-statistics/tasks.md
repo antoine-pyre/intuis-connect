@@ -16,4 +16,4 @@ Les cases cochées correspondent aux travaux réalisés et vérifiés ; voir doc
 ## 3. Compatibilité et livraison
 
 - [x] 3.1 Inventorier les anciens schémas coût communautaires et tester noms accentués, renommages, collisions et absence de suppression étrangère.
-- [ ] 3.2 Exécuter la matrice, Ruff et tests recorder ; documenter activation et usage tableau énergie, créditer TheFab21 et toute autre source effectivement reprise.
+- [x] 3.2 Exécuter la matrice, Ruff et tests recorder ; documenter activation et usage tableau énergie, créditer TheFab21 et toute autre source effectivement reprise.
