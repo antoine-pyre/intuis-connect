@@ -47,3 +47,18 @@ Aucun push, déploiement ni appel vers un compte Intuis réel n’est effectué.
   sans couverture exacte des jours locaux ou pour des bornes non horaires.
   Le premier import automatique peut nécessiter une reprise manuelle après les
   premières statistiques live. Voir docs/08-safe-energy-history-import.md.
+
+## Dérogations et état climate — 26 octobre 2026
+
+- Agent : `heating_overrides`, changement `reconcile-heating-overrides`.
+- Review : identité du dictionnaire vide, interface commune, sérialisation par pièce,
+  intentions confirmées et persistance, optimisme 120 secondes, callbacks et retrait.
+- Corrections demandées puis testées : réponse API tardive après retrait, snapshot
+  de stockage, expiration observée lorsqu’elle est fournie, course prolongation/
+  commande et protection contre la suppression d’une nouvelle intention.
+- Validation indépendante : 257 tests réussis sur chacune des deux versions HA,
+  Ruff et diff-check réussis ; 16 nouveaux tests emploient coordinateur/mapping/Store
+  natifs avec transport de commande simulé.
+- Format de stockage et identifiants préservés. Limite documentée : sans mode ni
+  expiration permettant de le distinguer, un changement externe strictement
+  identique à l’intention précédente ne peut pas être reconnu.

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import datetime
 import logging
 
@@ -36,6 +37,7 @@ from .history_import import (
     async_get_import_manager,
 )
 from .intuis_data import IntuisData
+from .overrides import OverrideManager
 from .services import (
     async_generate_services_yaml,
     async_register_services,
@@ -137,7 +139,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Callback to save overrides to storage
     async def save_overrides() -> None:
         """Persist overrides to storage."""
-        await store.async_save({"overrides": overrides})
+        await store.async_save({"overrides": deepcopy(overrides)})
         _LOGGER.debug("Saved %d overrides to storage", len(overrides))
 
     # ---------- setup coordinator --------------------------------------------------
@@ -145,12 +147,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def get_options() -> dict:
         return dict(entry.options)
 
+    override_manager = OverrideManager(overrides, save_overrides)
     intuis_data = IntuisData(
         intuis_api,
         intuis_home,
         overrides,
         get_options,
         save_overrides_callback=save_overrides,
+        override_manager=override_manager,
     )
 
     coordinator: IntuisDataUpdateCoordinator = DataUpdateCoordinator(
@@ -200,6 +204,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
         "intuis_home": intuis_home,
         "overrides": overrides,
+        "override_manager": override_manager,
         "save_overrides": save_overrides,
         "options": dict(entry.options),
     }

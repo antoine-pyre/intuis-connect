@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from .overrides import OverrideManager
 from .entity.intuis_home import IntuisHome
 from .entity.intuis_home_config import IntuisHomeConfig
 from .intuis_api.api import IntuisAPI, APIError, CannotConnect, RateLimitError
@@ -62,6 +63,7 @@ class IntuisData:
         overrides: dict[str, dict] | None = None,
         get_options: Callable[[], dict[str, Any]] | None = None,
         save_overrides_callback: Callable[[], Awaitable[None]] | None = None,
+        override_manager: OverrideManager | None = None,
     ) -> None:
         """Initialize the data handler."""
         self._api = api
@@ -72,11 +74,10 @@ class IntuisData:
         # Track the last "logical day" we processed (based on reset hour, not midnight)
         self._last_logical_day: str | None = None
         # sticky overrides: { room_id: { mode, temp, end, sticky, last_reapply } }
-        self._overrides: dict[str, dict] = overrides or {}
+        self._override_manager = override_manager or OverrideManager(overrides, save_overrides_callback)
+        self._overrides = self._override_manager.overrides
         # Callback to get current options from config entry
         self._get_options = get_options or (lambda: {})
-        # Callback to persist overrides to storage
-        self._save_overrides = save_overrides_callback
         # Callback to invoke on successful update (for rate limit recovery)
         self._success_callback: Callable[[], Awaitable[None]] | None = None
 
@@ -164,7 +165,7 @@ class IntuisData:
                     "Removing orphaned override for room %s (room no longer in API response)",
                     room_id,
                 )
-                rooms_to_clear.append(room_id)
+                rooms_to_clear.append((room_id, self._overrides[room_id]))
                 overrides_changed = True
 
         for room_id, room in data_by_room.items():
@@ -210,16 +211,10 @@ class IntuisData:
                             desired_temp,
                             duration_min,
                         )
-                        await self._api.async_set_room_state(
-                            room_id,
-                            desired_mode,
-                            float(desired_temp) if desired_temp is not None else None,
-                            duration_min,
-                        )
-                        # Update timestamps
-                        self._overrides[room_id]["end"] = now_ts + duration_min * 60
-                        self._overrides[room_id]["last_reapply"] = now_ts
-                        overrides_changed = True
+                        if await self._override_manager.async_reapply(
+                            self._api, room_id, override, duration_min,
+                        ):
+                            overrides_changed = True
                     except (APIError, CannotConnect, RateLimitError) as err:
                         _LOGGER.error(
                             "Failed to re-apply override for room %s: %s",
@@ -237,16 +232,16 @@ class IntuisData:
                         end_ts,
                         now_ts,
                     )
-                    rooms_to_clear.append(room_id)
+                    rooms_to_clear.append((room_id, self._overrides[room_id]))
                     overrides_changed = True
 
         # Clear expired overrides (outside loop to avoid dict modification during iteration)
-        for room_id in rooms_to_clear:
-            self._overrides.pop(room_id, None)
+        for room_id, expected in rooms_to_clear:
+            self._override_manager.discard(room_id, expected)
 
         # Persist overrides if changed
-        if overrides_changed and self._save_overrides:
-            await self._save_overrides()
+        if overrides_changed:
+            await self._override_manager.async_save()
 
         config = IntuisHomeConfig.from_dict(await self._api.async_get_config())
 
