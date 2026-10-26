@@ -83,3 +83,25 @@ decimals) shows the last confirmed cumulative cost. It has no state class, so th
 recorder does not compile a second cost series from it; select the external cost
 series in the energy dashboard. Display sensors read the recorder at startup and
 after each acknowledged write of their own home only.
+
+## Recalculation service
+
+`intuis_connect.recalculate_cost_history` rewrites costs for the last `days`
+(default 7, up to 730) of closed hours from the energy already confirmed in the
+recorder and the price configured now. It never calls the cloud and never writes
+energy. `home_id` and `room_name` target a home or a room; with a room, the home
+total is left untouched. Every room is replaced in its own transaction, so a room
+without confirmed energy or price keeps its previous costs and is listed in the
+response. The service is refused while an energy import holds that home, and
+raises an error when no targeted home could be recalculated.
+
+```yaml
+service: intuis_connect.recalculate_cost_history
+data:
+  days: 30
+response_variable: result
+```
+
+The response lists, per home, `status`, `rooms_recalculated`, `hours`,
+`total_cost`, `currency`, `home_total` and `errors`. Running it twice with the
+same energy and price produces identical statistics.

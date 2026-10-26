@@ -143,6 +143,24 @@
           "description": "Frost temperature, 5–15 °C in half degrees."
         }
       }
+    },
+    "recalculate_cost_history": {
+      "name": "Recalculate Cost History",
+      "description": "Rewrite cost statistics from confirmed hourly energy and the configured price for the last closed hours. Energy is never modified; a failed room keeps its previous costs.",
+      "fields": {
+        "home_id": {
+          "name": "Home ID",
+          "description": "Target a loaded home by its Intuis home ID. Without a target, applies to all loaded homes with cost statistics enabled."
+        },
+        "days": {
+          "name": "Days",
+          "description": "Whole number of days of closed hours to recalculate (1–730)."
+        },
+        "room_name": {
+          "name": "Room (Optional)",
+          "description": "Leave empty for all rooms and the home total."
+        }
+      }
     }
   },
   "config": {

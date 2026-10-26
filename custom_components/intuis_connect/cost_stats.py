@@ -18,8 +18,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .external_statistics import metadata, statistic_id
-from .hourly_series import HOUR
-from .recorder_import import ExternalReplacementResult, async_replace_external_history
+from .hourly_series import HOUR, sum_hourly
+from .recorder_import import (
+    ExternalReplacementResult,
+    HistoryReplacementError,
+    async_replace_external_history,
+)
 from .utils.const import (
     DOMAIN,
     CONF_COST_FIXED_PRICE,
@@ -239,3 +243,113 @@ async def async_last_cost(
     start = rows[sid][0]["start"]
     start_ts = start.timestamp() if isinstance(start, datetime) else start
     return rows[sid][0]["sum"], datetime.fromtimestamp(start_ts + HOUR, timezone.utc)
+
+
+async def async_confirmed_energy(
+    hass: HomeAssistant, home_id: str, room_id: str, start: int, end: int
+) -> tuple[tuple[datetime, float], ...]:
+    """Confirmed hourly kWh of one room; a missing hour refuses the period."""
+    sid = statistic_id(home_id, room_id)
+    rows = await get_instance(hass).async_add_executor_job(
+        statistics.statistics_during_period,
+        hass,
+        datetime.fromtimestamp(start, timezone.utc),
+        datetime.fromtimestamp(end, timezone.utc),
+        {sid},
+        "hour",
+        None,
+        {"state"},
+    )
+    values = {}
+    for row in rows.get(sid, []):
+        row_start = row["start"]
+        ts = row_start.timestamp() if isinstance(row_start, datetime) else row_start
+        values[int(ts)] = row.get("state")
+    energy = []
+    for hour in range(start, end, HOUR):
+        kwh = values.get(hour)
+        if kwh is None:
+            raise CostPriceError(
+                "No confirmed hourly energy at "
+                f"{datetime.fromtimestamp(hour, timezone.utc).isoformat()}; "
+                "import hourly energy first"
+            )
+        energy.append((datetime.fromtimestamp(hour, timezone.utc), kwh))
+    return tuple(energy)
+
+
+async def async_recalculate_costs(
+    hass: HomeAssistant,
+    entry_id: str,
+    intuis_home: Any,
+    options: dict[str, Any],
+    start: int,
+    end: int,
+    room_filter: str | None = None,
+) -> dict[str, Any]:
+    """Rewrite cost series of one home from confirmed kWh; kWh are only read.
+
+    Each series is replaced in its own acknowledged transaction, so a failed
+    room keeps its previous costs. Display sensors are notified afterwards.
+    """
+    currency = hass.config.currency
+    rooms = [
+        (room_id, room.name)
+        for room_id, room in intuis_home.rooms.items()
+        if not room_filter or room.name.casefold() == room_filter.casefold()
+    ]
+    result: dict[str, Any] = {
+        "rooms_recalculated": 0,
+        "hours": (end - start) // HOUR,
+        "total_cost": 0.0,
+        "currency": currency,
+        "home_total": "skipped",
+        "errors": [],
+    }
+    costed: dict[str, tuple[tuple[datetime, float], ...]] = {}
+    try:
+        try:
+            prices = await async_hour_prices(
+                hass, options, currency, range(start, end, HOUR)
+            )
+        except CostPriceError as err:
+            result["errors"].append(str(err))
+            prices = None
+        for room_id, room_name in rooms if prices is not None else ():
+            try:
+                energy = await async_confirmed_energy(
+                    hass, intuis_home.id, room_id, start, end
+                )
+                costs = hourly_costs(energy, prices)
+                committed = await async_write_costs(
+                    hass,
+                    cost_metadata(intuis_home.id, room_id, room_name, currency),
+                    costs,
+                )
+            except (CostPriceError, HistoryReplacementError) as err:
+                result["errors"].append(f"{room_name}: {err}")
+                continue
+            costed[room_id] = costs
+            result["rooms_recalculated"] += 1
+            result["total_cost"] += committed.total
+        if prices is not None and room_filter is None and rooms:
+            if len(costed) == len(rooms):
+                try:
+                    await async_write_costs(
+                        hass,
+                        cost_metadata(intuis_home.id, None, intuis_home.name, currency),
+                        sum_hourly(costed),
+                    )
+                    result["home_total"] = "complete"
+                except HistoryReplacementError as err:
+                    result["home_total"] = "incomplete"
+                    result["errors"].append(f"Home: {err}")
+            else:
+                result["home_total"] = "incomplete"
+    finally:
+        if costed:
+            async_publish_costs(hass, entry_id)
+    result["status"] = (
+        "completed" if not result["errors"] else "partial" if costed else "failed"
+    )
+    return result

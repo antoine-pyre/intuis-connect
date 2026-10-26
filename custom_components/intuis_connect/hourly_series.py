@@ -34,3 +34,12 @@ def stage_hourly(samples, start: int, end: int):
         raise APIError("Incomplete hourly coverage")
     return tuple((datetime.fromtimestamp(ts,timezone.utc),values[ts]/1000.0)
                  for ts in sorted(values))
+
+
+def sum_hourly(series_by_key):
+    """Hour-by-hour sum of series that share identical complete coverage."""
+    series = list(series_by_key.values())
+    return tuple(
+        (series[0][index][0], sum(values[index][1] for values in series))
+        for index in range(len(series[0]))
+    )

@@ -104,6 +104,7 @@ def args(service):
         "sync_schedule": {"away_temp": 17.5},
         "refresh_schedules": {},
         "import_energy_history": {"days": 2},
+        "recalculate_cost_history": {"days": 2},
     }[service]
 
 
@@ -115,14 +116,25 @@ async def call(homes, service, **kwargs):
 async def test_all_services_accept_home_id_and_only_target_second(
     homes, monkeypatch, service
 ):
+    async def run_exclusive(job):
+        return await job
+
     managers = {
-        home.entry.entry_id: SimpleNamespace(start=Mock(return_value=True))
+        home.entry.entry_id: SimpleNamespace(
+            start=Mock(return_value=True), async_run_exclusive=run_exclusive
+        )
         for home in (homes.first, homes.second)
     }
     getter = AsyncMock(side_effect=lambda hass, eid: managers[eid])
     monkeypatch.setattr(
         "custom_components.intuis_connect.services.async_get_import_manager", getter
     )
+    recalculate = AsyncMock(return_value={"status": "completed", "errors": []})
+    monkeypatch.setattr(
+        "custom_components.intuis_connect.services.async_recalculate_costs", recalculate
+    )
+    for home in (homes.first, homes.second):
+        home.data["options"] = {"cost_statistics": True, "cost_price_mode": "fixed"}
     await call(homes, service, home_id="second", **args(service))
     homes.first.api.async_switch_schedule.assert_not_awaited()
     homes.first.api.async_sync_schedule.assert_not_awaited()
@@ -137,6 +149,10 @@ async def test_all_services_accept_home_id_and_only_target_second(
             room_filter=None,
             home_id="second",
         )
+    elif service == "recalculate_cost_history":
+        getter.assert_awaited_once_with(homes.hass, homes.second.entry.entry_id)
+        recalculate.assert_awaited_once()
+        assert recalculate.call_args.args[1] == homes.second.entry.entry_id
     elif service == "switch_schedule":
         homes.second.api.async_switch_schedule.assert_awaited_once_with(
             "second", "schedule-second"
