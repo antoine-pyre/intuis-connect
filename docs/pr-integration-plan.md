@@ -1,7 +1,7 @@
 # Plan d’intégration des apports des PRs
 
 Établi le 26 octobre 2026 sur `codex/reliability-fixes`, référence `f92e3e4`.
-**État : en cours, 25/36 tâches réalisées et vérifiées.**
+**État : en cours, 26/36 tâches réalisées et vérifiées.**
 Les documents et le registre de crédits sont préparés ; aucune fonction Python,
 frontend ou recorder de ces lots n’est implémentée par cette planification.
 
