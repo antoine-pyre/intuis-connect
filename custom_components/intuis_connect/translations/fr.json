@@ -276,6 +276,22 @@
           "hourly_statistics_interval": "Fréquence de relecture des 48 dernières heures closes (rattrapage jusqu’à 7 jours après une interruption)."
         }
       },
+      "cost": {
+        "title": "Coûts énergétiques",
+        "description": "Facultatif : statistiques horaires de coût en {currency}, calculées depuis l’énergie horaire confirmée. Nécessite les statistiques horaires. Un prix manquant n’est jamais deviné.",
+        "data": {
+          "cost_statistics": "Statistiques de coût",
+          "cost_price_mode": "Source du prix",
+          "cost_fixed_price": "Prix fixe",
+          "cost_price_entity": "Entité de prix"
+        },
+        "data_description": {
+          "cost_statistics": "Active les statistiques de coût par pièce et pour le domicile. La désactivation conserve les statistiques existantes.",
+          "cost_price_mode": "Prix fixe, ou capteur dont l’historique enregistré donne le prix au début de chaque heure.",
+          "cost_fixed_price": "Prix par kWh en {currency} ; les valeurs négatives sont acceptées. S’applique uniquement aux heures pour lesquelles il est utilisé.",
+          "cost_price_entity": "Capteur exprimé en {currency}/kWh. Les heures sans prix enregistré valide sont refusées."
+        }
+      },
       "rate_limit": {
         "title": "Limitation de l'API",
         "description": "Configurez la gestion des limites de l'API (erreurs 429).\n\nCes paramètres aident à éviter d'être bloqué par l'API Intuis lors d'une utilisation intensive.",
@@ -289,6 +305,21 @@
           "circuit_breaker_threshold": "Nombre d'erreurs de limitation consécutives avant de suspendre toutes les requêtes.",
           "max_update_interval": "Intervalle maximum entre les mises à jour quand l'API est limitée. Normalement interroge toutes les 2 minutes."
         }
+      }
+    },
+    "error": {
+      "cost_requires_hourly": "Activez d’abord les statistiques horaires : les coûts sont calculés depuis l’énergie horaire confirmée.",
+      "fixed_price_required": "Saisissez un prix fixe.",
+      "price_entity_not_found": "Sélectionnez un capteur de prix existant.",
+      "price_entity_unit": "Le capteur doit indiquer le prix par kWh dans la devise de Home Assistant.",
+      "price_mode_required": "Sélectionnez une source de prix."
+    }
+  },
+  "selector": {
+    "cost_price_mode": {
+      "options": {
+        "fixed": "Prix fixe",
+        "entity": "Entité de prix"
       }
     }
   }

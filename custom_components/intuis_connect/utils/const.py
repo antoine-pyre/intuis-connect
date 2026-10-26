@@ -148,6 +148,14 @@ HOURLY_INTERVAL_OPTIONS = [
     {"value": "360", "label": "6 hours"},
 ]
 
+# Energy cost statistics (opt-in; keys distinct from community #22 options)
+CONF_COST_STATISTICS = "cost_statistics"
+CONF_COST_PRICE_MODE = "cost_price_mode"
+CONF_COST_FIXED_PRICE = "cost_fixed_price"
+CONF_COST_PRICE_ENTITY = "cost_price_entity"
+DEFAULT_COST_STATISTICS = False
+SUGGESTED_COST_FIXED_PRICE = 0.25  # form suggestion only, never applied implicitly
+
 # API modes
 API_MODE_OFF = "off"
 API_MODE_HOME = "home"

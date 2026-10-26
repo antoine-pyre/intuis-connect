@@ -276,6 +276,22 @@
           "hourly_statistics_interval": "How often to re-read the last 48 closed hours (catch-up up to 7 days after an interruption)."
         }
       },
+      "cost": {
+        "title": "Energy Costs",
+        "description": "Opt-in: hourly cost statistics in {currency}, computed from confirmed hourly energy. Requires hourly statistics. A missing price is never guessed.",
+        "data": {
+          "cost_statistics": "Cost statistics",
+          "cost_price_mode": "Price source",
+          "cost_fixed_price": "Fixed price",
+          "cost_price_entity": "Price entity"
+        },
+        "data_description": {
+          "cost_statistics": "Enable cost statistics per room and for the home. Disabling keeps existing statistics.",
+          "cost_price_mode": "Fixed price, or a sensor whose recorded history gives the price at the start of each hour.",
+          "cost_fixed_price": "Price per kWh in {currency}; negative values are allowed. Applies only to the hours it is used for.",
+          "cost_price_entity": "Sensor reporting {currency}/kWh. Hours without a valid recorded price are refused."
+        }
+      },
       "rate_limit": {
         "title": "API Rate Limiting",
         "description": "Configure how the integration handles API rate limits (429 errors).\n\nThese settings help prevent being blocked by the Intuis API during heavy usage.",
@@ -289,6 +305,21 @@
           "circuit_breaker_threshold": "Number of consecutive rate limit errors before pausing all requests.",
           "max_update_interval": "Maximum polling interval when rate limited. Normally polls every 2 minutes."
         }
+      }
+    },
+    "error": {
+      "cost_requires_hourly": "Enable hourly statistics first: costs are computed from confirmed hourly energy.",
+      "fixed_price_required": "Enter a fixed price.",
+      "price_entity_not_found": "Select an existing price sensor.",
+      "price_entity_unit": "The price sensor must report the price per kWh in the Home Assistant currency.",
+      "price_mode_required": "Select a price source."
+    }
+  },
+  "selector": {
+    "cost_price_mode": {
+      "options": {
+        "fixed": "Fixed price",
+        "entity": "Price entity"
       }
     }
   }

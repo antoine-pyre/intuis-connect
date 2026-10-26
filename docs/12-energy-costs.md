@@ -46,3 +46,22 @@ price entity has no history, or is `unavailable`, `unknown` or non-numeric at th
 start of an hour of the requested period, the period is refused with an error
 naming that hour and its previous cost statistics are kept. A gap is never filled
 with zero, the current price or the fixed price.
+
+## Options
+
+**Energy Costs** appears in the integration options after the energy step. It is
+off by default and requires hourly statistics, since costs are computed from
+confirmed hourly energy. Options are stored under `cost_*` keys, distinct from
+the community `energy_cost_*` options of #22, which are neither read nor removed.
+
+| Option | Values | Validation |
+|---|---|---|
+| Cost statistics | on/off | Off by default |
+| Price source | Fixed price / Price entity | Required when enabled |
+| Fixed price | -10 to 10 per kWh, any precision | Required for a fixed price; 0.25 is only a suggestion |
+| Price entity | A `sensor` | Must exist and report `<currency>/kWh` |
+
+The price history of an entity comes from the recorder. Hours older than the
+recorder purge horizon (`purge_keep_days`, 10 days by default) have no recorded
+price and are refused; keep enough history, or use a fixed price explicitly, for
+older recalculations.

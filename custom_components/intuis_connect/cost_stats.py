@@ -9,10 +9,21 @@ price, and costs are derived from confirmed kWh rather than re-fetched data.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import math
+from typing import Any
+
+from homeassistant.components.recorder import get_instance, history
+from homeassistant.core import HomeAssistant
 
 from .hourly_series import HOUR
+from .utils.const import (
+    CONF_COST_FIXED_PRICE,
+    CONF_COST_PRICE_ENTITY,
+    CONF_COST_PRICE_MODE,
+    CONF_COST_STATISTICS,
+    CONF_HOURLY_STATISTICS,
+)
 
 PRICE_MODE_FIXED = "fixed"
 PRICE_MODE_ENTITY = "entity"
@@ -98,3 +109,81 @@ def hourly_costs(
             raise CostPriceError("Confirmed energy must be finite and nonnegative")
         previous = ts
     return tuple((start, kwh * price) for (start, kwh), price in zip(energy, prices))
+
+
+def validate_cost_options(
+    options: dict[str, Any], currency: str, hass: HomeAssistant | None = None
+) -> dict[str, str]:
+    """Return form errors; an enabled cost feature needs an explicit price source."""
+    if not options.get(CONF_COST_STATISTICS):
+        return {}
+    errors = {}
+    if not options.get(CONF_HOURLY_STATISTICS):
+        errors[CONF_COST_STATISTICS] = "cost_requires_hourly"
+    mode = options.get(CONF_COST_PRICE_MODE)
+    if mode == PRICE_MODE_FIXED:
+        if parse_price(options.get(CONF_COST_FIXED_PRICE)) is None:
+            errors[CONF_COST_FIXED_PRICE] = "fixed_price_required"
+    elif mode == PRICE_MODE_ENTITY:
+        entity_id = options.get(CONF_COST_PRICE_ENTITY)
+        state = hass.states.get(entity_id) if hass and entity_id else None
+        if state is None:
+            errors[CONF_COST_PRICE_ENTITY] = "price_entity_not_found"
+        elif not price_unit_matches(
+            state.attributes.get("unit_of_measurement"), currency
+        ):
+            errors[CONF_COST_PRICE_ENTITY] = "price_entity_unit"
+    else:
+        errors[CONF_COST_PRICE_MODE] = "price_mode_required"
+    return errors
+
+
+async def async_price_changes(
+    hass: HomeAssistant, entity_id: str, start: datetime, end: datetime, currency: str
+) -> list[tuple[float, object]]:
+    """Recorded price states, including the one in force at `start`.
+
+    A state whose unit is not <currency>/kWh counts as missing, not converted.
+    History older than the recorder's purge horizon is a gap.
+    """
+
+    # HA returns changes strictly after start_time and the start state strictly
+    # before it, so a change exactly on the hour would be lost: query 1 ms earlier.
+    since = start - timedelta(milliseconds=1)
+
+    def read():
+        return history.state_changes_during_period(
+            hass, since, end, entity_id, False, False, None, True
+        )
+
+    states = (await get_instance(hass).async_add_executor_job(read)).get(entity_id, [])
+    return [
+        (
+            state.last_changed.timestamp(),
+            state.state
+            if price_unit_matches(state.attributes.get("unit_of_measurement"), currency)
+            else None,
+        )
+        for state in states
+    ]
+
+
+async def async_hour_prices(
+    hass: HomeAssistant, options: dict[str, Any], currency: str, hours: Sequence[int]
+) -> tuple[float, ...]:
+    """Prices for contiguous closed hours, from the configured explicit source."""
+    if not hours:
+        return ()
+    mode = options.get(CONF_COST_PRICE_MODE)
+    if mode == PRICE_MODE_FIXED:
+        return fixed_prices(options.get(CONF_COST_FIXED_PRICE), hours)
+    if mode != PRICE_MODE_ENTITY or not options.get(CONF_COST_PRICE_ENTITY):
+        raise CostPriceError("No price source is configured")
+    changes = await async_price_changes(
+        hass,
+        options[CONF_COST_PRICE_ENTITY],
+        datetime.fromtimestamp(hours[0], timezone.utc),
+        datetime.fromtimestamp(hours[-1] + HOUR, timezone.utc),
+        currency,
+    )
+    return prices_at_hours(changes, hours)
