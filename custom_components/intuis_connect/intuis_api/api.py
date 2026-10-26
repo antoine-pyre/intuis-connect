@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from datetime import datetime, timedelta
 from typing import Any, Callable
@@ -52,6 +53,10 @@ class InvalidAuth(Exception):
 
 class APIError(Exception):
     """Generic API errors."""
+
+
+class EnergyDataUnavailable(APIError):
+    """The response contains no measured energy, as distinct from a valid zero."""
 
 
 class RateLimitError(Exception):
@@ -300,7 +305,10 @@ class IntuisAPI:
         await self._throttler.acquire()
 
         await self._ensure_token()
-        headers = kwargs.pop("headers", {})
+        headers = {
+            key: value for key, value in kwargs.pop("headers", {}).items()
+            if key.lower() != "authorization"
+        }
         headers["Authorization"] = f"Bearer {self._access_token}"
 
         url = full_url if full_url else f"{self._base_url}{path}"
@@ -326,12 +334,19 @@ class IntuisAPI:
                 )
 
                 # Handle token refresh on 401 once (without counting towards attempts)
-                if resp.status == 401 and retry:
-                    _LOGGER.warning(
-                        "Request unauthorized (401), refreshing token and retrying."
+                if resp.status == 401:
+                    resp.release()
+                    if not retry:
+                        raise InvalidAuth("Request unauthorized after token refresh")
+                    _LOGGER.warning("Request unauthorized (401), refreshing token and retrying.")
+                    try:
+                        await self.async_refresh_access_token()
+                    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+                        raise CannotConnect("Cannot refresh access token") from err
+                    return await self._async_request(
+                        method, path, retry=False, full_url=url,
+                        headers=headers, timeout=timeout, **kwargs
                     )
-                    await self.async_refresh_access_token()
-                    return await self._async_request(method, path, retry=False, **kwargs)
 
                 # Handle rate limiting (429) separately
                 if resp.status == 429:
@@ -358,7 +373,7 @@ class IntuisAPI:
                             method, path, attempt, rate_limit_attempts, delay
                         )
                         try:
-                            await resp.release()
+                            resp.release()
                         finally:
                             await asyncio.sleep(delay)
                         continue
@@ -368,6 +383,7 @@ class IntuisAPI:
                         "Rate limit exceeded for %s after %s attempts",
                         path, attempt
                     )
+                    resp.release()
                     raise RateLimitError(f"Rate limited for {path} after {attempt} attempts")
 
                 # Handle server errors (5xx)
@@ -378,7 +394,7 @@ class IntuisAPI:
                             resp.status, method, path, attempt, server_attempts, server_delay
                         )
                         try:
-                            await resp.release()
+                            resp.release()
                         finally:
                             await asyncio.sleep(server_delay)
                             server_delay *= 2
@@ -667,7 +683,8 @@ class IntuisAPI:
             scale: Time scale for measures (5min, 30min, 1hour, 1day, etc.)
 
         Returns:
-            Dict mapping room_id to energy in Wh.
+            Only successfully measured room IDs, mapped to Wh (including valid
+            zeroes). Omitted IDs are unavailable and must be retried, not zeroed.
         """
         if not rooms:
             return {}
@@ -693,7 +710,8 @@ class IntuisAPI:
                 _LOGGER.warning(
                     "Failed to get energy for room %s: %s", room_id, e
                 )
-                result[room_id] = 0.0
+                # Missing is deliberately distinct from a measured zero.
+                continue
 
         return result
 
@@ -721,67 +739,70 @@ class IntuisAPI:
             "date_end": str(date_end),
         }
 
-        try:
-            async with await self._async_request(
-                "post",
-                ROOMMEASURE_PATH,
-                data=form_data,  # Form-encoded, not JSON
-            ) as resp:
+        async with await self._async_request(
+            "post", ROOMMEASURE_PATH, data=form_data
+        ) as resp:
+            try:
                 data = await resp.json()
+            except (ValueError, aiohttp.ClientError) as err:
+                raise APIError(f"Invalid energy response for room {room_id}") from err
+        return sum(value for _, value in self._parse_energy_samples(data))
 
-            # Always log raw response structure at DEBUG level for diagnostics
-            _LOGGER.debug(
-                "Room %s energy response (scale=%s, types=%d): body has %d entries",
-                room_id,
-                scale,
-                len(ENERGY_MEASURE_TYPES.split(",")),
-                len(data.get("body", [])),
-            )
-            if self._debug:
-                _LOGGER.debug("Room %s full energy response: %s", room_id, data)
+    @staticmethod
+    def _parse_energy_samples(
+        data: Any, *, require_timestamps: bool = False
+    ) -> list[tuple[int, float]]:
+        """Validate cloud samples without turning absent/invalid values into zero.
 
-            # Sum all non-null values from all measure entries
-            # Response format: {"body": [{"beg_time": ..., "value": [[v1, v2, v3, v4], ...]}, ...]}
-            total_energy = 0.0
-            body = data.get("body", [])
-
-            for measure in body:
-                values = measure.get("value", [])
-                for val_set in values:
-                    # val_set contains [sum_energy_elec, $0, $1, $2]
-                    # Sum all non-null values
-                    for val in val_set:
-                        if val is not None:
-                            total_energy += float(val)
-
-            return total_energy
-
-        except (APIError, KeyError, ValueError, TypeError) as e:
-            _LOGGER.warning(
-                "Energy measure request failed for room %s: %s",
-                room_id,
-                e,
-                exc_info=True,
-            )
-            return 0.0
+        Null tariff columns are ignored. A row with no numeric measurement is
+        absent, so daily callers can detect gaps instead of importing fake zeros.
+        """
+        if not isinstance(data, dict) or data.get("error"):
+            raise APIError("Energy API returned an error or malformed response")
+        body = data.get("body")
+        if not isinstance(body, list):
+            raise APIError("Energy API response body must be a list")
+        samples: list[tuple[int, float]] = []
+        for measure in body:
+            if not isinstance(measure, dict) or not isinstance(measure.get("value"), list):
+                raise APIError("Malformed energy measure")
+            begin, step = measure.get("beg_time"), measure.get("step_time", 86400)
+            if require_timestamps:
+                if (isinstance(begin, bool) or not isinstance(begin, (int, float))
+                        or not math.isfinite(begin) or begin < 0 or int(begin) != begin
+                        or isinstance(step, bool) or not isinstance(step, (int, float))
+                        or not math.isfinite(step) or step <= 0 or int(step) != step):
+                    raise APIError("Invalid energy sample timestamps")
+            for index, values in enumerate(measure["value"]):
+                if not isinstance(values, list):
+                    raise APIError("Malformed energy sample")
+                total = 0.0
+                measured = False
+                for value in values:
+                    if value is None:
+                        continue
+                    if isinstance(value, bool) or not isinstance(value, (int, float)):
+                        raise APIError("Energy must be a numeric measurement")
+                    if not math.isfinite(value) or value < 0:
+                        raise APIError("Energy must be finite and nonnegative")
+                    total += value
+                    measured = True
+                if measured:
+                    if not math.isfinite(total):
+                        raise APIError("Energy total is not finite")
+                    timestamp = int(begin + index * step) if require_timestamps else 0
+                    samples.append((timestamp, total))
+        if not samples:
+            raise EnergyDataUnavailable("No measured energy in cloud response")
+        return samples
 
     async def async_get_room_energy_daily(
         self, room_id: str, date_begin: int, date_end: int
     ) -> list[tuple[int, float]]:
-        """Get daily energy consumption for a room over a date range.
+        """Return measured daily values in Wh, raising on errors or no data.
 
-        This method fetches energy data in bulk (one API call for the entire range)
-        and returns individual daily values, significantly reducing API calls needed
-        for historical imports.
-
-        Args:
-            room_id: The room ID.
-            date_begin: Unix epoch timestamp for start of period.
-            date_end: Unix epoch timestamp for end of period.
-
-        Returns:
-            List of tuples (timestamp, energy_wh) for each day in the range.
-            Empty list on error.
+        Days containing only null tariff columns are omitted, never fabricated
+        as zero. Import callers must validate coverage before replacing history.
         """
         form_data = {
             "home_id": self.home_id,
@@ -791,58 +812,14 @@ class IntuisAPI:
             "date_begin": str(date_begin),
             "date_end": str(date_end),
         }
-
-        try:
-            async with await self._async_request(
-                "post",
-                ROOMMEASURE_PATH,
-                data=form_data,
-            ) as resp:
+        async with await self._async_request(
+            "post", ROOMMEASURE_PATH, data=form_data
+        ) as resp:
+            try:
                 data = await resp.json()
-
-            if self._debug:
-                _LOGGER.debug("Room %s daily energy response: %s", room_id, data)
-
-            # Response format: {"body": [{"beg_time": ts, "step_time": 86400, "value": [[...], [...], ...]}, ...]}
-            # Each inner array in "value" represents one day's energy
-            daily_values: list[tuple[int, float]] = []
-            body = data.get("body", [])
-
-            for measure in body:
-                beg_time = measure.get("beg_time", 0)
-                step_time = measure.get("step_time", 86400)  # Default 1 day in seconds
-                values = measure.get("value", [])
-
-                for i, val_set in enumerate(values):
-                    # Calculate timestamp for this day
-                    day_ts = beg_time + (i * step_time)
-
-                    # Sum all tariff values for this day
-                    day_energy = 0.0
-                    for val in val_set:
-                        if val is not None:
-                            day_energy += float(val)
-
-                    daily_values.append((day_ts, day_energy))
-
-            _LOGGER.debug(
-                "Room %s: fetched %d daily values from %s to %s",
-                room_id,
-                len(daily_values),
-                date_begin,
-                date_end,
-            )
-
-            return daily_values
-
-        except (APIError, KeyError, ValueError, TypeError) as e:
-            _LOGGER.warning(
-                "Daily energy request failed for room %s: %s",
-                room_id,
-                e,
-                exc_info=True,
-            )
-            return []
+            except (ValueError, aiohttp.ClientError) as err:
+                raise APIError(f"Invalid daily energy response for room {room_id}") from err
+        return self._parse_energy_samples(data, require_timestamps=True)
 
     async def async_get_schedule(
             self, home_id: str, schedule_id: int

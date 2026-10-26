@@ -16,3 +16,17 @@ Aucun push, déploiement ni appel vers un compte Intuis réel n’est effectué.
 - Le smoke SQLite couvre une transaction, pas encore la queue du worker recorder.
   Le lot import doit vérifier le traitement réellement exécuté par ce worker.
 - CI distante non exécutée à ce stade ; les commandes de la matrice ont été exécutées localement.
+
+## API et cache énergétique — 26 octobre 2026
+
+- Agent : `api_energy`, changement `harden-api-and-energy-cache`.
+- Review : conservation des paramètres du retry 401, libération des réponses,
+  parsing strict, erreurs vs zéro, cache par pièce, disponibilité et agrégats.
+- Points demandés en review couverts : échec global du coordinateur, reprise des
+  seules pièces échouées, journée du domicile, max journalier après valeur ancienne,
+  agrégat incomplet et absence initiale de mesure.
+- Validation indépendante : 225 tests réussis sur chacune des deux versions HA,
+  Ruff et diff-check réussis. Les nouveaux tests emploient de vrais ClientResponse
+  via le transport simulé, sans appels vers Intuis.
+- L’import reçoit désormais des erreurs typées ; son remplacement transactionnel
+  reste à réaliser dans le changement suivant.
