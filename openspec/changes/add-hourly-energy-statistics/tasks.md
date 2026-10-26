@@ -10,7 +10,7 @@ Les cases cochées correspondent aux travaux réalisés et vérifiés ; voir doc
 ## 2. Collecte et staging
 
 - [x] 2.1 Ajouter le parseur horaire strict, les chunks bornés, les doublons identiques/contradictoires, les erreurs typées et les limites de débit.
-- [ ] 2.2 Tester heures closes, délai de consolidation, fuseaux, DST 23/25 heures, zéro, trous, non-finis et réponses cloud tardives.
+- [x] 2.2 Tester heures closes, délai de consolidation, fuseaux, DST 23/25 heures, zéro, trous, non-finis et réponses cloud tardives.
 
 ## 3. Import et updater
 

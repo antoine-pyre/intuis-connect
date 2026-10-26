@@ -218,15 +218,18 @@ async def test_local_optimism_expires_even_if_cloud_refresh_fails(
     heating, monkeypatch, preset
 ):
     h = heating
+    # Long enough that the optimistic window survives the failing refresh below,
+    # short enough to expire while the test waits for it.
     monkeypatch.setattr(
-        "custom_components.intuis_connect.climate.OPTIMISTIC_TIMEOUT", 0.02
+        "custom_components.intuis_connect.climate.OPTIMISTIC_TIMEOUT", 0.5
     )
     h.api.async_get_home_status.side_effect = CannotConnect("offline")
     await h.entity.async_set_preset_mode(preset)
     assert h.entity._pending is not None
     assert not h.entity.available  # Preserve CoordinatorEntity availability.
-    await asyncio.sleep(0.04)
-    assert h.entity._pending is None
+    async with asyncio.timeout(5):
+        while h.entity._pending is not None:
+            await asyncio.sleep(0.01)
     assert (
         h.entity.hvac_mode == HVACMode.AUTO and h.entity.preset_mode == PRESET_SCHEDULE
     )
