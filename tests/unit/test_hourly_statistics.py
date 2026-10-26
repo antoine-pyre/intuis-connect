@@ -64,3 +64,47 @@ def test_staging_deduplicates_but_rejects_conflicts_and_holes():
     for samples in ([(0,500),(0,600),(3600,0)],[(0,500)]):
         with pytest.raises(APIError):
             stage_hourly(samples,0,7200)
+
+
+@pytest.mark.parametrize('time,expected', [('2026-10-26T10:14:59+00:00','2026-10-26T09:00:00+00:00'),('2026-10-26T10:15:00+00:00','2026-10-26T10:00:00+00:00')])
+def test_closed_hours_wait_for_fifteen_minutes(time,expected):
+    from custom_components.intuis_connect.hourly_series import closed_hour_end
+    assert closed_hour_end(datetime.fromisoformat(time))==int(datetime.fromisoformat(expected).timestamp())
+
+
+@pytest.mark.parametrize('day,next_day,hours',[(datetime(2026,3,29),datetime(2026,3,30),23),(datetime(2026,10,25),datetime(2026,10,26),25)])
+def test_hourly_coverage_follows_utc_through_dst(day,next_day,hours):
+    from zoneinfo import ZoneInfo
+    from custom_components.intuis_connect.hourly_series import stage_hourly
+    zone=ZoneInfo('Europe/Paris')
+    start=int(day.replace(tzinfo=zone).timestamp())
+    end=int(next_day.replace(tzinfo=zone).timestamp())
+    assert len(stage_hourly([(ts,0) for ts in range(start,end,3600)],start,end))==hours
+
+
+@pytest.mark.parametrize('value',[None,-1,float('nan'),float('inf'),True,'500'])
+def test_invalid_hourly_values_cannot_be_imported(value):
+    from custom_components.intuis_connect.hourly_series import stage_hourly
+    from custom_components.intuis_connect.intuis_api.api import APIError
+    with pytest.raises(APIError):
+        stage_hourly([(0,value)],0,3600)
+
+
+@pytest.mark.parametrize('payload',[{},[],{'error':{'code':1}},{'body':[{'beg_time':0,'value':[[1]]}]}])
+async def test_malformed_http_hourly_response_is_typed_error(cloud_responses,payload):
+    import aiohttp
+    from .test_api_energy import client
+    from custom_components.intuis_connect.utils.const import BASE_URLS, ROOMMEASURE_PATH
+    from custom_components.intuis_connect.intuis_api.api import APIError
+    cloud_responses.post(BASE_URLS[0]+ROOMMEASURE_PATH,payload=payload)
+    async with aiohttp.ClientSession() as session:
+        with pytest.raises(APIError):
+            await client(session).async_get_room_energy_hourly('room',0,3600)
+
+
+@pytest.mark.parametrize('samples',[[(0,0),(3600,0)],[(-3600,0),(0,0)],[(1800,0)]])
+def test_late_cloud_samples_outside_the_closed_window_are_rejected(samples):
+    from custom_components.intuis_connect.hourly_series import stage_hourly
+    from custom_components.intuis_connect.intuis_api.api import APIError
+    with pytest.raises(APIError):
+        stage_hourly(samples,0,3600)
