@@ -16,3 +16,4 @@ Chaque ligne est enregistrée dans le commit de la tâche concernée.
 | extend-schedule-editing | 2.2 | feat: expose complete weekly planning data with room names | 17 tests ciblés passent ; summary réel, héritage dimanche/lundi et sept jours vérifiés |
 | extend-schedule-editing | 3.1 | test: cover full schedule save concurrency and lifecycle | 111 tests planning/services passent sur les deux HA ; concurrence number/refresh/unload ; Ruff |
 | extend-schedule-editing | 3.2 | docs: deliver credited extended planning services and validation | 357 tests réussis sur HA 2024.6.4 et 2026.10.4 ; Ruff passe |
+| add-hourly-energy-statistics | 1.1 | feat: define stable external hourly statistics identities | Contrat IDs/source/métadonnées confronté aux APIs recorder et énergie des deux HA ; Ruff |
