@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import logging
 import json
 
@@ -24,6 +25,7 @@ from .history_import import (
     DEFAULT_HISTORY_DAYS,
     MAX_HISTORY_DAYS,
 )
+from .hourly_series import closed_hour_end
 from .schedule_mutations import async_set_schedule_slot, async_set_zone_temperature, async_sync_schedule
 from .service_targets import first_target, is_loaded, require_targets, target_entries
 from .timetable import schedule_slot_offsets
@@ -60,6 +62,14 @@ ATTR_ZONE_NAME = "zone_name"
 ATTR_ROOM_NAME = "room_name"
 ATTR_TEMPERATURE = "temperature"
 ATTR_DAYS = "days"
+ATTR_GRANULARITY = "granularity"
+# Canonical values plus the aliases shown in TheFab21's #17/#22 documentation.
+GRANULARITY_ALIASES = {
+    "daily": "daily",
+    "1day": "daily",
+    "hourly": "hourly",
+    "1hour": "hourly",
+}
 
 
 def _nonempty_name(value: str) -> str:
@@ -77,6 +87,12 @@ def _history_days(value: float) -> int:
     ):
         raise vol.Invalid(f"Days must be an integer from 1 to {MAX_HISTORY_DAYS}")
     return int(value)
+
+
+def _granularity(value: str) -> str:
+    if not isinstance(value, str) or value.strip().casefold() not in GRANULARITY_ALIASES:
+        raise vol.Invalid("Granularity must be daily (1day) or hourly (1hour)")
+    return GRANULARITY_ALIASES[value.strip().casefold()]
 
 
 HOME_FIELD = {vol.Optional(ATTR_HOME_ID): _nonempty_name}
@@ -123,6 +139,7 @@ IMPORT_ENERGY_HISTORY_SCHEMA = vol.Schema(
         **HOME_FIELD,
         vol.Optional(ATTR_DAYS, default=DEFAULT_HISTORY_DAYS): _history_days,
         vol.Optional(ATTR_ROOM_NAME): str,
+        vol.Optional(ATTR_GRANULARITY, default="daily"): _granularity,
     }
 )
 
@@ -336,6 +353,15 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
                 raise ServiceValidationError(
                     f"Room {room_name} not found in any loaded home"
                 )
+        if call.data[ATTR_GRANULARITY] == "hourly":
+            end = closed_hour_end(datetime.now(timezone.utc))
+            job = {
+                "granularity": "hourly",
+                "start": end - call.data[ATTR_DAYS] * 86400,
+                "end": end,
+            }
+        else:
+            job = {"days": call.data[ATTR_DAYS]}
         for entry_id, data in entries:
             if not is_loaded(hass, entry_id, data):
                 continue
@@ -345,7 +371,7 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
             if not manager.start(
                 data["api"],
                 data["intuis_home"],
-                days=call.data[ATTR_DAYS],
+                **job,
                 room_filter=room_name,
                 home_id=data["intuis_home"].id,
             ):

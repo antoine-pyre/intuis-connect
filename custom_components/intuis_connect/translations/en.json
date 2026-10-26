@@ -94,7 +94,7 @@
     },
     "import_energy_history": {
       "name": "Import Energy History",
-      "description": "Import complete local days with validated coverage. Requires existing live recorder statistics; failures preserve history.",
+      "description": "Import complete local days with validated coverage (requires live recorder statistics), or closed hours into separate external hourly statistics. Failures preserve history.",
       "fields": {
         "home_id": {
           "name": "Home ID",
@@ -107,6 +107,10 @@
         "room_name": {
           "name": "Room (Optional)",
           "description": "Leave empty for all rooms. Without home_id, only homes containing this room are imported."
+        },
+        "granularity": {
+          "name": "Granularity",
+          "description": "daily (default, also 1day) replaces the daily sensor history; hourly (also 1hour) imports closed hours into the separate external hourly statistics."
         }
       }
     },
@@ -261,11 +265,15 @@
         "description": "Configure how energy usage is tracked.",
         "data": {
           "energy_scale": "Update frequency",
-          "energy_reset_hour": "Daily reset time"
+          "energy_reset_hour": "Daily reset time",
+          "hourly_statistics": "Hourly statistics",
+          "hourly_statistics_interval": "Hourly update interval"
         },
         "data_description": {
           "energy_scale": "How often to update energy consumption data.",
-          "energy_reset_hour": "Hour when daily energy counters reset (0-23). Default is 2 AM to ensure previous day's data is finalized."
+          "energy_reset_hour": "Hour when daily energy counters reset (0-23). Default is 2 AM to ensure previous day's data is finalized.",
+          "hourly_statistics": "Opt-in: import closed hours into separate external statistics per room and for the home. Daily energy sensors are unchanged.",
+          "hourly_statistics_interval": "How often to re-read the last 48 closed hours (catch-up up to 7 days after an interruption)."
         }
       },
       "rate_limit": {

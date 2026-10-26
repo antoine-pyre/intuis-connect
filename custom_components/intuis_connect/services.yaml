@@ -144,8 +144,8 @@ set_zone_temperature:
           unit_of_measurement: °C
 import_energy_history:
   name: Import Energy History
-  description: Import complete local days with validated coverage. Requires existing
-    live recorder statistics; failures preserve history.
+  description: Import complete local days with validated coverage, or closed hours into
+    separate external hourly statistics. Failures preserve history.
   fields:
     home_id:
       name: Home ID
@@ -172,6 +172,17 @@ import_energy_history:
       required: false
       selector:
         text: {}
+    granularity:
+      name: Granularity
+      description: daily (default, also 1day) replaces the daily sensor history; hourly
+        (also 1hour) imports closed hours into the separate external hourly statistics.
+      required: false
+      default: daily
+      selector:
+        select:
+          options:
+            - daily
+            - hourly
 sync_schedule:
   name: Sync Schedule
   description: Replace a complete weekly timetable and/or away/frost temperatures

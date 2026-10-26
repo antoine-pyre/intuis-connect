@@ -21,3 +21,4 @@ Chaque ligne est enregistrée dans le commit de la tâche concernée.
 | add-hourly-energy-statistics | 2.1 | feat: collect and stage bounded hourly energy series | 31 tests HTTP/staging/API passent ; Ruff ; chunks et doublons vérifiés |
 | add-hourly-energy-statistics | 2.2 | test: cover hourly staging edges and de-flake optimism expiry | 20 tests horaires sur les deux HA ; DST 23/25 h, délai 15 min, non-finis, réponses tardives ; 377 tests ; Ruff |
 | add-hourly-energy-statistics | 3.1 | feat: replace external hourly series in acknowledged transactions | Vrai worker recorder des deux HA : création, idempotence, continuité, rollback sans métadonnée ; 387 tests ; import quotidien inchangé ; Ruff |
+| add-hourly-energy-statistics | 3.2 | feat: add opt-in hourly updater, service granularity and home total | 17 tests import/updater/service/options ; total domicile refusé si pièce incomplète ; fenêtre 48 h/7 j lue du recorder ; 404 tests sur les deux HA ; Ruff |

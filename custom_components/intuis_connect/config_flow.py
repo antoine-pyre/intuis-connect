@@ -40,6 +40,8 @@ from .utils.const import (
     CONF_ENERGY_RESET_HOUR,
     CONF_IMPORT_HISTORY,
     CONF_IMPORT_HISTORY_DAYS,
+    CONF_HOURLY_STATISTICS,
+    CONF_HOURLY_STATISTICS_INTERVAL,
     CONF_RATE_LIMIT_DELAY,
     CONF_CIRCUIT_BREAKER_THRESHOLD,
     CONF_MAX_UPDATE_INTERVAL,
@@ -53,6 +55,8 @@ from .utils.const import (
     DEFAULT_ENERGY_RESET_HOUR,
     DEFAULT_IMPORT_HISTORY,
     DEFAULT_IMPORT_HISTORY_DAYS,
+    DEFAULT_HOURLY_STATISTICS,
+    DEFAULT_HOURLY_STATISTICS_INTERVAL,
     DEFAULT_RATE_LIMIT_DELAY,
     DEFAULT_CIRCUIT_THRESHOLD,
     DEFAULT_MAX_UPDATE_INTERVAL,
@@ -60,6 +64,7 @@ from .utils.const import (
     DURATION_OPTIONS_SHORT,
     DURATION_OPTIONS_LONG,
     IMPORT_DAYS_OPTIONS,
+    HOURLY_INTERVAL_OPTIONS,
     RATE_LIMIT_DELAY_OPTIONS,
     CIRCUIT_THRESHOLD_OPTIONS,
     MAX_UPDATE_INTERVAL_OPTIONS,
@@ -536,6 +541,14 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
                 CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE
             )
             self._override_options[CONF_ENERGY_RESET_HOUR] = reset_hour
+            self._override_options[CONF_HOURLY_STATISTICS] = bool(
+                user_input.get(CONF_HOURLY_STATISTICS, DEFAULT_HOURLY_STATISTICS)
+            )
+            self._override_options[CONF_HOURLY_STATISTICS_INTERVAL] = int(
+                user_input.get(
+                    CONF_HOURLY_STATISTICS_INTERVAL, DEFAULT_HOURLY_STATISTICS_INTERVAL
+                )
+            )
             return await self.async_step_rate_limit()
 
         # Build select options for energy scale
@@ -570,6 +583,25 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
                     default=str(current_reset_hour),
                 ): SelectSelector(
                     SelectSelectorConfig(options=reset_hour_options, mode=SelectSelectorMode.DROPDOWN)
+                ),
+                vol.Optional(
+                    CONF_HOURLY_STATISTICS,
+                    default=self._entry.options.get(
+                        CONF_HOURLY_STATISTICS, DEFAULT_HOURLY_STATISTICS
+                    ),
+                ): BooleanSelector(),
+                vol.Optional(
+                    CONF_HOURLY_STATISTICS_INTERVAL,
+                    default=str(
+                        self._entry.options.get(
+                            CONF_HOURLY_STATISTICS_INTERVAL,
+                            DEFAULT_HOURLY_STATISTICS_INTERVAL,
+                        )
+                    ),
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=HOURLY_INTERVAL_OPTIONS, mode=SelectSelectorMode.DROPDOWN
+                    )
                 ),
             }
         )

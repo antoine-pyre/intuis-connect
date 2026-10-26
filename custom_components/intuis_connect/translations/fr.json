@@ -94,7 +94,7 @@
     },
     "import_energy_history": {
       "name": "Importer l’historique énergétique",
-      "description": "Importer des jours locaux terminés après validation. Des statistiques recorder en direct sont nécessaires ; un échec préserve l’historique.",
+      "description": "Importer des jours locaux terminés après validation (statistiques recorder en direct nécessaires), ou des heures closes dans des statistiques horaires externes distinctes. Un échec préserve l’historique.",
       "fields": {
         "home_id": {
           "name": "Identifiant du domicile",
@@ -107,6 +107,10 @@
         "room_name": {
           "name": "Pièce (facultative)",
           "description": "Laisser vide pour toutes les pièces. Sans home_id, seuls les domiciles contenant cette pièce sont importés."
+        },
+        "granularity": {
+          "name": "Granularité",
+          "description": "daily (par défaut, ou 1day) remplace l’historique du capteur journalier ; hourly (ou 1hour) importe les heures closes dans les statistiques horaires externes distinctes."
         }
       }
     },
@@ -261,11 +265,15 @@
         "description": "Configurez le suivi de la consommation d'énergie.",
         "data": {
           "energy_scale": "Fréquence de mise à jour",
-          "energy_reset_hour": "Heure de réinitialisation"
+          "energy_reset_hour": "Heure de réinitialisation",
+          "hourly_statistics": "Statistiques horaires",
+          "hourly_statistics_interval": "Intervalle de mise à jour horaire"
         },
         "data_description": {
           "energy_scale": "Fréquence de mise à jour des données de consommation.",
-          "energy_reset_hour": "Heure de réinitialisation des compteurs journaliers (0-23). Par défaut 2h pour s'assurer que les données de la veille sont finalisées."
+          "energy_reset_hour": "Heure de réinitialisation des compteurs journaliers (0-23). Par défaut 2h pour s'assurer que les données de la veille sont finalisées.",
+          "hourly_statistics": "Facultatif : importe les heures closes dans des statistiques externes distinctes par pièce et pour le domicile. Les capteurs d’énergie journaliers ne changent pas.",
+          "hourly_statistics_interval": "Fréquence de relecture des 48 dernières heures closes (rattrapage jusqu’à 7 jours après une interruption)."
         }
       },
       "rate_limit": {
