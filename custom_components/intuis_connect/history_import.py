@@ -127,6 +127,7 @@ class HistoryImportManager:
         self.days_imported = 0
         self.total_days = 0
         self.last_error: str | None = None
+        self.hourly_home_total: str | None = None
 
     async def async_load(self) -> None:
         if self._loaded:
@@ -163,13 +164,31 @@ class HistoryImportManager:
     def is_running(self) -> bool:
         return self._running or (self._task is not None and not self._task.done())
 
-    def start(self, api: IntuisAPI, intuis_home: IntuisHome, **kwargs) -> bool:
-        """Reserve the entry synchronously so concurrent service calls cannot race."""
+    def start(
+        self,
+        api: IntuisAPI,
+        intuis_home: IntuisHome,
+        *,
+        granularity: str = "daily",
+        **kwargs,
+    ) -> bool:
+        """Reserve the entry synchronously so concurrent service calls cannot race.
+
+        Daily and hourly imports, manual or scheduled, share this reservation.
+        """
         if self.is_running or self._closing:
             return False
-        self._task = self.hass.async_create_task(
-            async_import_energy_history(self.hass, api, intuis_home, self, **kwargs)
-        )
+        if granularity == "hourly":
+            from .hourly_stats import async_import_hourly_history
+
+            job = async_import_hourly_history(
+                self.hass, api, intuis_home, self, **kwargs
+            )
+        else:
+            job = async_import_energy_history(
+                self.hass, api, intuis_home, self, **kwargs
+            )
+        self._task = self.hass.async_create_task(job)
         return True
 
     def cancel(self) -> None:

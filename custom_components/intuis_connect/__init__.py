@@ -24,6 +24,9 @@ from .utils.const import (
     CONF_HOME_NAME,
     CONF_IMPORT_HISTORY,
     CONF_IMPORT_HISTORY_DAYS,
+    CONF_HOURLY_STATISTICS,
+    CONF_HOURLY_STATISTICS_INTERVAL,
+    DEFAULT_HOURLY_STATISTICS_INTERVAL,
     DEFAULT_UPDATE_INTERVAL,
     CONF_RATE_LIMIT_DELAY,
     CONF_CIRCUIT_BREAKER_THRESHOLD,
@@ -38,6 +41,7 @@ from .entity.intuis_entity import IntuisDataUpdateCoordinator
 from .history_import import (
     async_get_import_manager,
 )
+from .hourly_stats import HourlyStatisticsUpdater
 from .intuis_data import IntuisData
 from .overrides import OverrideManager, OverrideState
 from .services import (
@@ -244,12 +248,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         new_options = {**entry.options, CONF_IMPORT_HISTORY: False}
         hass.config_entries.async_update_entry(entry, options=new_options)
 
+    # ---------- opt-in hourly external statistics, isolated per entry --------------
+    if entry.options.get(CONF_HOURLY_STATISTICS, False):
+        updater = HourlyStatisticsUpdater(
+            hass,
+            entry,
+            intuis_api,
+            intuis_home,
+            int(entry.options.get(
+                CONF_HOURLY_STATISTICS_INTERVAL, DEFAULT_HOURLY_STATISTICS_INTERVAL
+            )),
+        )
+        hass.data[DOMAIN][entry.entry_id]["hourly_updater"] = updater
+        updater.async_start()
+
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     _LOGGER.debug("Unloading entry %s", entry.entry_id)
+    # Stop scheduling first so no new hourly job can reserve the manager.
+    updater = hass.data[DOMAIN].get(entry.entry_id, {}).get("hourly_updater")
+    if updater is not None:
+        await updater.async_close()
     manager = hass.data[DOMAIN].get("import_managers", {}).get(entry.entry_id)
     if manager is not None:
         await manager.async_close()
@@ -260,6 +282,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug("Unloaded entry %s", entry.entry_id)
     if not unload_ok and manager is not None:
         manager._closing = False
+    if not unload_ok and updater is not None:
+        updater.async_start()
     return unload_ok
 
 

@@ -383,28 +383,9 @@ async def test_static_descriptions_match_schemas_and_translations(homes):
                     assert "text" in descriptions[service]["fields"][name]["selector"]
 
 
-async def test_setup_and_refresh_do_not_write_installed_component(homes, monkeypatch):
-    """Emulate a read-only component while allowing HA's native temporary Store."""
-    component_root = COMPONENT.resolve()
-    builtins_open, io_open = builtins.open, io.open
-    attempts = []
-
-    def readonly_open(original):
-        def open_file(file, mode="r", *a, **kw):
-            if isinstance(file, (str, bytes, Path)) and any(
-                flag in mode for flag in "wax+"
-            ):
-                path = Path(file).resolve()
-                if path.is_relative_to(component_root):
-                    attempts.append(path)
-                    raise PermissionError("Installed component is read only")
-            return original(file, mode, *a, **kw)
-
-        return open_file
-
-    monkeypatch.setattr(builtins, "open", readonly_open(builtins_open))
-    monkeypatch.setattr(io, "open", readonly_open(io_open))
-    entry = homes.first.entry
+async def setup_real_entry(homes, monkeypatch, entry=None):
+    """Run the actual async_setup_entry for the first home with simulated cloud."""
+    entry = entry or homes.first.entry
     home = homes.first.home
     api = homes.first.api
     api.home_timezone = "UTC"
@@ -435,6 +416,31 @@ async def test_setup_and_refresh_do_not_write_installed_component(homes, monkeyp
         assert await async_setup_entry(homes.hass, entry)
     finally:
         current_entry.reset(token)
+    return entry
+
+
+async def test_setup_and_refresh_do_not_write_installed_component(homes, monkeypatch):
+    """Emulate a read-only component while allowing HA's native temporary Store."""
+    component_root = COMPONENT.resolve()
+    builtins_open, io_open = builtins.open, io.open
+    attempts = []
+
+    def readonly_open(original):
+        def open_file(file, mode="r", *a, **kw):
+            if isinstance(file, (str, bytes, Path)) and any(
+                flag in mode for flag in "wax+"
+            ):
+                path = Path(file).resolve()
+                if path.is_relative_to(component_root):
+                    attempts.append(path)
+                    raise PermissionError("Installed component is read only")
+            return original(file, mode, *a, **kw)
+
+        return open_file
+
+    monkeypatch.setattr(builtins, "open", readonly_open(builtins_open))
+    monkeypatch.setattr(io, "open", readonly_open(io_open))
+    entry = await setup_real_entry(homes, monkeypatch)
     await call(homes, "refresh_schedules", home_id="first")
     assert not attempts
     coordinator = homes.hass.data[DOMAIN][entry.entry_id]["coordinator"]

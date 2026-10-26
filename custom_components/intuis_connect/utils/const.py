@@ -136,6 +136,18 @@ IMPORT_DAYS_OPTIONS = [
     {"value": "730", "label": "730 days (2 years)"},
 ]
 
+# Hourly external statistics (opt-in, distinct from the daily energy sensors)
+CONF_HOURLY_STATISTICS = "hourly_statistics"
+CONF_HOURLY_STATISTICS_INTERVAL = "hourly_statistics_interval"
+DEFAULT_HOURLY_STATISTICS = False
+DEFAULT_HOURLY_STATISTICS_INTERVAL = 120  # minutes
+HOURLY_INTERVAL_OPTIONS = [
+    {"value": "60", "label": "1 hour"},
+    {"value": "120", "label": "2 hours"},
+    {"value": "240", "label": "4 hours"},
+    {"value": "360", "label": "6 hours"},
+]
+
 # API modes
 API_MODE_OFF = "off"
 API_MODE_HOME = "home"
