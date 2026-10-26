@@ -13,7 +13,6 @@ from .entity.intuis_home_config import IntuisHomeConfig
 from .intuis_api.api import IntuisAPI, APIError, CannotConnect, RateLimitError
 from .intuis_api.mapper import extract_modules, extract_rooms
 from .utils.const import (
-    API_MODE_MANUAL,
     API_MODE_AWAY,
     API_MODE_BOOST,
     API_MODE_HG,

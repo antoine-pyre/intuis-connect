@@ -16,7 +16,6 @@ from ..utils.const import (
     HOMESDATA_PATH,
     HOMESTATUS_PATH,
     SETSTATE_PATH,
-    HOMEMEASURE_PATH,
     ROOMMEASURE_PATH,
     ENERGY_MEASURE_TYPES,
     CLIENT_ID,
@@ -887,7 +886,7 @@ class IntuisAPI:
         url = f"{ENERGY_BASE}{SET_SCHEDULE_PATH}"
         async with await self._async_request(
             "post", SET_SCHEDULE_PATH, full_url=url, json=payload, timeout=10
-        ) as resp:
+        ):
             pass  # Success if no exception raised
 
     async def async_delete_schedule_slot(self, home_id: str, slot_id: str) -> None:
@@ -895,7 +894,7 @@ class IntuisAPI:
         url = f"{ENERGY_BASE}{DELETE_SCHEDULE_PATH}?home_id={home_id}&slot_id={slot_id}"
         async with await self._async_request(
             "delete", DELETE_SCHEDULE_PATH, full_url=url, timeout=10
-        ) as resp:
+        ):
             pass  # Success if no exception raised
 
     async def async_switch_schedule(self, home_id: str, schedule_id: int) -> None:
@@ -904,7 +903,7 @@ class IntuisAPI:
         url = f"{ENERGY_BASE}{SWITCH_SCHEDULE_PATH}"
         async with await self._async_request(
             "post", SWITCH_SCHEDULE_PATH, full_url=url, json=payload, timeout=10
-        ) as resp:
+        ):
             pass  # Success if no exception raised
 
     async def async_sync_schedule(

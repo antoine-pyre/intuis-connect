@@ -10,7 +10,6 @@ from custom_components.intuis_connect.history_import import (
     _get_baseline_sum,
     _clear_statistics_in_range,
     _fix_post_import_discontinuity,
-    DISCONTINUITY_THRESHOLD,
 )
 
 
