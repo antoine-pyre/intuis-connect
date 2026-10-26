@@ -3,7 +3,7 @@
 > **Full control of your Muller / Campa / Intuis electric radiators** with Netatmo "Intuitiv" modules – climate control, energy tracking, schedule management, and more.
 
 [![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![GitHub Release](https://img.shields.io/github/v/release/antoine-pyre/homeassistant-intuis-connect)](https://github.com/antoine-pyre/homeassistant-intuis-connect/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/antoine-pyre/intuis-connect)](https://github.com/antoine-pyre/intuis-connect/releases)
 
 ---
 
@@ -27,7 +27,7 @@
 
 ### One-Click Install (Recommended)
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=antoine-pyre&repository=homeassistant-intuis-connect&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=antoine-pyre&repository=intuis-connect&category=integration)
 
 ### Manual HACS Install
 
