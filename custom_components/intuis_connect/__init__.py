@@ -33,8 +33,7 @@ from .utils.const import (
 )
 from .entity.intuis_entity import IntuisDataUpdateCoordinator
 from .history_import import (
-    HistoryImportManager,
-    async_import_energy_history,
+    async_get_import_manager,
 )
 from .intuis_data import IntuisData
 from .services import (
@@ -75,6 +74,14 @@ PLATFORMS: list[Platform] = [
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""
+    data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    previous = data.get("options")
+    current = dict(entry.options)
+    data["options"] = current
+    if previous is not None and previous.get(CONF_IMPORT_HISTORY) and not current.get(CONF_IMPORT_HISTORY):
+        if {k: v for k, v in previous.items() if k != CONF_IMPORT_HISTORY} == {k: v for k, v in current.items() if k != CONF_IMPORT_HISTORY}:
+            # Consuming the one-shot flag must not reload/cancel its own import.
+            return
     _LOGGER.debug("Reloading entry %s due to options update", entry.entry_id)
     await hass.config_entries.async_reload(entry.entry_id)
 
@@ -194,6 +201,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "intuis_home": intuis_home,
         "overrides": overrides,
         "save_overrides": save_overrides,
+        "options": dict(entry.options),
     }
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)
 
@@ -209,7 +217,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         existing_manager = hass.data[DOMAIN]["import_managers"].get(entry.entry_id)
         if existing_manager and existing_manager.is_running:
             _LOGGER.info("Cancelling previous import that was still running")
-            existing_manager.cancel()
+            await existing_manager.async_close()
+            hass.data[DOMAIN]["import_managers"].pop(entry.entry_id, None)
 
     import_history = entry.options.get(CONF_IMPORT_HISTORY, False)
     import_days = entry.options.get(CONF_IMPORT_HISTORY_DAYS, 0)
@@ -220,26 +229,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             import_days,
         )
 
-        # Create import manager
-        manager = HistoryImportManager(hass, entry.entry_id)
-        await manager.async_load()
+        manager = await async_get_import_manager(hass, entry.entry_id)
 
-        # Store manager for potential service access
-        if "import_managers" not in hass.data[DOMAIN]:
-            hass.data[DOMAIN]["import_managers"] = {}
-        hass.data[DOMAIN]["import_managers"][entry.entry_id] = manager
-
-        # Start import in background task
-        hass.async_create_task(
-            async_import_energy_history(
-                hass=hass,
-                api=intuis_api,
-                intuis_home=intuis_home,
-                manager=manager,
-                days=import_days,
-                room_filter=None,
-                home_id=entry.data["home_id"],
-            )
+        manager.start(
+            intuis_api, intuis_home, days=import_days,
+            room_filter=None, home_id=entry.data["home_id"],
         )
 
         # Clear the import flag so it doesn't run again on reload
@@ -252,9 +246,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     _LOGGER.debug("Unloading entry %s", entry.entry_id)
+    manager = hass.data[DOMAIN].get("import_managers", {}).get(entry.entry_id)
+    if manager is not None:
+        await manager.async_close()
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        hass.data[DOMAIN].get("import_managers", {}).pop(entry.entry_id, None)
         hass.data[DOMAIN].pop(entry.entry_id)
         _LOGGER.debug("Unloaded entry %s", entry.entry_id)
+    if not unload_ok and manager is not None:
+        manager._closing = False
     return unload_ok
 
 

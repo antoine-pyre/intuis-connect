@@ -30,3 +30,20 @@ Aucun push, déploiement ni appel vers un compte Intuis réel n’est effectué.
   via le transport simulé, sans appels vers Intuis.
 - L’import reçoit désormais des erreurs typées ; son remplacement transactionnel
   reste à réaliser dans le changement suivant.
+
+## Import historique sécurisé — 26 octobre 2026
+
+- Agent : `history_import`, changement `secure-energy-history-import`.
+- Review : transaction recorder atomique, confirmation après commit/rollback,
+  couverture des jours locaux clos, baselines et continuité des sommes, concurrence
+  des services et arrêt des tâches lors du déchargement.
+- Corrections demandées puis testées : validation défensive du staging, libération
+  de l’ownership en appel direct, annulation avant démarrage et pendant INSERT,
+  refus d’un worker arrêté, drain des sauvegardes Store et création unique du manager.
+- Validation indépendante : 242 tests réussis sur chacune des deux versions HA,
+  Ruff et diff-check réussis ; 34 tests import font appel au véritable worker
+  recorder, SQLite et au compilateur de statistiques sensor.
+- Limite assumée : refus sans baseline short-term live valide après la période,
+  sans couverture exacte des jours locaux ou pour des bornes non horaires.
+  Le premier import automatique peut nécessiter une reprise manuelle après les
+  premières statistiques live. Voir docs/08-safe-energy-history-import.md.

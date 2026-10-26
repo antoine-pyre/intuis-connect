@@ -29,8 +29,10 @@ missing/stale rooms. Partial data is not silently presented as a fresh total.
 
 The energy methods are consumed by `IntuisData` (room/current-home sensors) and
 `history_import.async_import_energy_history` (daily values). Historical callers
-receive typed errors rather than an empty list on API failure. Transactional
-replacement and gap validation belong to the separate history-import change.
+receive typed errors rather than an empty list on API failure. The importer validates
+complete closed-day coverage before an acknowledged, transactional recorder replacement.
+See [Safe energy history import](08-safe-energy-history-import.md) for prerequisites,
+error recovery, cumulative-baseline guarantees and cancellation behavior.
 
 A request retried after HTTP 401 retains its complete destination, query, body,
 custom headers and timeout. Only its Authorization token changes. One token

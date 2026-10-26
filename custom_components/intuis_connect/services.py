@@ -24,8 +24,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .history_import import (
-    HistoryImportManager,
-    async_import_energy_history,
+    async_get_import_manager,
     DEFAULT_HISTORY_DAYS,
     MAX_HISTORY_DAYS,
 )
@@ -950,13 +949,7 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
             if not api or not intuis_home:
                 continue
 
-            # Get or create import manager for this entry
-            if entry_id not in hass.data[DOMAIN]["import_managers"]:
-                manager = HistoryImportManager(hass, entry_id)
-                await manager.async_load()
-                hass.data[DOMAIN]["import_managers"][entry_id] = manager
-            else:
-                manager = hass.data[DOMAIN]["import_managers"][entry_id]
+            manager = await async_get_import_manager(hass, entry_id)
 
             if manager.is_running:
                 _LOGGER.warning(
@@ -972,19 +965,8 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
                 f", room: {room_name}" if room_name else "",
             )
 
-            # Run import in background task
-            hass.async_create_task(
-                async_import_energy_history(
-                    hass=hass,
-                    api=api,
-                    intuis_home=intuis_home,
-                    manager=manager,
-                    days=days,
-                    room_filter=room_name,
-                    home_id=intuis_home.id,
-                )
-            )
-            import_count += 1
+            if manager.start(api, intuis_home, days=days, room_filter=room_name, home_id=intuis_home.id):
+                import_count += 1
 
         if import_count == 0:
             _LOGGER.warning("No homes available for import")
