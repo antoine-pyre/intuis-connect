@@ -39,8 +39,8 @@ from .history_import import (
 from .intuis_data import IntuisData
 from .overrides import OverrideManager
 from .services import (
-    async_generate_services_yaml,
     async_register_services,
+    async_unregister_services_if_unused,
     SERVICE_SWITCH_SCHEDULE as SERVICE_SWITCH_SCHEDULE,
     SERVICE_REFRESH_SCHEDULES as SERVICE_REFRESH_SCHEDULES,
     SERVICE_SET_SCHEDULE_SLOT as SERVICE_SET_SCHEDULE_SLOT,
@@ -121,9 +121,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     intuis_home = await intuis_api.async_get_homes_data()
     _LOGGER.debug("Intuis home: %s", intuis_home.__str__())
-
-    # ---------- generate dynamic services.yaml -------------------------------------
-    await async_generate_services_yaml(hass, intuis_home)
 
     # ---------- shared overrides (sticky intents) with persistence -----------------
     # Set up storage for persisting overrides across restarts
@@ -257,6 +254,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN].get("import_managers", {}).pop(entry.entry_id, None)
         hass.data[DOMAIN].pop(entry.entry_id)
+        async_unregister_services_if_unused(hass)
         _LOGGER.debug("Unloaded entry %s", entry.entry_id)
     if not unload_ok and manager is not None:
         manager._closing = False

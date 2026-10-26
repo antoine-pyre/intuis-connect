@@ -1,150 +1,159 @@
+# Static descriptions: names are validated against current home data by each handler.
 switch_schedule:
   name: Switch Schedule
-  description: Switch to a different heating schedule. The schedule applies to all
-    rooms in the home.
+  description: Activate a schedule in the selected home. Names are validated against its current schedules.
   fields:
+    home_id:
+      name: Home ID
+      description: Target a loaded home by its Intuis home ID. Without a target, uses the first loaded
+        home (and warns if several are loaded).
+      required: false
+      selector:
+        text: {}
     schedule_name:
       name: Schedule Name
-      description: Select the schedule to activate.
+      description: Exact schedule name in the selected home.
       required: true
       selector:
-        select:
-          options: &id001
-          - label: 'Rouge '
-            value: 'Rouge '
-          - label: Normal
-            value: Normal
+        text: {}
 refresh_schedules:
   name: Refresh Schedules
-  description: Force a refresh of all schedule and home data from the Intuis API.
+  description: Fetch the current schedules for the selected home, or all homes if omitted.
+  fields:
+    home_id:
+      name: Home ID
+      description: Target a loaded home by its Intuis home ID. Without a target, applies to all loaded
+        homes.
+      required: false
+      selector:
+        text: {}
 set_schedule_slot:
   name: Set Schedule Slot
-  description: Set a zone for a specific time range in the active heating schedule.
-    Creates a slot from start_time to end_time with the specified zone.
+  description: Replace a complete interval in the selected home’s active weekly schedule. Supply start_day
+    and end_day, or the legacy day field for both.
   fields:
-    day:
-      name: Day of Week
-      description: Select the day of the week.
-      required: true
+    home_id:
+      name: Home ID
+      description: Target a loaded home by its Intuis home ID. Without a target, uses the first loaded
+        home (and warns if several are loaded).
+      required: false
       selector:
+        text: {}
+    start_day:
+      name: Start Day
+      description: 'Start day: 0=Monday, 6=Sunday. Required unless day is supplied.'
+      required: false
+      selector: &id001
         select:
           options:
-          - label: Lundi
-            value: '0'
-          - label: Mardi
-            value: '1'
-          - label: Mercredi
-            value: '2'
-          - label: Jeudi
-            value: '3'
-          - label: Vendredi
-            value: '4'
-          - label: Samedi
-            value: '5'
-          - label: Dimanche
-            value: '6'
+          - value: '0'
+            label: Monday
+          - value: '1'
+            label: Tuesday
+          - value: '2'
+            label: Wednesday
+          - value: '3'
+            label: Thursday
+          - value: '4'
+            label: Friday
+          - value: '5'
+            label: Saturday
+          - value: '6'
+            label: Sunday
+    end_day:
+      name: End Day
+      description: 'End day: 0=Monday, 6=Sunday. Required unless day is supplied.'
+      required: false
+      selector: *id001
+    day:
+      name: Day (Legacy)
+      description: Compatibility alias supplying both days when start_day/end_day are omitted.
+      required: false
+      selector: *id001
     start_time:
       name: Start Time
-      description: When the zone should start (24-hour format).
+      description: Start time HH:MM; seconds must be zero.
       required: true
-      example: 08:00
       selector:
-        time: null
+        time: {}
     end_time:
       name: End Time
-      description: When the zone should end.
+      description: End time HH:MM. Same-day 00:00 means the following midnight.
       required: true
-      example: '22:00'
       selector:
-        time: null
+        time: {}
     zone_name:
       name: Zone Name
-      description: Select the zone to apply.
+      description: Zone name in the active schedule of the selected home.
       required: true
       selector:
-        select:
-          options:
-          - label: Comfort
-            value: Comfort
-          - label: Eco
-            value: Eco
-          - label: À la maison
-            value: À la maison
-          - label: Nuit
-            value: Nuit
+        text: {}
 set_zone_temperature:
   name: Set Zone Temperature
-  description: Set the temperature for a specific room in a schedule zone. Works with
-    any schedule, not just the active one.
+  description: Set a room’s temperature in a schedule zone, preserving half degrees.
   fields:
+    home_id:
+      name: Home ID
+      description: Target a loaded home by its Intuis home ID. Without a target, uses the first loaded
+        home (and warns if several are loaded).
+      required: false
+      selector:
+        text: {}
     schedule_name:
       name: Schedule Name
-      description: Select the schedule to modify.
+      description: Exact schedule name in the selected home.
       required: true
       selector:
-        select:
-          options: *id001
+        text: {}
     zone_name:
       name: Zone Name
-      description: Select the zone within the schedule.
+      description: Zone name in that schedule.
       required: true
       selector:
-        select:
-          options:
-          - label: Comfort
-            value: Comfort
-          - label: Eco
-            value: Eco
-          - label: À la maison
-            value: À la maison
-          - label: Nuit
-            value: Nuit
+        text: {}
     room_name:
       name: Room Name
-      description: Select the room to set temperature for.
+      description: Room name in that zone and home.
       required: true
       selector:
-        select:
-          options: &id002
-          - label: Salon
-            value: Salon
-          - label: Chambre
-            value: Chambre
-          - label: Bureau
-            value: Bureau
-          - label: Cuisine
-            value: Cuisine
+        text: {}
     temperature:
       name: Temperature
-      description: Target temperature in Celsius (5-30).
+      description: Temperature from 5 to 30 °C in 0.5 °C steps.
       required: true
       selector:
         number:
           min: 5
           max: 30
           step: 0.5
-          unit_of_measurement: °C
           mode: box
+          unit_of_measurement: °C
 import_energy_history:
   name: Import Energy History
-  description: Import historical energy data from Intuis cloud to existing sensor
-    entities. Data appears on the same energy sensor entities used in the Energy Dashboard.
+  description: Import complete local days with validated coverage. Requires existing live recorder statistics;
+    failures preserve history.
   fields:
+    home_id:
+      name: Home ID
+      description: Target a loaded home by its Intuis home ID. Without a target, applies to all loaded
+        homes.
+      required: false
+      selector:
+        text: {}
     days:
       name: Days to Import
-      description: Number of days of history to import (1-730).
+      description: Whole number of closed days to import (1–730).
       required: false
-      default: 365
       selector:
         number:
           min: 1
           max: 730
           step: 1
           mode: box
+      default: 365
     room_name:
       name: Room (Optional)
-      description: Import only this room. Leave empty for all rooms.
+      description: Leave empty for all rooms. Without home_id, only homes containing this room are imported.
       required: false
       selector:
-        select:
-          options: *id002
+        text: {}

@@ -142,6 +142,19 @@ service: intuis_connect.refresh_schedules
 
 ---
 
+## Multi-Home Services
+
+All domain services accept optional `home_id` to target an Intuis home. Without
+it, planning mutations use the first loaded home (with a warning if several are
+loaded), while refresh and history import target all homes. A nonempty import
+`room_name` filters homes containing that room. Unknown or blank explicit home
+IDs are rejected before any command.
+
+Schedule, zone and room names are text inputs validated against the target home’s
+current data. Run `refresh_schedules` after renaming them; no restart is needed.
+Installed `services.yaml` is static and is never rewritten with account data.
+See [multi-home service examples and lifecycle](docs/10-multi-home-services.md).
+
 ## Configuration Options
 
 Accessible via **Settings → Devices & Services → Intuis Connect → Configure**

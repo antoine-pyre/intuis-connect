@@ -47,8 +47,9 @@ utiliser les fixtures suivantes de `tests/conftest.py` :
 
 Les smoke tests de `tests/harness/` exercent le véritable handler de refresh via
 le registry et son schéma, le Store HA sur disque, une transaction et un rollback
-sur les tables recorder, ainsi que le transport HTTP. L’écriture de `services.yaml`
-est isolée dans ce test pour éviter de modifier les sources pendant les tests.
+sur les tables recorder, ainsi que le transport HTTP. Les descriptions `services.yaml` sont désormais statiques ; setup et refresh
+ne les écrivent plus. Le contrat multi-domicile est testé via les vrais schémas
+et inclut un setup/refresh avec écritures du composant interdites.
 
 La fixture SQLite **ne lance pas le worker recorder** et ne prouve pas le
 fonctionnement des imports mis en file. Les tests de `test_history_import.py`
