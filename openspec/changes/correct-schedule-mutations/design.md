@@ -33,3 +33,20 @@ Les limites cycliques et les plannings sans transition à zéro exigent des test
 3. Exécuter les contrôles ciblés puis la suite et la matrice supportée.
 4. Documenter les changements de comportement et les limites de compatibilité.
 5. En cas de régression, revenir à la version de code précédente ; ne jamais supprimer les données utilisateur pour effectuer ce retour. Une transaction recorder déjà confirmée ne s’annule pas par simple rollback du code.
+
+
+## Décisions d’implémentation — 26 octobre 2026
+
+- `schedule_mutations.py` mutualise les deux opérations et la sérialisation du payload.
+  La map de verrous est déclarée et typée dans `IntuisAPI` ; elle est partagée par
+  services et number, avec résolution des modèles après acquisition puis avant publication.
+- La copie reste privée jusqu’à confirmation du cloud. Une erreur API ou une
+  valeur invalide ne modifie ni le planning ni le cache confirmé des entités.
+- `schedule_slot_offsets` valide les paramètres du service, conserve `day` en alias
+  et la convention de fin à minuit le même jour. Les secondes non nulles et les
+  intervalles ambigus sont refusés explicitement.
+- Les 42 régressions nouvelles passent par les vrais handlers enregistrés ou le
+  setter de l’entité number ; l’invariance est vérifiée minute par minute sur une
+  semaine complète, et une course mixte inclut un remplacement du modèle pendant l’attente API.
+- Les verrous ne prétendent pas coordonner les modifications provenant d’autres
+  clients Intuis : aucune version/ETag de planning n’est fournie au contrat utilisé.

@@ -210,6 +210,7 @@ class IntuisAPI:
         self._refresh_token: str | None = None
         self._expiry: float | None = None
         self._debug: bool = debug
+        self._schedule_mutation_locks: dict[str, asyncio.Lock] = {}
 
         # Rate limiting configuration
         self._rate_limit_delay = rate_limit_delay

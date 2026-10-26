@@ -7,6 +7,7 @@ from homeassistant.components.number import NumberEntity, NumberDeviceClass, Num
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -18,7 +19,8 @@ from .entity.intuis_schedule import (
     IntuisThermZone,
     IntuisRoomTemperature,
 )
-from .intuis_api.api import IntuisAPI, APIError, CannotConnect, RateLimitError
+from .intuis_api.api import IntuisAPI
+from .schedule_mutations import async_set_zone_temperature
 from .utils.const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -242,88 +244,17 @@ class IntuisZoneTemperatureNumber(CoordinatorEntity[IntuisDataUpdateCoordinator]
         return self._cached_temp
 
     async def async_set_native_value(self, value: float) -> None:
-        """Update the zone temperature."""
-        intuis_home = self.coordinator.data.get("intuis_home")
-        if not intuis_home:
-            _LOGGER.error("No intuis_home data available")
-            return
-
-        # Find the schedule
-        target_schedule = None
-        for schedule in intuis_home.schedules:
-            if isinstance(schedule, IntuisThermSchedule) and schedule.id == self._schedule_id:
-                target_schedule = schedule
-                break
-
-        if not target_schedule:
-            _LOGGER.error("Schedule %s not found", self._schedule_id)
-            return
-
-        # Update local rooms_temp
-        for zone in target_schedule.zones:
-            if not isinstance(zone, IntuisThermZone):
-                continue
-            if zone.id != self._zone_id:
-                continue
-            for room_temp in zone.rooms_temp:
-                if room_temp.room_id == self._room_id:
-                    old_temp = room_temp.temp
-                    room_temp.temp = int(value)
-                    _LOGGER.info(
-                        "Updating temperature for room '%s' in zone '%s' of schedule '%s': %d -> %d",
-                        self._room_name,
-                        self._zone_name,
-                        self._schedule_name,
-                        old_temp,
-                        int(value),
-                    )
-                    break
-            break
-
-        # Build zones payload (only rooms_temp, not rooms - API requirement)
-        zones_payload = []
-        for zone in target_schedule.zones:
-            if isinstance(zone, IntuisThermZone):
-                zone_data = {
-                    "id": zone.id,
-                    "name": zone.name,
-                    "type": zone.type,
-                    "rooms_temp": [
-                        {"room_id": rt.room_id, "temp": rt.temp}
-                        for rt in zone.rooms_temp
-                    ],
-                }
-                zones_payload.append(zone_data)
-
-        # Build timetable payload
-        timetable = [
-            {"zone_id": t.zone_id, "m_offset": t.m_offset}
-            for t in target_schedule.timetables
-        ]
-
+        """Preserve half degrees and publish only after a confirmed cloud write."""
         try:
-            await self._api.async_sync_schedule(
-                schedule_id=target_schedule.id,
-                schedule_name=target_schedule.name,
-                schedule_type=target_schedule.type,
-                timetable=timetable,
-                zones=zones_payload,
-                away_temp=target_schedule.away_temp,
-                hg_temp=target_schedule.hg_temp,
+            await async_set_zone_temperature(
+                self._api, lambda: self.coordinator.data["intuis_home"],
+                self._schedule_id, self._room_id, value, zone_id=self._zone_id,
             )
-
-            # Optimistic update
-            self._cached_temp = value
-            self.async_write_ha_state()
-
-            # Refresh coordinator
-            await self.coordinator.async_request_refresh()
-
-            _LOGGER.info("Zone temperature updated successfully")
-
-        except (APIError, CannotConnect, RateLimitError) as err:
-            _LOGGER.error("Failed to set zone temperature: %s", err)
-            raise
+        except ValueError as err:
+            raise ServiceValidationError(str(err)) from err
+        self._cached_temp = float(value)
+        self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
 
     @callback
     def _handle_coordinator_update(self) -> None:
