@@ -317,15 +317,24 @@ async def test_new_price_rewrites_only_the_targeted_room(
     assert await series(live_recorder, statistic_id("home", None, "cost")) == total
 
 
-async def test_missing_energy_fails_visibly_and_keeps_costs(
+async def test_missing_energy_is_reported_and_keeps_costs(
     ha_hass, ha_entry_factory, live_recorder, monkeypatch, frozen_clock
 ):
     await service_home(ha_hass, ha_entry_factory, monkeypatch, frozen_clock)
     await recalc(ha_hass, days=1)
     before = await series(live_recorder, statistic_id("home", "a", "cost"))
-    # Two days: the first day has no confirmed energy.
+    # Two days: the first day has no confirmed energy, so it gets no cost, and
+    # the confirmed day is recalculated identically. The gap is reported.
+    response = await recalc(ha_hass, days=2)
+    home = response["homes"]["home"]
+    assert home["status"] == "partial" and home["rooms_recalculated"] == 2
+    assert home["home_total"] == "partial"
+    assert any("24 hours without confirmed energy" in e for e in home["errors"])
+    assert await series(live_recorder, statistic_id("home", "a", "cost")) == before
+    # A period without any confirmed energy fails visibly.
+    frozen_clock.move_to("2026-10-28 00:20:00")
     with pytest.raises(HomeAssistantError, match="No confirmed hourly energy"):
-        await recalc(ha_hass, days=2)
+        await recalc(ha_hass, days=1)
     assert await series(live_recorder, statistic_id("home", "a", "cost")) == before
 
 

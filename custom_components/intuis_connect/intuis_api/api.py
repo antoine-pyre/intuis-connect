@@ -751,12 +751,16 @@ class IntuisAPI:
 
     @staticmethod
     def _parse_energy_samples(
-        data: Any, *, require_timestamps: bool = False
+        data: Any, *, require_timestamps: bool = False, step: int = 86400
     ) -> list[tuple[int, float]]:
         """Validate cloud samples without turning absent/invalid values into zero.
 
         Null tariff columns are ignored. A row with no numeric measurement is
         absent, so daily callers can detect gaps instead of importing fake zeros.
+        A block without step_time (the cloud omits it, e.g. for a single value)
+        uses the requested scale's step. Timestamps are returned as sent: the
+        cloud stamps aggregated periods inside them (1day at local noon), so
+        callers map each one to the period that contains it.
         """
         if not isinstance(data, dict) or data.get("error"):
             raise APIError("Energy API returned an error or malformed response")
@@ -767,13 +771,12 @@ class IntuisAPI:
         for measure in body:
             if not isinstance(measure, dict) or not isinstance(measure.get("value"), list):
                 raise APIError("Malformed energy measure")
-            begin, step = measure.get("beg_time"), measure.get("step_time", 86400)
+            begin, block_step = measure.get("beg_time"), measure.get("step_time", step)
             if require_timestamps:
                 if (isinstance(begin, bool) or not isinstance(begin, (int, float))
                         or not math.isfinite(begin) or begin < 0 or int(begin) != begin
-                        or isinstance(step, bool) or not isinstance(step, (int, float))
-                        or not math.isfinite(step) or step <= 0 or int(step) != step):
-                    raise APIError("Invalid energy sample timestamps")
+                        or block_step != step):
+                    raise APIError("Invalid energy sample timestamps or step")
             for index, values in enumerate(measure["value"]):
                 if not isinstance(values, list):
                     raise APIError("Malformed energy sample")
@@ -791,7 +794,7 @@ class IntuisAPI:
                 if measured:
                     if not math.isfinite(total):
                         raise APIError("Energy total is not finite")
-                    timestamp = int(begin + index * step) if require_timestamps else 0
+                    timestamp = int(begin + index * block_step) if require_timestamps else 0
                     samples.append((timestamp, total))
         if not samples:
             raise EnergyDataUnavailable("No measured energy in cloud response")
@@ -803,7 +806,8 @@ class IntuisAPI:
         """Return measured daily values in Wh, raising on errors or no data.
 
         Days containing only null tariff columns are omitted, never fabricated
-        as zero. Import callers must validate coverage before replacing history.
+        as zero. Timestamps are those of the cloud (local noon for a day), so
+        import callers map each one to the local day that contains it.
         """
         form_data = {
             "home_id": self.home_id,
@@ -824,7 +828,14 @@ class IntuisAPI:
 
     async def async_get_room_energy_hourly(self, room_id: str, date_begin: int,
                                           date_end: int) -> list[tuple[int, float]]:
-        """Fetch bounded hourly chunks; identical boundary repeats are not summed."""
+        """Measured hours of [date_begin, date_end), keyed by the hour's start.
+
+        Chunks are bounded; identical boundary repeats are not summed. A sample
+        stamped inside an hour (e.g. at its middle) belongs to that hour.
+        Samples of hours outside the period, such as the exclusive endpoint,
+        are not part of the request and are ignored. A chunk without any
+        measurement is a gap, not an error: the result may be empty.
+        """
         if (type(date_begin) is not int or type(date_end) is not int
                 or date_begin < 0 or date_end <= date_begin
                 or date_end - date_begin > 731 * 86400):
@@ -840,18 +851,19 @@ class IntuisAPI:
                     data = await resp.json()
                 except (ValueError, aiohttp.ClientError) as err:
                     raise APIError("Invalid hourly energy response") from err
-            samples = self._parse_energy_samples(data, require_timestamps=True)
-            # Hourly responses must explicitly declare their sample interval.
-            if any(m.get("step_time") != 3600 for m in data.get("body", []) if isinstance(m, dict)):
-                raise APIError("Hourly measures require step_time=3600")
+            try:
+                samples = self._parse_energy_samples(
+                    data, require_timestamps=True, step=3600
+                )
+            except EnergyDataUnavailable:
+                samples = []
             for ts, wh in samples:
-                if ts == date_end:
-                    continue  # API may include the exclusive endpoint.
-                if not date_begin <= ts < date_end or ts % 3600:
-                    raise APIError("Hourly response lies outside aligned request period")
-                if ts in values and values[ts] != wh:
-                    raise APIError("Conflicting hourly chunk boundary")
-                values[ts] = wh
+                hour = ts - ts % 3600
+                if not date_begin <= hour < date_end:
+                    continue
+                if hour in values and values[hour] != wh:
+                    raise APIError("Conflicting hourly measurements")
+                values[hour] = wh
             chunk = end
         return sorted(values.items())
 

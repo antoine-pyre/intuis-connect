@@ -1,5 +1,8 @@
 """Atomic, acknowledged energy-history replacement on HA's recorder thread.
 
+A replacement covers one or more windows of confirmed data. Periods between
+windows have no confirmed measurement: their rows are kept, never zeroed.
+
 The adapter deliberately refuses an import without a live short-term anchor.
 HA continues a total_increasing sensor from short-term statistics, not hourly
 history; fabricating a reset at midnight would corrupt counters reset at 02:00.
@@ -68,16 +71,97 @@ def _finite(value: Any) -> bool:
     )
 
 
+# A replacement period: [start, end) and its confirmed samples, all inside it.
+Window = tuple[datetime, datetime, tuple[tuple[datetime, float], ...]]
+
+
+def _replace_windows(
+    session: Any,
+    tables: tuple[type, ...],
+    metadata_id: int,
+    windows: tuple[Window, ...],
+    cancelled: threading.Event,
+) -> tuple[float, int, int]:
+    """Replace each window in order; rows between windows keep their values.
+
+    A gap is a period without confirmed data: its rows are neither deleted nor
+    fabricated, they only follow the sum offset like every later row.
+    Returns the final cumulative sum, cleared and adjusted row counts.
+    """
+
+    def sum_before(boundary: float) -> float:
+        candidates = [
+            session.scalar(
+                select(table)
+                .where(table.metadata_id == metadata_id, table.start_ts < boundary)
+                .order_by(table.start_ts.desc())
+                .limit(1)
+            )
+            for table in tables
+        ]
+        existing = [row for row in candidates if row is not None]
+        return max(existing, key=lambda row: row.start_ts).sum if existing else 0.0
+
+    cumulative = 0.0
+    cleared = adjusted = 0
+    for start, end, samples in windows:
+        start_ts, end_ts = start.timestamp(), end.timestamp()
+        baseline = sum_before(start_ts)
+        old_final = sum_before(end_ts)
+        if not _finite(baseline) or not _finite(old_final):
+            raise HistoryReplacementError(
+                "Existing cumulative sums are invalid; history was preserved"
+            )
+        if cancelled.is_set():
+            raise asyncio.CancelledError
+        cumulative = baseline
+        rows = []
+        for timestamp, value in samples:
+            cumulative += value
+            if not math.isfinite(cumulative):
+                raise HistoryReplacementError("Cumulative value is not finite")
+            rows.append(
+                Statistics.from_stats(
+                    metadata_id, {"start": timestamp, "state": value, "sum": cumulative}
+                )
+            )
+        for table in tables:
+            cleared += session.execute(
+                delete(table).where(
+                    table.metadata_id == metadata_id,
+                    table.start_ts >= start_ts,
+                    table.start_ts < end_ts,
+                )
+            ).rowcount
+        session.add_all(rows)
+        # Later rows keep their own increments; only their offset follows.
+        delta = cumulative - old_final
+        if delta:
+            for table in tables:
+                adjusted += session.execute(
+                    update(table)
+                    .where(table.metadata_id == metadata_id, table.start_ts >= end_ts)
+                    .values(sum=table.sum + delta)
+                ).rowcount
+        # The next window's baseline must see this window's rows.
+        session.flush()
+    if cancelled.is_set():
+        raise asyncio.CancelledError
+    return cumulative, cleared, adjusted
+
+
+def _all_samples(windows: tuple[Window, ...]) -> list[tuple[datetime, float]]:
+    return [sample for _, _, samples in windows for sample in samples]
+
+
 def _replace_in_transaction(
     instance: Any,
     entity_id: str,
-    start: datetime,
-    end: datetime,
-    samples: tuple[tuple[datetime, float], ...],
+    windows: tuple[Window, ...],
     cancelled: threading.Event,
 ) -> ReplacementResult:
     """Run only on the recorder worker; any exception rolls back all changes."""
-    start_ts, end_ts = start.timestamp(), end.timestamp()
+    end_ts = windows[-1][1].timestamp()
     with instance.get_session() as session, session.begin():
         meta = session.scalar(
             select(StatisticsMeta).where(StatisticsMeta.statistic_id == entity_id)
@@ -106,75 +190,16 @@ def _replace_in_transaction(
             raise HistoryReplacementError(
                 "No valid live short-term baseline after the import period; wait for live statistics, then retry the import"
             )
-
-        def sum_before(boundary: float) -> float:
-            candidates = [
-                session.scalar(
-                    select(table)
-                    .where(
-                        table.metadata_id == meta.id,
-                        table.start_ts < boundary,
-                    )
-                    .order_by(table.start_ts.desc())
-                    .limit(1)
-                )
-                for table in (Statistics, StatisticsShortTerm)
-            ]
-            existing = [row for row in candidates if row is not None]
-            return max(existing, key=lambda row: row.start_ts).sum if existing else 0.0
-
-        baseline = sum_before(start_ts)
-        old_final = sum_before(end_ts)
-        if not _finite(baseline) or not _finite(old_final):
-            raise HistoryReplacementError(
-                "Existing cumulative sums are invalid; history was preserved"
-            )
-        if cancelled.is_set():
-            raise asyncio.CancelledError
-        cumulative = baseline
-        rows = []
-        for timestamp, energy in samples:
-            cumulative += energy
-            if not math.isfinite(cumulative):
-                raise HistoryReplacementError("Cumulative energy is not finite")
-            rows.append(
-                Statistics.from_stats(
-                    meta.id, {"start": timestamp, "state": energy, "sum": cumulative}
-                )
-            )
-        cleared = 0
-        for table in (Statistics, StatisticsShortTerm):
-            deleted = session.execute(
-                delete(table).where(
-                    table.metadata_id == meta.id,
-                    table.start_ts >= start_ts,
-                    table.start_ts < end_ts,
-                )
-            )
-            cleared += deleted.rowcount
-        session.add_all(rows)
-        # This preserves already-recorded increments after the boundary. The
-        # first post-import state is a daily counter, not a consumption delta.
-        delta = cumulative - old_final
-        adjusted = 0
-        if delta:
-            for table in (Statistics, StatisticsShortTerm):
-                result = session.execute(
-                    update(table)
-                    .where(
-                        table.metadata_id == meta.id,
-                        table.start_ts >= end_ts,
-                    )
-                    .values(sum=table.sum + delta)
-                )
-                adjusted += result.rowcount
-        session.flush()
-        if cancelled.is_set():
-            raise asyncio.CancelledError
+        # The first post-import state is a daily counter, not a consumption
+        # delta, so already-recorded increments after a window are preserved.
+        final_sum, cleared, adjusted = _replace_windows(
+            session, (Statistics, StatisticsShortTerm), meta.id, windows, cancelled
+        )
+        samples = _all_samples(windows)
         result = ReplacementResult(
             len(samples),
             sum(value for _, value in samples),
-            cumulative,
+            final_sum,
             cleared,
             adjusted,
         )
@@ -184,13 +209,10 @@ def _replace_in_transaction(
 def _replace_external_in_transaction(
     instance: Any,
     meta_data: dict[str, Any],
-    start: datetime,
-    end: datetime,
-    samples: tuple[tuple[datetime, float], ...],
+    windows: tuple[Window, ...],
     cancelled: threading.Event,
 ) -> ExternalReplacementResult:
     """Replace one external series; metadata creation shares the rollback."""
-    start_ts, end_ts = start.timestamp(), end.timestamp()
     statistic_id = meta_data["statistic_id"]
     with instance.get_session() as session, session.begin():
         meta = session.scalar(
@@ -211,62 +233,15 @@ def _replace_external_in_transaction(
             raise HistoryReplacementError(
                 "Existing external statistics metadata is incompatible; history was preserved"
             )
-
-        def sum_before(boundary: float) -> float:
-            row = session.scalar(
-                select(Statistics)
-                .where(
-                    Statistics.metadata_id == meta.id, Statistics.start_ts < boundary
-                )
-                .order_by(Statistics.start_ts.desc())
-                .limit(1)
-            )
-            return 0.0 if row is None else row.sum
-
-        baseline = sum_before(start_ts)
-        old_final = sum_before(end_ts)
-        if not _finite(baseline) or not _finite(old_final):
-            raise HistoryReplacementError(
-                "Existing cumulative sums are invalid; history was preserved"
-            )
-        if cancelled.is_set():
-            raise asyncio.CancelledError
-        cumulative = baseline
-        rows = []
-        for timestamp, energy in samples:
-            cumulative += energy
-            if not math.isfinite(cumulative):
-                raise HistoryReplacementError("Cumulative energy is not finite")
-            rows.append(
-                Statistics.from_stats(
-                    meta.id, {"start": timestamp, "state": energy, "sum": cumulative}
-                )
-            )
-        cleared = session.execute(
-            delete(Statistics).where(
-                Statistics.metadata_id == meta.id,
-                Statistics.start_ts >= start_ts,
-                Statistics.start_ts < end_ts,
-            )
-        ).rowcount
-        session.add_all(rows)
-        # Later hours keep their own consumption; only their offset follows.
-        delta = cumulative - old_final
-        adjusted = 0
-        if delta:
-            adjusted = session.execute(
-                update(Statistics)
-                .where(Statistics.metadata_id == meta.id, Statistics.start_ts >= end_ts)
-                .values(sum=Statistics.sum + delta)
-            ).rowcount
-        session.flush()
-        if cancelled.is_set():
-            raise asyncio.CancelledError
+        final_sum, cleared, adjusted = _replace_windows(
+            session, (Statistics,), meta.id, windows, cancelled
+        )
+        samples = _all_samples(windows)
         result = ExternalReplacementResult(
             statistic_id,
             len(samples),
             sum(value for _, value in samples),
-            cumulative,
+            final_sum,
             cleared,
             adjusted,
             created,
@@ -352,6 +327,35 @@ def _validate_samples(
         previous_ts = ts
 
 
+def _validate_windows(
+    windows: tuple[Window, ...], *, allow_negative: bool = False
+) -> tuple[Window, ...]:
+    """Chronological, disjoint, hour-aligned windows, each with valid samples.
+
+    The recorder only stores rows that start on the hour, so every window
+    boundary and sample must too; anything else is refused before queueing.
+    """
+    windows = tuple(windows)
+    if not windows:
+        raise HistoryReplacementError("Invalid or empty replacement period")
+    previous_end = None
+    for start, end, samples in windows:
+        _validate_samples(start, end, samples, allow_negative=allow_negative)
+        if previous_end is not None and start < previous_end:
+            raise HistoryReplacementError(
+                "Replacement windows must be chronological and disjoint"
+            )
+        if any(
+            moment.timestamp() % HOUR
+            for moment in (start, end, *(timestamp for timestamp, _ in samples))
+        ):
+            raise HistoryReplacementError(
+                "Replacement boundaries and samples must start on the hour"
+            )
+        previous_end = end
+    return windows
+
+
 async def _async_acknowledged(
     instance: Any, transaction: Callable[[Any, threading.Event], Any]
 ) -> Any:
@@ -385,17 +389,18 @@ async def _async_acknowledged(
 async def async_replace_energy_history(
     hass: Any,
     entity_id: str,
-    start: datetime,
-    end: datetime,
-    samples: tuple[tuple[datetime, float], ...],
+    windows: tuple[Window, ...],
 ) -> ReplacementResult:
-    """Replace a daily sensor's history in one acknowledged transaction."""
+    """Replace a daily sensor's measured windows in one acknowledged transaction.
+
+    Days between windows had no measurement: their rows are preserved.
+    """
     instance = _running_instance(hass)
-    _validate_samples(start, end, samples)
+    windows = _validate_windows(windows)
     return await _async_acknowledged(
         instance,
         lambda worker, cancelled: _replace_in_transaction(
-            worker, entity_id, start, end, samples, cancelled
+            worker, entity_id, windows, cancelled
         ),
     )
 
@@ -403,13 +408,12 @@ async def async_replace_energy_history(
 async def async_replace_external_history(
     hass: Any,
     meta_data: dict[str, Any],
-    start: datetime,
-    end: datetime,
-    samples: tuple[tuple[datetime, float], ...],
+    windows: tuple[Window, ...],
 ) -> ExternalReplacementResult:
-    """Replace every closed hour of an external series in one transaction.
+    """Replace the confirmed hours of an external series in one transaction.
 
-    Coverage must be complete: a hole would silently delete confirmed hours.
+    Each window must be complete: a hole inside it would silently delete
+    confirmed hours. Hours between windows are unconfirmed and preserved.
     Replaying the same samples rewrites identical rows and adjusts nothing.
     Energy series are in kWh and nonnegative; cost series are in a currency
     and may be negative (negative tariffs).
@@ -428,18 +432,16 @@ async def async_replace_external_history(
         )
     ):
         raise HistoryReplacementError("Invalid external statistics metadata")
-    _validate_samples(start, end, samples, allow_negative=is_cost)
-    start_ts, end_ts = start.timestamp(), end.timestamp()
-    if (
-        start_ts % HOUR
-        or end_ts % HOUR
-        or [timestamp.timestamp() for timestamp, _ in samples]
-        != [float(ts) for ts in range(int(start_ts), int(end_ts), HOUR)]
-    ):
-        raise HistoryReplacementError("External hourly coverage must be complete")
+    windows = _validate_windows(windows, allow_negative=is_cost)
+    for start, end, samples in windows:
+        if [timestamp.timestamp() for timestamp, _ in samples] != [
+            float(ts)
+            for ts in range(int(start.timestamp()), int(end.timestamp()), HOUR)
+        ]:
+            raise HistoryReplacementError("External hourly coverage must be complete")
     return await _async_acknowledged(
         instance,
         lambda worker, cancelled: _replace_external_in_transaction(
-            worker, meta_data, start, end, samples, cancelled
+            worker, meta_data, windows, cancelled
         ),
     )

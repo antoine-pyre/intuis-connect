@@ -93,14 +93,29 @@ option stops collection and keeps every statistic already written.
 
 ## Home total
 
-The home series is the hour-by-hour sum of its rooms, written only when every
-room is confirmed for the same hours. If a room fails, the job reports the home
-total as incomplete, names the missing rooms, and keeps the last complete total
-instead of writing a partial sum. The existing daily home aggregate is unchanged.
+The home series is the hour-by-hour sum of its rooms, written only for hours
+every room confirmed: `home_total` is `complete` when that covers the whole
+period, `partial` when some hours wait for a room (they keep their last value
+and a later run fills them). If a room fails, the job reports the home total as
+incomplete, names the missing rooms, and writes no home hour instead of a partial
+sum. The existing daily home aggregate is unchanged.
+
+## Gaps
+
+An hour the cloud has not measured (null tariff columns, an omitted hour, or the
+last closed hour not yet published) is a gap, never a zero. Each room writes its
+confirmed hours only; existing rows of a gap are kept and follow the cumulative
+offset. The updater's 48-hour re-read fills such gaps once the cloud has them.
 
 ## Cloud API
 
 Hourly data comes from `POST /api/getroommeasure` with `scale=1hour`, the
 energy measure types used by the daily sensors, and `date_begin`/`date_end` in
-UTC seconds. Responses must declare `step_time=3600`. Real cloud behaviour and
-device data are not exercised by the offline tests.
+UTC seconds. A block without `step_time` (the cloud omits it, e.g. on a single
+value) uses 3600; a block declaring another step is refused. As for `1day`
+samples, stamped at local noon, a sample stamped inside an hour (e.g. at its
+middle) belongs to that hour. Samples of hours outside the period, such as the
+exclusive endpoint, are ignored, and a chunk without any measurement is a gap.
+The hourly response shape is inferred from the documented daily one and from
+TheFab21's implementation; real cloud behaviour and device data are not
+exercised by the offline tests.

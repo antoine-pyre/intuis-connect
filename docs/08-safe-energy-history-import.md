@@ -22,24 +22,31 @@ This requirement preserves HA's live cumulative baseline: the sensor recorder
 continues sums from short-term statistics, not hourly history. Fabricating a new
 zero at midnight would be wrong for counters whose reset hour is 02:00.
 
-Every requested closed day must have exactly one finite, nonnegative measurement
-at its local-midnight timestamp. A measured zero is valid; empty, missing,
-duplicate, shifted-day or malformed measurements are rejected **before mutation**.
-Coverage follows calendar days, including 23-hour and 25-hour DST days. Local day
-boundaries not aligned with HA's hourly statistics are explicitly refused.
+Each measured day is mapped to the **local day that contains its timestamp**:
+the cloud stamps a `1day` sample inside its day, at local noon (see the response
+in [energy consumption](06-energy-consumption.md)). A block without `step_time`
+uses the day step. A measured zero is valid. A day whose tariff columns are all
+null, or that the cloud omits, has **no measurement**: it is a gap, not a zero.
+Its existing statistics are kept and only follow the cumulative offset, like
+every later row; a later import fills it once the cloud has it. Days before the
+first measurement (installation, cloud retention) are such gaps. Duplicate days
+or malformed values refuse the room **before mutation**; samples of days outside
+the requested period are ignored. Coverage follows calendar days, including
+23-hour and 25-hour DST days, and the result reports `days_without_data`.
 
-If the cloud returns fixed UTC days instead of the requested local boundaries,
-the import refuses the series instead of replacing a mismatched period. Existing
-statistics remain available. Correct the API data/period or retry after missing
-data becomes available; do not delete recorder history to work around an error.
+HA stores statistics on whole UTC hours. In zones offset by a fraction of an hour
+(UTC+5:30, +5:45, -3:30...), local midnight is not one, so a day's row starts at
+the first whole hour of that local day (00:30 or 00:45 local) and the replaced
+period follows the same boundaries.
 
 ## Replacement and continuity
 
 `recorder_import.py` queues a custom `RecorderTask` on HA's actual recorder worker.
-Inside **one SQLAlchemy transaction**, it reads the old boundary sums, deletes only
-the validated interval from hourly and short-term statistics, inserts the validated
-daily hourly points (including zero days), and adjusts post-period cumulative sums
-by `new_boundary_sum - old_boundary_sum`.
+Inside **one SQLAlchemy transaction**, for each window of consecutive measured
+days, it reads the old boundary sums, deletes only that window from hourly and
+short-term statistics, inserts the validated daily points (including zero days),
+and adjusts later cumulative sums by `new_boundary_sum - old_boundary_sum`. Rows
+of unmeasured days between windows are never deleted.
 
 The last sums are read from the most recent hourly or short-term row before each
 boundary. The post-period sensor state is a daily counter, not a consumption delta;

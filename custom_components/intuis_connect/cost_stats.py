@@ -8,7 +8,7 @@ price, and costs are derived from confirmed kWh rather than re-fetched data.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 import math
 from typing import Any
@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .external_statistics import metadata, statistic_id
-from .hourly_series import HOUR, sum_hourly
+from .hourly_series import HOUR, home_total_status, hourly_windows, sum_hourly
 from .recorder_import import (
     ExternalReplacementResult,
     HistoryReplacementError,
@@ -99,16 +99,19 @@ def fixed_prices(price: object, hours: Sequence[int]) -> tuple[float, ...]:
 
 
 def hourly_costs(
-    energy: Sequence[tuple[datetime, float]], prices: Sequence[float]
+    energy: Sequence[tuple[datetime, float]], prices: Mapping[int, float]
 ) -> tuple[tuple[datetime, float], ...]:
-    """Unrounded hourly cost; rounding is a display concern only."""
-    if len(energy) != len(prices):
-        raise CostPriceError("Each confirmed hour needs exactly one price")
+    """Unrounded cost of each confirmed hour; rounding is a display concern only.
+
+    Hours without confirmed energy have no cost: their cost rows are kept.
+    """
     previous = None
     for start, kwh in energy:
         ts = start.timestamp()
-        if ts % HOUR or (previous is not None and ts != previous + HOUR):
-            raise CostPriceError("Cost hours must be contiguous closed hours")
+        if ts % HOUR or (previous is not None and ts <= previous):
+            raise CostPriceError("Cost hours must be chronological closed hours")
+        if int(ts) not in prices:
+            raise CostPriceError("Each confirmed hour needs exactly one price")
         if (
             isinstance(kwh, bool)
             or not isinstance(kwh, (int, float))
@@ -116,7 +119,7 @@ def hourly_costs(
         ):
             raise CostPriceError("Confirmed energy must be finite and nonnegative")
         previous = ts
-    return tuple((start, kwh * price) for (start, kwh), price in zip(energy, prices))
+    return tuple((start, kwh * prices[int(start.timestamp())]) for start, kwh in energy)
 
 
 def validate_cost_options(
@@ -215,14 +218,8 @@ async def async_write_costs(
     meta_data: dict[str, Any],
     costs: tuple[tuple[datetime, float], ...],
 ) -> ExternalReplacementResult:
-    """Replace one cost series in a single acknowledged transaction."""
-    return await async_replace_external_history(
-        hass,
-        meta_data,
-        costs[0][0],
-        datetime.fromtimestamp(costs[-1][0].timestamp() + HOUR, timezone.utc),
-        costs,
-    )
+    """Replace the costed hours of one series in a single acknowledged transaction."""
+    return await async_replace_external_history(hass, meta_data, hourly_windows(costs))
 
 
 def async_publish_costs(hass: HomeAssistant, entry_id: str) -> None:
@@ -248,7 +245,10 @@ async def async_last_cost(
 async def async_confirmed_energy(
     hass: HomeAssistant, home_id: str, room_id: str, start: int, end: int
 ) -> tuple[tuple[datetime, float], ...]:
-    """Confirmed hourly kWh of one room; a missing hour refuses the period."""
+    """Confirmed hourly kWh of one room; unconfirmed hours are left out.
+
+    A period without any confirmed hour is refused: there is nothing to cost.
+    """
     sid = statistic_id(home_id, room_id)
     rows = await get_instance(hass).async_add_executor_job(
         statistics.statistics_during_period,
@@ -265,17 +265,16 @@ async def async_confirmed_energy(
         row_start = row["start"]
         ts = row_start.timestamp() if isinstance(row_start, datetime) else row_start
         values[int(ts)] = row.get("state")
-    energy = []
-    for hour in range(start, end, HOUR):
-        kwh = values.get(hour)
-        if kwh is None:
-            raise CostPriceError(
-                "No confirmed hourly energy at "
-                f"{datetime.fromtimestamp(hour, timezone.utc).isoformat()}; "
-                "import hourly energy first"
-            )
-        energy.append((datetime.fromtimestamp(hour, timezone.utc), kwh))
-    return tuple(energy)
+    energy = tuple(
+        (datetime.fromtimestamp(hour, timezone.utc), values[hour])
+        for hour in range(start, end, HOUR)
+        if values.get(hour) is not None
+    )
+    if not energy:
+        raise CostPriceError(
+            "No confirmed hourly energy in the period; import hourly energy first"
+        )
+    return energy
 
 
 async def async_recalculate_costs(
@@ -309,8 +308,9 @@ async def async_recalculate_costs(
     costed: dict[str, tuple[tuple[datetime, float], ...]] = {}
     try:
         try:
-            prices = await async_hour_prices(
-                hass, options, currency, range(start, end, HOUR)
+            hours = range(start, end, HOUR)
+            prices = dict(
+                zip(hours, await async_hour_prices(hass, options, currency, hours))
             )
         except CostPriceError as err:
             result["errors"].append(str(err))
@@ -329,18 +329,24 @@ async def async_recalculate_costs(
             except (CostPriceError, HistoryReplacementError) as err:
                 result["errors"].append(f"{room_name}: {err}")
                 continue
+            if len(costs) < len(prices):
+                result["errors"].append(
+                    f"{room_name}: {len(prices) - len(costs)} hours without confirmed "
+                    "energy kept their previous costs"
+                )
             costed[room_id] = costs
             result["rooms_recalculated"] += 1
             result["total_cost"] += committed.total
         if prices is not None and room_filter is None and rooms:
-            if len(costed) == len(rooms):
+            total = sum_hourly(costed) if len(costed) == len(rooms) else ()
+            if total:
                 try:
                     await async_write_costs(
                         hass,
                         cost_metadata(intuis_home.id, None, intuis_home.name, currency),
-                        sum_hourly(costed),
+                        total,
                     )
-                    result["home_total"] = "complete"
+                    result["home_total"] = home_total_status(total, len(prices))
                 except HistoryReplacementError as err:
                     result["home_total"] = "incomplete"
                     result["errors"].append(f"Home: {err}")

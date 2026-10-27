@@ -126,15 +126,40 @@ async def test_room_filter_never_writes_the_home_total(
     api.async_get_room_energy_hourly.assert_awaited_once()
 
 
-async def test_staging_refusal_happens_before_any_write(
+async def test_unmeasured_hour_keeps_its_statistics_until_a_later_run(
     ha_hass, live_recorder, monkeypatch
 ):
-    # A hole in room b: a is written, b and the home total are not.
+    # The cloud has not published hour 1 of room b yet: its confirmed hours are
+    # written, and the home total only covers hours both rooms confirmed.
     api, home, manager = await importer(
-        ha_hass, monkeypatch, [wh(0, (1, 1)), wh(0, (1,))]
+        ha_hass, monkeypatch, [wh(0, (1000, 2000)), wh(0, (500,))]
     )
     result = await run(ha_hass, api, home, manager, 0, 2)
-    assert result["home_total"] == "incomplete"
+    assert result["status"] == "completed" and result["home_total"] == "partial"
+    assert manager.hourly_home_total == "partial"
+    assert await series(live_recorder, statistic_id("home", "b")) == [(ts(0), 0.5, 0.5)]
+    assert await series(live_recorder, statistic_id("home", None)) == [
+        (ts(0), 1.5, 1.5)
+    ]
+    # The next run sees hour 1 for both rooms and completes the same series.
+    api.async_get_room_energy_hourly.side_effect = [
+        wh(0, (1000, 2000)),
+        wh(0, (500, 250)),
+    ]
+    result = await run(ha_hass, api, home, manager, 0, 2)
+    assert result["home_total"] == "complete"
+    assert await series(live_recorder, statistic_id("home", None)) == [
+        (ts(0), 1.5, 1.5),
+        (ts(1), 2.25, 3.75),
+    ]
+
+
+async def test_room_without_any_measurement_keeps_home_total(
+    ha_hass, live_recorder, monkeypatch
+):
+    api, home, manager = await importer(ha_hass, monkeypatch, [wh(0, (1, 1)), []])
+    result = await run(ha_hass, api, home, manager, 0, 2)
+    assert result["home_total"] == "incomplete" and result["status"] == "partial"
     assert await series(live_recorder, statistic_id("home", "b")) is None
     assert await series(live_recorder, statistic_id("home", None)) is None
 

@@ -56,14 +56,26 @@ async def test_actual_http_hourly_chunk_boundaries_are_not_added(cloud_responses
     assert sum(len(requests) for requests in cloud_responses.requests.values())==2
 
 
-def test_staging_deduplicates_but_rejects_conflicts_and_holes():
-    from custom_components.intuis_connect.hourly_series import stage_hourly
+def test_staging_deduplicates_keeps_holes_and_rejects_conflicts():
+    from custom_components.intuis_connect.hourly_series import hourly_windows, stage_hourly
     from custom_components.intuis_connect.intuis_api.api import APIError
     result=stage_hourly([(0,500),(0,500),(3600,0)],0,7200)
     assert [value for _,value in result]==[0.5,0]
-    for samples in ([(0,500),(0,600),(3600,0)],[(0,500)]):
+    # An unmeasured hour is a gap between windows, never a fabricated zero.
+    gapped=stage_hourly([(0,500),(7200,0),(10800,250)],0,14400)
+    assert [(w[0].timestamp(),w[1].timestamp(),len(w[2])) for w in hourly_windows(gapped)]==[(0,3600,1),(7200,14400,2)]
+    for samples in ([(0,500),(0,600),(3600,0)],[]):
         with pytest.raises(APIError):
             stage_hourly(samples,0,7200)
+
+
+def test_home_sum_covers_only_hours_every_room_confirmed():
+    from custom_components.intuis_connect.hourly_series import home_total_status, sum_hourly
+    a=((hour(0),1.0),(hour(1),2.0),(hour(2),3.0))
+    b=((hour(0),0.5),(hour(2),0.25))
+    total=sum_hourly({'a':a,'b':b})
+    assert total==((hour(0),1.5),(hour(2),3.25))
+    assert home_total_status(total,3)=='partial' and home_total_status(total,2)=='complete'
 
 
 @pytest.mark.parametrize('time,expected', [('2026-10-26T10:14:59+00:00','2026-10-26T09:00:00+00:00'),('2026-10-26T10:15:00+00:00','2026-10-26T10:00:00+00:00')])
@@ -90,13 +102,58 @@ def test_invalid_hourly_values_cannot_be_imported(value):
         stage_hourly([(0,value)],0,3600)
 
 
-@pytest.mark.parametrize('payload',[{},[],{'error':{'code':1}},{'body':[{'beg_time':0,'value':[[1]]}]}])
+@pytest.mark.parametrize('payload',[{},[],{'error':{'code':1}},{'body':[{'beg_time':0,'step_time':1800,'value':[[1]]}]}])
 async def test_malformed_http_hourly_response_is_typed_error(cloud_responses,payload):
     import aiohttp
     from .test_api_energy import client
     from custom_components.intuis_connect.utils.const import BASE_URLS, ROOMMEASURE_PATH
     from custom_components.intuis_connect.intuis_api.api import APIError
     cloud_responses.post(BASE_URLS[0]+ROOMMEASURE_PATH,payload=payload)
+    async with aiohttp.ClientSession() as session:
+        with pytest.raises(APIError):
+            await client(session).async_get_room_energy_hourly('room',0,3600)
+
+
+async def test_documented_hourly_shape_snaps_to_hours_and_skips_gaps(cloud_responses):
+    """Shape of docs/06-energy-consumption.md applied to 1hour (inferred, not
+    documented): tariff columns with a null total, blocks split at gaps, no
+    step_time on a single-value block, samples stamped inside their hour."""
+    import aiohttp
+    from .test_api_energy import client
+    from custom_components.intuis_connect.utils.const import BASE_URLS, ROOMMEASURE_PATH
+    start=int(datetime(2026,10,25,tzinfo=timezone.utc).timestamp())
+    cloud_responses.post(BASE_URLS[0]+ROOMMEASURE_PATH,payload={'body':[
+        {'beg_time':start+1800,'step_time':3600,'value':[[None,None,100,50],[None,None,None,None],[None,None,0,0]]},
+        {'beg_time':start+4*3600+1800,'value':[[None,None,10,None]]},
+        {'beg_time':start+6*3600+1800,'value':[[None,None,99,None]]},  # endpoint hour
+    ],'status':'ok'})
+    async with aiohttp.ClientSession() as session:
+        result=await client(session).async_get_room_energy_hourly('room',start,start+6*3600)
+    assert result==[(start,150),(start+7200,0),(start+4*3600,10)]
+
+
+async def test_chunk_without_measurement_is_a_gap_not_a_failure(cloud_responses):
+    import aiohttp
+    from .test_api_energy import client
+    from custom_components.intuis_connect.utils.const import BASE_URLS, ROOMMEASURE_PATH
+    start=int(datetime(2026,1,1,tzinfo=timezone.utc).timestamp())
+    boundary=start+42*86400
+    cloud_responses.post(BASE_URLS[0]+ROOMMEASURE_PATH,payload={'body':[{'beg_time':start,'value':[[None,None,None,None]]}]})
+    cloud_responses.post(BASE_URLS[0]+ROOMMEASURE_PATH,payload={'body':[{'beg_time':boundary+1800,'value':[[None,None,40,2]]}]})
+    async with aiohttp.ClientSession() as session:
+        api=client(session)
+        assert await api.async_get_room_energy_hourly('room',start,boundary+3600)==[(boundary,42)]
+        cloud_responses.post(BASE_URLS[0]+ROOMMEASURE_PATH,payload={'body':[]})
+        assert await api.async_get_room_energy_hourly('room',start,start+3600)==[]
+
+
+async def test_conflicting_samples_for_one_hour_are_refused(cloud_responses):
+    import aiohttp
+    from .test_api_energy import client
+    from custom_components.intuis_connect.utils.const import BASE_URLS, ROOMMEASURE_PATH
+    from custom_components.intuis_connect.intuis_api.api import APIError
+    cloud_responses.post(BASE_URLS[0]+ROOMMEASURE_PATH,payload={'body':[
+        {'beg_time':0,'value':[[5]]},{'beg_time':1800,'value':[[6]]}]})
     async with aiohttp.ClientSession() as session:
         with pytest.raises(APIError):
             await client(session).async_get_room_energy_hourly('room',0,3600)
@@ -133,7 +190,7 @@ async def series(instance,sid):
 async def replace_external(hass,first,values,meta=None):
     from custom_components.intuis_connect.recorder_import import async_replace_external_history
     meta=meta or metadata('home','room','Room hourly energy')
-    return await async_replace_external_history(hass,meta,hour(first),hour(first+len(values)),hourly(first,values))
+    return await async_replace_external_history(hass,meta,((hour(first),hour(first+len(values)),hourly(first,values)),))
 
 
 async def test_external_replacement_creates_series_and_replay_is_idempotent(ha_hass,live_recorder):
@@ -224,5 +281,5 @@ async def test_invalid_external_requests_are_refused_before_queueing(ha_hass,liv
     else:
         meta={**meta,'has_sum':False}
     with pytest.raises(HistoryReplacementError):
-        await async_replace_external_history(ha_hass,meta,start,end,samples)
+        await async_replace_external_history(ha_hass,meta,((start,end,samples),))
     assert await series(live_recorder,statistic_id('home','room')) is None
