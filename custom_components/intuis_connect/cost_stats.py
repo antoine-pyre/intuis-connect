@@ -18,7 +18,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .external_statistics import metadata, statistic_id
-from .hourly_series import HOUR, home_total_status, hourly_windows, sum_hourly
+from .hourly_series import (
+    HOUR,
+    energy_rooms,
+    home_total_status,
+    hourly_windows,
+    sum_hourly,
+)
 from .recorder_import import (
     ExternalReplacementResult,
     HistoryReplacementError,
@@ -292,11 +298,7 @@ async def async_recalculate_costs(
     room keeps its previous costs. Display sensors are notified afterwards.
     """
     currency = hass.config.currency
-    rooms = [
-        (room_id, room.name)
-        for room_id, room in intuis_home.rooms.items()
-        if not room_filter or room.name.casefold() == room_filter.casefold()
-    ]
+    rooms = energy_rooms(intuis_home, room_filter)
     result: dict[str, Any] = {
         "rooms_recalculated": 0,
         "hours": (end - start) // HOUR,

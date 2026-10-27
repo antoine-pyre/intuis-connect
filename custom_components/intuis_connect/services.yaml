@@ -113,22 +113,42 @@ set_zone_temperature:
       required: false
       selector:
         text: {}
+    schedule_id:
+      name: Schedule ID
+      description: Stable schedule ID. Give the ID, the name, or both (they must
+        match).
+      required: false
+      selector:
+        text: {}
     schedule_name:
       name: Schedule Name
-      description: Exact schedule name in the selected home.
-      required: true
+      description: Exact schedule name in the selected home, if no ID is given.
+        Must be unique.
+      required: false
+      selector:
+        text: {}
+    zone_id:
+      name: Zone ID
+      description: Zone ID in that schedule. Give the ID, the name, or both.
+      required: false
       selector:
         text: {}
     zone_name:
       name: Zone Name
-      description: Zone name in that schedule.
-      required: true
+      description: Zone name in that schedule, if no ID is given. Must be unique.
+      required: false
+      selector:
+        text: {}
+    room_id:
+      name: Room ID
+      description: Room ID in the selected home. Give the ID, the name, or both.
+      required: false
       selector:
         text: {}
     room_name:
       name: Room Name
-      description: Room name in that zone and home.
-      required: true
+      description: Room name in that home, if no ID is given. Must be unique.
+      required: false
       selector:
         text: {}
     temperature:

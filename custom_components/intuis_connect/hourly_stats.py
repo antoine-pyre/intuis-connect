@@ -29,6 +29,7 @@ from .external_statistics import metadata, statistic_id
 from .hourly_series import (
     HOUR,
     closed_hour_end,
+    energy_rooms,
     home_total_status,
     hourly_windows,
     stage_hourly,
@@ -129,11 +130,7 @@ async def async_import_hourly_history(
     costed: dict[str, tuple[tuple[datetime, float], ...]] = {}
     try:
         home_id = home_id or intuis_home.id
-        rooms = [
-            (room_id, room.name)
-            for room_id, room in intuis_home.rooms.items()
-            if not room_filter or room.name.casefold() == room_filter.casefold()
-        ]
+        rooms = energy_rooms(intuis_home, room_filter)
         manager.total_rooms = len(rooms)
         manager.total_days = (end - start) // 86400
         if not rooms:
@@ -331,7 +328,7 @@ class HourlyStatisticsUpdater:
         start, end = await async_update_window(
             self.hass,
             self.intuis_home.id,
-            list(self.intuis_home.rooms),
+            [room_id for room_id, _ in energy_rooms(self.intuis_home)],
             datetime.now(timezone.utc),
         )
         if self._closed:

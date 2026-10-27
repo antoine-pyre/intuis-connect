@@ -13,8 +13,17 @@ malformed, non-finite or negative readings are rejected.
 on the next eligible coordinator update. One room's failure does not invalidate
 another room's successful daily cache. Real-time scales query every update.
 Daily requests still wait until the configured reset hour, using the domicile's
-timezone. The last valid reading is retained across failures and day boundaries,
-but only a new successful reading can advance its measurement day or timestamp.
+timezone, and read the logical day: before the reset hour that is the previous
+calendar day. A room without any reading (e.g. after a restart before the reset
+hour) is read right away instead of staying unavailable until then. The last
+valid reading is retained across failures and day boundaries, but only a new
+successful reading can advance its measurement day or timestamp.
+
+A valid answer without any value (an empty body, or null tariff columns for a
+room that has not heated yet) means nothing was consumed so far: it reads 0 kWh.
+Only a failed request (HTTP error, malformed data) is treated as missing and
+retried. History imports differ: there an unmeasured past day is a gap whose
+recorded statistics are kept, never replaced by a zero.
 
 Room energy sensors are unavailable before their first valid measurement. After
 that, a failed refresh retains the previous reading with `energy_stale: true`,
@@ -23,9 +32,11 @@ still make the entity unavailable. The daily maximum follows the day of the
 measurement, so an old value cannot block a legitimate lower value on a new day.
 
 The home total is unavailable until all rooms have measurements for the same
-day. During a partial recovery it retains the last complete total, marked stale;
-`room_breakdown` uses null for unknown rooms and `incomplete_rooms` identifies
-missing/stale rooms. Partial data is not silently presented as a fresh total.
+day. Rooms without equipment (no bridge, hence no energy data) are not part of
+it, nor of its attributes. During a partial recovery it retains the last
+complete total, marked stale; `room_breakdown` uses null for unknown rooms and
+`incomplete_rooms` identifies missing/stale rooms. Partial data is not silently
+presented as a fresh total. History imports skip rooms without modules too.
 
 The energy methods are consumed by `IntuisData` (room/current-home sensors) and
 `history_import.async_import_energy_history` (daily values). Historical callers

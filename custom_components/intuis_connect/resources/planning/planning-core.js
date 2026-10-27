@@ -357,41 +357,15 @@
     return { sync: Object.keys(sync).length ? sync : null, temperatures: temperatures };
   }
 
-  /* Close to Python's str.casefold(), used by the services (ß matches SS). */
-  function fold(name) {
-    return String(name).toUpperCase().toLowerCase();
-  }
-
-  function duplicatedFolded(names) {
-    var counts = {};
-    names.forEach(function (name) {
-      counts[fold(name)] = (counts[fold(name)] || 0) + 1;
-    });
-    return function (name) {
-      return counts[fold(name)] > 1;
-    };
-  }
-
   /*
-   * set_zone_temperature addresses schedules by exact name, and zones/rooms by
-   * case-insensitive name. An ambiguous name could reach another target, so
-   * such edits are refused before any call.
+   * set_zone_temperature addresses the schedule, zone and room by their IDs,
+   * so duplicate names never redirect an edit. Only a room the home no longer
+   * knows is refused before any call.
    */
   function temperatureBlockers(home, schedule, zone, roomId) {
     var reasons = [];
-    var scheduleNames = home.schedules.map(function (s) { return s.name; });
-    if (scheduleNames.filter(function (name) { return name === schedule.name; }).length > 1) {
-      reasons.push('plusieurs plannings portent le nom « ' + schedule.name + ' »');
-    }
-    var zoneDuplicated = duplicatedFolded(schedule.model.zones.map(function (z) { return z.name; }));
-    if (zoneDuplicated(zone.name)) {
-      reasons.push('plusieurs zones portent le nom « ' + zone.name + ' »');
-    }
-    var roomNames = Object.keys(home.rooms).map(function (id) { return home.rooms[id]; });
     if (!Object.prototype.hasOwnProperty.call(home.rooms, roomId)) {
       reasons.push('pièce inconnue');
-    } else if (duplicatedFolded(roomNames)(home.rooms[roomId])) {
-      reasons.push('plusieurs pièces portent le nom « ' + home.rooms[roomId] + ' »');
     }
     return reasons;
   }
@@ -481,9 +455,9 @@
       steps.push(function () {
         return callService('set_zone_temperature', {
           home_id: target.homeId,
-          schedule_name: target.scheduleName,
-          zone_name: change.zoneName,
-          room_name: roomName,
+          schedule_id: target.scheduleId,
+          zone_id: change.zoneId,
+          room_id: change.roomId,
           temperature: change.temperature
         }).then(function () {
           confirmed.zones.forEach(function (zone) {

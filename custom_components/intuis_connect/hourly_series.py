@@ -9,6 +9,21 @@ from .intuis_api.api import APIError
 HOUR = 3600
 
 
+def energy_rooms(intuis_home, room_filter: str | None = None) -> list[tuple[str, str]]:
+    """(room_id, name) of the rooms that have equipment, hence energy data.
+
+    A room without any module (declared in the app but empty) never has a
+    measurement: importing it would only report a failure, and would keep the
+    home total incomplete forever.
+    """
+    return [
+        (room_id, room.name)
+        for room_id, room in intuis_home.rooms.items()
+        if room.module_ids
+        and (not room_filter or room.name.casefold() == room_filter.casefold())
+    ]
+
+
 def closed_hour_end(now: datetime) -> int:
     """Exclusive end: an hour must be closed for at least fifteen minutes."""
     if now.tzinfo is None:

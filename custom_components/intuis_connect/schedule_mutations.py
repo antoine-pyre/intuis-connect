@@ -130,23 +130,22 @@ async def async_set_zone_temperature(
 ) -> None:
     temperature = validate_temperature(value)
 
+    if zone_id is None and zone_name is None:
+        raise ValueError("A zone ID or name is required")
+
     def mutate(schedule):
-        zone = next(
-            (
-                z
-                for z in schedule.zones
-                if isinstance(z, IntuisThermZone)
-                and (
-                    z.id == zone_id
-                    if zone_id is not None
-                    else zone_name is not None
-                    and z.name.casefold() == zone_name.casefold()
-                )
-            ),
-            None,
-        )
-        if zone is None:
-            raise ValueError("Zone not found in the selected schedule")
+        zones = [
+            z
+            for z in schedule.zones
+            if isinstance(z, IntuisThermZone)
+            and (zone_id is None or z.id == zone_id)
+            and (zone_name is None or z.name.casefold() == zone_name.casefold())
+        ]
+        if len(zones) != 1:
+            raise ValueError(
+                "Zone is unknown, ambiguous or inconsistent in the selected schedule"
+            )
+        zone = zones[0]
         room = next((rt for rt in zone.rooms_temp if rt.room_id == room_id), None)
         if room is None:
             raise ValueError("Room not found in the selected zone")

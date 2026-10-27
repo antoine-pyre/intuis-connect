@@ -153,7 +153,7 @@ des modifications, modes iframe/autonome, option *Remember*, attente de 45 s et
 distribution par route avec ETag. Réécrits ici : logique séparée et alignée sur
 `timetable.py`, rendu exclusivement textuel, sauvegarde par étapes confirmées
 avec succès partiel affiché, réconciliation des mises à jour distantes, domicile
-sélectionnable, refus des noms ambigus, token jamais dans l’URL et déconnexion,
+sélectionnable, températures ciblées par identifiants (noms en double modifiables), token jamais dans l’URL et déconnexion,
 route enregistrée une fois, servie seulement avec un domicile chargé, lectures
 hors boucle, ETag de contenu et CSP. Logs de debug et code mort non repris.
 Commits : `fe812f6`, `6ef6c45`, `f69a83e`, `f5c28d0` et `4670e9c`,

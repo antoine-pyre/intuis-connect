@@ -5,7 +5,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -314,8 +314,9 @@ class IntuisData:
             if not is_realtime and cached and cached.day == logical_day and cached.scale == scale:
                 continue
             # The existing daily cadence waits until reset_hour. Keep last valid
-            # data visible before that boundary without fabricating a new value.
-            if not is_realtime and now_local.hour < reset_hour:
+            # data visible before that boundary without fabricating a new value;
+            # a room without any value (e.g. after a restart) reads its logical day.
+            if not is_realtime and now_local.hour < reset_hour and cached is not None:
                 continue
             room.energy_stale = True
             if room.bridge_id:
@@ -324,8 +325,11 @@ class IntuisData:
         if not rooms_for_api:
             return
 
-        today_start = datetime.combine(now_local.date(), datetime.min.time(), tzinfo=home_tz)
-        today_end = datetime.combine(now_local.date(), datetime.max.time(), tzinfo=home_tz)
+        # Daily values belong to the logical day: before reset_hour that is the
+        # previous calendar day, never the few minutes since midnight.
+        query_day = now_local.date() if is_realtime else date.fromisoformat(logical_day)
+        today_start = datetime.combine(query_day, datetime.min.time(), tzinfo=home_tz)
+        today_end = datetime.combine(query_day, datetime.max.time(), tzinfo=home_tz)
         date_begin = int(today_start.timestamp())
         date_end = int((now_local if is_realtime else today_end).timestamp())
         try:

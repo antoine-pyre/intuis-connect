@@ -215,7 +215,9 @@ The integration tracks energy consumption per room:
 Energy data is fetched based on your configured scale:
 - `1day`: Successful measurements cached per room after the configured reset hour (02:00 by default); failed rooms retry on the next cycle
 - `5min/30min/1hour`: Measurements refreshed each polling cycle
-- Missing readings are not fabricated as zero. The last valid measurement retains its date and freshness attributes; an incomplete home aggregate is marked stale.
+- A failed reading is not fabricated as zero. The last valid measurement retains its date and freshness attributes; an incomplete home aggregate is marked stale.
+- A valid cloud answer without any value (a room that has not heated yet) reads 0 kWh. Rooms without equipment are left out of the home total.
+- After a restart before the reset hour, `1day` reads the current logical day (the previous calendar day) instead of staying unavailable until the reset hour.
 
 ---
 
@@ -329,8 +331,8 @@ command for the schedule. Each changed room temperature is a separate
 `set_zone_temperature` command. The editor lists every step's result; when one
 fails, the others stay saved and only the failed changes remain marked as unsaved.
 There is no global transaction, and changes made at the same time from the Intuis
-app are not detected before saving. A room whose name is ambiguous (two rooms,
-zones or schedules with the same name) cannot be changed from the editor.
+app are not detected before saving. Room temperatures are addressed by schedule,
+zone and room IDs, so rooms, zones or schedules sharing a name remain editable.
 
 **Standalone tab.** Opening the URL directly asks for the Home Assistant address
 (prefilled with the current one) and a long-lived access token (**Profile →

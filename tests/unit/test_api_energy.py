@@ -130,20 +130,28 @@ async def test_energy_errors_never_become_zero(cloud_responses, body, error):
             await client(session)._async_get_room_energy("room", 0, 86400)
 
 
-async def test_bulk_results_preserve_zero_and_omit_failed_or_missing_rooms(cloud_responses):
+async def test_bulk_results_keep_zero_and_omit_only_failed_rooms(cloud_responses):
+    # A valid answer without any value (empty body, or the documented null
+    # tariff columns of a room that has not heated yet) is 0 kWh so far; only
+    # a failed request is omitted and retried.
     def endpoint(url, **kwargs):
         room = kwargs["data"]["room_id"]
         if room == "failed":
             return CallbackResult(status=400, reason="Bad request")
-        if room == "missing":
+        if room == "malformed":
+            return CallbackResult(payload={"body": "malformed"})
+        if room == "empty":
             return CallbackResult(payload={"body": []})
+        if room == "nulls":
+            return CallbackResult(payload={"body": [{"beg_time": 0, "value": [[None, None, None, None]]}]})
         return CallbackResult(payload={"body": [{"value": [[0, None]]}]})
     cloud_responses.post(BASE_URLS[0] + ROOMMEASURE_PATH, callback=endpoint, repeat=True)
+    rooms = ["zero", "failed", "malformed", "empty", "nulls"]
     async with aiohttp.ClientSession() as session:
         result = await client(session).async_get_energy_measures(
-            [{"id": room, "bridge": "b"} for room in ["zero", "failed", "missing"]], 0, 86400
+            [{"id": room, "bridge": "b"} for room in rooms], 0, 86400
         )
-    assert result == {"zero": 0.0}
+    assert result == {"zero": 0.0, "empty": 0.0, "nulls": 0.0}
 
 
 async def test_daily_series_preserves_gaps_and_zeroes(cloud_responses):
@@ -318,3 +326,34 @@ async def test_home_keeps_last_complete_total_while_new_day_is_partial(frozen_cl
     assert entity.native_value == 0.7
     coordinator.last_update_success = False
     assert not entity.available
+
+
+async def test_home_total_ignores_rooms_without_equipment(frozen_clock):
+    empty = room("empty")
+    empty.bridge_id = None  # declared in the app, no module: never measured
+    rooms = {"a": room("a"), "empty": empty}
+    coordinator = MagicMock(data={"rooms": rooms}, last_update_success=True)
+    entity = IntuisHomeEnergySensor(coordinator, "home")
+    data, api = data_handler({"a": 1500.0})
+    await fetch(data, rooms)
+    assert api.async_get_energy_measures.call_args.args[0] == [{"id": "a", "bridge": "bridge"}]
+    assert entity.available and entity.native_value == 1.5
+    attributes = entity.extra_state_attributes
+    assert attributes["room_breakdown"] == {"a": 1.5}
+    assert attributes["incomplete_rooms"] == [] and not attributes["energy_stale"]
+
+
+async def test_restart_before_reset_hour_reads_the_logical_day(frozen_clock):
+    # 00:30 UTC is 01:30 in Paris, before the 02:00 reset: logical day 26.
+    frozen_clock.move_to("2026-10-27 00:30:00")
+    data, api = data_handler({"room": 4200.0})
+    rooms = {"room": room()}
+    await fetch(data, rooms)
+    assert rooms["room"].energy == 4.2 and rooms["room"].energy_day == "2026-10-26"
+    begin, end = api.async_get_energy_measures.call_args.args[1:3]
+    assert begin == int(datetime(2026, 10, 25, 23, tzinfo=timezone.utc).timestamp())
+    assert end == int(datetime(2026, 10, 26, 22, 59, 59, tzinfo=timezone.utc).timestamp())
+    # With a value, the daily cadence still waits for the reset hour.
+    frozen_clock.move_to("2026-10-27 00:45:00")
+    await fetch(data, {"room": room()})
+    assert api.async_get_energy_measures.await_count == 1

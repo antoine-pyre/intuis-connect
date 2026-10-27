@@ -56,7 +56,7 @@ def model(home_id, *, name="Week"):
         id=home_id,
         name=home_id,
         schedules=[schedule(home_id, name)],
-        rooms={f"room-{home_id}": SimpleNamespace(name="Room")},
+        rooms={f"room-{home_id}": SimpleNamespace(name="Room", module_ids=["m"])},
     )
 
 
@@ -294,6 +294,71 @@ async def test_new_names_after_refresh_need_no_reregistration(homes):
         ]["temp"]
         == 19.5
     )
+
+
+async def test_zone_temperature_targets_ids_despite_duplicate_names(homes):
+    home, api = homes.second.home, homes.second.api
+    home.rooms["twin"] = SimpleNamespace(name="ROOM", module_ids=["m"])
+    eco = home.schedules[0].zones[1]
+    eco.rooms_temp.append(type(eco.rooms_temp[0])("twin", 20.0))
+    # Two rooms fold to the same name: a name cannot pick one of them.
+    with pytest.raises(ServiceValidationError, match="ambiguous"):
+        await call(
+            homes,
+            "set_zone_temperature",
+            home_id="second",
+            **args("set_zone_temperature"),
+        )
+    api.async_sync_schedule.assert_not_awaited()
+    # IDs reach exactly the intended room; the UI text field sends digits.
+    await call(
+        homes,
+        "set_zone_temperature",
+        home_id="second",
+        schedule_id="schedule-second",
+        zone_id="2",
+        room_id="twin",
+        temperature=18.5,
+    )
+    rooms_temp = api.async_sync_schedule.call_args.kwargs["zones"][1]["rooms_temp"]
+    assert {row["room_id"]: row["temp"] for row in rooms_temp} == {
+        "room-second": 20.0,
+        "twin": 18.5,
+    }
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        {"schedule_id": "schedule-second", "schedule_name": "Other"},
+        {"schedule_id": "missing"},
+        {"zone_id": 2, "zone_name": "Night"},
+        {"zone_id": 9},
+        {"room_id": "room-second", "room_name": "Other"},
+        {"room_id": "missing"},
+    ],
+)
+async def test_zone_temperature_refuses_unknown_or_inconsistent_ids(homes, target):
+    values = {
+        "schedule_id": "schedule-second",
+        "zone_id": 2,
+        "room_id": "room-second",
+        "temperature": 19.5,
+        **target,
+    }
+    with pytest.raises(ServiceValidationError):
+        await call(homes, "set_zone_temperature", home_id="second", **values)
+    homes.second.api.async_sync_schedule.assert_not_awaited()
+
+
+@pytest.mark.parametrize("missing", ["schedule", "zone", "room"])
+async def test_zone_temperature_requires_each_target(homes, missing):
+    values = {**args("set_zone_temperature"), "home_id": "second"}
+    values.pop(f"{missing}_name")
+    with pytest.raises(vol.Invalid):
+        await call(homes, "set_zone_temperature", **values)
+    with pytest.raises(vol.Invalid):
+        await call(homes, "set_zone_temperature", **{**values, "zone_id": True})
 
 
 async def test_add_and_reload_entries_keep_services_usable(homes):

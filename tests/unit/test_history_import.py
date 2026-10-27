@@ -404,7 +404,7 @@ async def importer_setup(ha_hass, monkeypatch, values, *, second=False):
     registry.async_get_or_create(
         "sensor", DOMAIN, "intuis_home_room_energy", suggested_object_id="room_energy"
     )
-    rooms = {"room": SimpleNamespace(name="Room")}
+    rooms = {"room": SimpleNamespace(name="Room", module_ids=["m"])}
     if second:
         registry.async_get_or_create(
             "sensor",
@@ -412,7 +412,7 @@ async def importer_setup(ha_hass, monkeypatch, values, *, second=False):
             "intuis_home_other_energy",
             suggested_object_id="other_energy",
         )
-        rooms["other"] = SimpleNamespace(name="Other")
+        rooms["other"] = SimpleNamespace(name="Other", module_ids=["m"])
     api = SimpleNamespace(
         home_timezone="UTC", async_get_room_energy_daily=AsyncMock(side_effect=values)
     )
