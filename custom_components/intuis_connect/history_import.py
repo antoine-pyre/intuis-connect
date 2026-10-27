@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 import logging
 import math
 from typing import TYPE_CHECKING
@@ -14,7 +14,12 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 
 from .intuis_api.api import APIError, CannotConnect, InvalidAuth, RateLimitError
-from .recorder_import import HistoryReplacementError, async_replace_energy_history
+from .hourly_series import HOUR
+from .recorder_import import (
+    HistoryReplacementError,
+    Window,
+    async_replace_energy_history,
+)
 from .utils.const import DOMAIN
 
 if TYPE_CHECKING:
@@ -29,42 +34,41 @@ MAX_HISTORY_DAYS = 730
 API_DELAY_SECONDS = 2.0
 
 
+def _day_start(day: date, zone: ZoneInfo) -> datetime:
+    """Start of a local day's recorder row: midnight, or the next whole hour.
+
+    The recorder stores rows on whole UTC hours. In zones offset by a fraction
+    of an hour (UTC+5:30, +5:45, -3:30...), local midnight is not one, so the
+    row starts at the following hour, which still lies inside its local day.
+    """
+    midnight = int(datetime.combine(day, time.min, zone).timestamp())
+    return datetime.fromtimestamp(-(-midnight // HOUR) * HOUR, zone)
+
+
 def _closed_day_range(
     now: datetime, days: int, zone: ZoneInfo
 ) -> tuple[datetime, datetime]:
     """Use complete local days, excluding the live day and its partial total."""
     today = now.astimezone(zone).date()
-    return (
-        datetime.combine(today - timedelta(days=days), time.min, zone),
-        datetime.combine(today, time.min, zone),
-    )
+    return _day_start(today - timedelta(days=days), zone), _day_start(today, zone)
 
 
 def _validate_daily_values(
     daily_values: list[tuple[int, float]],
     start: datetime,
     end: datetime,
-) -> tuple[tuple[datetime, float], ...]:
-    """Require exactly one finite measurement for every closed local day.
+) -> tuple[Window, ...]:
+    """Group measured closed local days into replacement windows.
 
-    The API must return local-midnight timestamps. Gaps, duplicate days, shifted
-    UTC day boundaries and partial days are refused without touching statistics.
+    The cloud stamps each day inside it (at local noon), so a sample belongs
+    to the local day containing its timestamp. A day without a measurement is
+    a gap whose existing statistics are preserved, never a fabricated zero.
+    Samples of days outside the period were not requested and are ignored.
+    Duplicate days or invalid values refuse the import without any write.
     """
-    expected = []
-    day = start.date()
-    while day < end.date():
-        timestamp = datetime.combine(day, time.min, start.tzinfo)
-        if timestamp.timestamp() % 3600:
-            raise HistoryReplacementError(
-                "Local day boundaries must align with recorder hourly statistics"
-            )
-        expected.append(int(timestamp.timestamp()))
-        day += timedelta(days=1)
-    if len(daily_values) != len(expected):
-        raise HistoryReplacementError(
-            "Incomplete daily coverage; previous history was preserved"
-        )
-    actual: dict[int, float] = {}
+    zone = start.tzinfo
+    first, last = start.date(), end.date()
+    measured: dict[date, float] = {}
     for timestamp, wh in daily_values:
         if (
             isinstance(timestamp, bool)
@@ -77,16 +81,27 @@ def _validate_daily_values(
             or wh < 0
         ):
             raise HistoryReplacementError("Invalid daily timestamp or energy value")
-        if timestamp in actual:
+        day = datetime.fromtimestamp(timestamp, zone).date()
+        if not first <= day < last:
+            continue
+        if day in measured:
             raise HistoryReplacementError("Duplicate daily measurement")
-        actual[int(timestamp)] = wh / 1000.0
-    if set(actual) != set(expected):
+        measured[day] = wh / 1000.0
+    if not measured:
         raise HistoryReplacementError(
-            "Daily measurements do not match the complete local-day boundaries"
+            "No measured day in the period; previous history was preserved"
         )
-    return tuple(
-        (datetime.fromtimestamp(ts, timezone.utc), actual[ts]) for ts in expected
-    )
+    windows: list[list] = []
+    for day in sorted(measured):
+        day_start = _day_start(day, zone)
+        day_end = _day_start(day + timedelta(days=1), zone)
+        sample = (day_start.astimezone(timezone.utc), measured[day])
+        if windows and windows[-1][1] == day_start:
+            windows[-1][1] = day_end
+            windows[-1][2].append(sample)
+        else:
+            windows.append([day_start, day_end, [sample]])
+    return tuple((begin, finish, tuple(rows)) for begin, finish, rows in windows)
 
 
 async def _await_store_task(task: asyncio.Task):
@@ -299,11 +314,19 @@ async def async_import_energy_history(
                 daily_values = await api.async_get_room_energy_daily(
                     room_id, int(start.timestamp()), int(end.timestamp()) - 1
                 )
-                samples = _validate_daily_values(daily_values, start, end)
+                windows = _validate_daily_values(daily_values, start, end)
                 if manager._cancelled:
                     raise asyncio.CancelledError
-                committed = await async_replace_energy_history(
-                    hass, entity_id, start, end, samples
+                committed = await async_replace_energy_history(hass, entity_id, windows)
+                if committed.days < days:
+                    _LOGGER.info(
+                        "%s: %d of %d days had no measurement; kept their statistics",
+                        room_name,
+                        days - committed.days,
+                        days,
+                    )
+                results["days_without_data"] = (
+                    results.get("days_without_data", 0) + days - committed.days
                 )
                 results["rooms_imported"] += 1
                 results["total_energy_kwh"] += committed.energy_kwh

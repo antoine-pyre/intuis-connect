@@ -69,6 +69,10 @@ start of an hour of the requested period, the period is refused with an error
 naming that hour and its previous cost statistics are kept. A gap is never filled
 with zero, the current price or the fixed price.
 
+An hour without confirmed kWh has no cost: its previous cost row is kept and the
+recalculation reports how many hours were skipped (status `partial`). A period
+without any confirmed kWh is refused.
+
 ## Options
 
 **Energy Costs** appears in the integration options after the energy step. It is

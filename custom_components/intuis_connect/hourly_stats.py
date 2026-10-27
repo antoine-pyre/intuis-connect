@@ -26,7 +26,14 @@ from .cost_stats import (
     hourly_costs,
 )
 from .external_statistics import metadata, statistic_id
-from .hourly_series import HOUR, closed_hour_end, stage_hourly, sum_hourly
+from .hourly_series import (
+    HOUR,
+    closed_hour_end,
+    home_total_status,
+    hourly_windows,
+    stage_hourly,
+    sum_hourly,
+)
 from .intuis_api.api import APIError, CannotConnect, InvalidAuth, RateLimitError
 from .recorder_import import HistoryReplacementError, async_replace_external_history
 from .utils.const import CONF_COST_STATISTICS
@@ -40,10 +47,6 @@ _LOGGER = logging.getLogger(__name__)
 UPDATE_WINDOW = 48 * HOUR
 CATCH_UP_WINDOW = 7 * 24 * HOUR
 FIRST_UPDATE_DELAY = 60  # seconds; lets the recorder and first refresh settle
-
-
-def _utc(ts: int) -> datetime:
-    return datetime.fromtimestamp(ts, timezone.utc)
 
 
 def room_metadata(home_id: str, room_id: str, room_name: str) -> dict[str, Any]:
@@ -97,8 +100,9 @@ async def async_import_hourly_history(
 ) -> dict:
     """Fetch, stage, then replace one external series transaction per room.
 
-    The home total is written only when every room of the home was confirmed
-    for the same hours; otherwise the last complete total is left untouched.
+    Only confirmed hours are written; an hour the cloud has not measured yet
+    keeps its statistics and is filled by a later run. The home total is the
+    sum over hours every room confirmed, and is not written when a room failed.
     With cost options, each confirmed room also gets its cost series from the
     same confirmed kWh; a price problem never blocks or alters the energy.
     """
@@ -139,8 +143,12 @@ async def async_import_hourly_history(
         prices = None
         if cost_options and rooms:
             try:
-                prices = await async_hour_prices(
-                    hass, cost_options, currency, range(start, end, HOUR)
+                hours = range(start, end, HOUR)
+                prices = dict(
+                    zip(
+                        hours,
+                        await async_hour_prices(hass, cost_options, currency, hours),
+                    )
                 )
             except Exception as err:  # noqa: BLE001 - costs never block energy
                 cost_errors.append(f"Costs: {err}")
@@ -156,9 +164,7 @@ async def async_import_hourly_history(
                 committed = await async_replace_external_history(
                     hass,
                     room_metadata(home_id, room_id, room_name),
-                    _utc(start),
-                    _utc(end),
-                    samples,
+                    hourly_windows(samples),
                 )
                 confirmed[room_id] = samples
                 results["rooms_imported"] += 1
@@ -206,6 +212,8 @@ async def async_import_hourly_history(
                     "Home hourly total kept at its last complete value; missing: "
                     + ", ".join(missing)
                 )
+            elif not (total := sum_hourly(confirmed)):
+                results["home_total"] = "incomplete"
             else:
                 if manager._cancelled:
                     raise asyncio.CancelledError
@@ -213,11 +221,11 @@ async def async_import_hourly_history(
                     await async_replace_external_history(
                         hass,
                         home_metadata(home_id, intuis_home.name),
-                        _utc(start),
-                        _utc(end),
-                        sum_hourly(confirmed),
+                        hourly_windows(total),
                     )
-                    results["home_total"] = "complete"
+                    results["home_total"] = home_total_status(
+                        total, (end - start) // HOUR
+                    )
                 except HistoryReplacementError as err:
                     results["home_total"] = "incomplete"
                     results["errors"].append(f"Home hourly total: {err}")
@@ -228,14 +236,14 @@ async def async_import_hourly_history(
                     "Home hourly cost kept at its last complete value; missing: "
                     + ", ".join(missing)
                 )
-            else:
+            elif total_cost := sum_hourly(costed):
                 if manager._cancelled:
                     raise asyncio.CancelledError
                 try:
                     await async_write_costs(
                         hass,
                         cost_metadata(home_id, None, intuis_home.name, currency),
-                        sum_hourly(costed),
+                        total_cost,
                     )
                 except HistoryReplacementError as err:
                     cost_errors.append(f"Home hourly cost: {err}")

@@ -78,22 +78,25 @@ def test_fixed_price_applies_only_to_requested_hours():
         fixed_prices("", [T0])
 
 
-def test_hourly_costs_are_unrounded_and_require_contiguous_hours():
+def test_hourly_costs_are_unrounded_and_follow_confirmed_hours():
     start = datetime.fromtimestamp(T0, timezone.utc)
+    prices = {T0: 0.2516, T0 + H: 0.3, T0 + 2 * H: 0.1}
     energy = [(start, 0.333), (start + timedelta(hours=1), 0)]
-    assert hourly_costs(energy, (0.2516, 0.3)) == (
+    assert hourly_costs(energy, prices) == (
         (start, 0.333 * 0.2516),
         (energy[1][0], 0),
     )
+    # An hour without confirmed energy has no cost row, never a zero cost.
+    gapped = [(start, 1), (start + timedelta(hours=2), 1)]
+    assert hourly_costs(gapped, prices) == ((start, 0.2516), (gapped[1][0], 0.1))
     for bad in (
-        [(start, 1), (start + timedelta(hours=2), 1)],
+        [(start + timedelta(hours=1), 1), (start, 1)],
         [(start, -1), (start + timedelta(hours=1), 1)],
         [(start + timedelta(minutes=5), 1), (start + timedelta(hours=1), 1)],
+        [(start + timedelta(hours=3), 1)],
     ):
         with pytest.raises(CostPriceError):
-            hourly_costs(bad, (0.2, 0.2))
-    with pytest.raises(CostPriceError):
-        hourly_costs(energy, (0.2,))
+            hourly_costs(bad, prices)
 
 
 # ---- Options and recorded price history (task 1.2) -------------------------

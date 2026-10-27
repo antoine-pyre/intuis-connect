@@ -155,6 +155,28 @@ async def test_daily_series_preserves_gaps_and_zeroes(cloud_responses):
     assert result == [(0, 0.0), (172800, 150.0)]
 
 
+async def test_documented_daily_response_without_step_time(cloud_responses):
+    # docs/06-energy-consumption.md: no step_time, null total column, local noon.
+    cloud_responses.post(BASE_URLS[0] + ROOMMEASURE_PATH, payload={
+        "body": [{"beg_time": 1767265200, "value": [[None, None, 14245, 7694]]}],
+        "status": "ok",
+    })
+    async with aiohttp.ClientSession() as session:
+        result = await client(session).async_get_room_energy_daily(
+            "room", 1767222000, 1767308399
+        )
+    assert result == [(1767265200, 21939.0)]
+
+
+async def test_daily_block_declaring_another_step_is_refused(cloud_responses):
+    cloud_responses.post(BASE_URLS[0] + ROOMMEASURE_PATH, payload={
+        "body": [{"beg_time": 0, "step_time": 3600, "value": [[1]]}],
+    })
+    async with aiohttp.ClientSession() as session:
+        with pytest.raises(APIError):
+            await client(session).async_get_room_energy_daily("room", 0, 86400)
+
+
 async def test_daily_api_error_is_propagated_to_import_caller(cloud_responses):
     cloud_responses.post(BASE_URLS[0] + ROOMMEASURE_PATH, status=400)
     async with aiohttp.ClientSession() as session:

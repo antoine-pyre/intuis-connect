@@ -137,9 +137,13 @@ async def replace(ha_hass, values=(2.0, 0.0)):
     return await async_replace_energy_history(
         ha_hass,
         "sensor.room_energy",
-        instant(23),
-        instant(25),
-        ((instant(23), values[0]), (instant(24), values[1])),
+        (
+            (
+                instant(23),
+                instant(25),
+                ((instant(23), values[0]), (instant(24), values[1])),
+            ),
+        ),
     )
 
 
@@ -269,17 +273,54 @@ async def test_latest_short_term_cache_and_live_increment_survive_import(
     assert compiled.platform_stats[0]["stat"]["sum"] == 13.5
 
 
+# The documented getroommeasure 1day shape (docs/06-energy-consumption.md):
+# one block per run of days, no step_time when it holds a single value, each
+# day stamped at local noon, and a null total column beside the tariff ones.
+DOCUMENTED_DAY = {"beg_time": 1767265200, "value": [[None, None, 14245, 7694]]}
+
+
+def documented_daily(zone, days):
+    """{day: tariff columns} as the cloud returns it, stamped at local noon."""
+    return {
+        "body": [
+            {
+                "beg_time": int(datetime(2026, 10, day, 12, tzinfo=zone).timestamp()),
+                "value": [columns],
+            }
+            for day, columns in days.items()
+        ],
+        "status": "ok",
+    }
+
+
+def test_documented_sample_is_stamped_at_local_noon():
+    from custom_components.intuis_connect.intuis_api.api import IntuisAPI
+
+    zone = ZoneInfo("Europe/Paris")
+    stamped = datetime.fromtimestamp(DOCUMENTED_DAY["beg_time"], zone)
+    assert (stamped.hour, stamped.minute) == (12, 0)
+    samples = IntuisAPI._parse_energy_samples(
+        {"body": [DOCUMENTED_DAY], "status": "ok"}, require_timestamps=True
+    )
+    start, end = _closed_day_range(datetime(2026, 1, 2, 12, tzinfo=zone), 1, zone)
+    ((window_start, window_end, rows),) = _validate_daily_values(samples, start, end)
+    assert (window_start, window_end) == (start, end)
+    assert rows == ((datetime(2025, 12, 31, 23, tzinfo=timezone.utc), 21.939),)
+
+
 def test_closed_days_follow_local_midnight_and_dst():
     zone = ZoneInfo("Europe/Paris")
     start, end = _closed_day_range(
         datetime(2026, 10, 26, 12, tzinfo=timezone.utc), 2, zone
     )
     values = [
-        (int(datetime(2026, 10, 24, tzinfo=zone).timestamp()), 1000),
-        (int(datetime(2026, 10, 25, tzinfo=zone).timestamp()), 0),
+        (int(datetime(2026, 10, 24, 12, tzinfo=zone).timestamp()), 1000),
+        (int(datetime(2026, 10, 25, 12, tzinfo=zone).timestamp()), 0),
     ]
-    samples = _validate_daily_values(values, start, end)
+    ((window_start, window_end, samples),) = _validate_daily_values(values, start, end)
+    assert (window_start, window_end) == (start, end)
     assert samples[0][1] == 1 and samples[1][1] == 0
+    assert samples[0][0] == datetime(2026, 10, 24, tzinfo=zone)
     assert int(end.timestamp()) - int(samples[-1][0].timestamp()) == 25 * 3600
     spring_start, spring_end = _closed_day_range(
         datetime(2026, 3, 30, 12, tzinfo=timezone.utc), 1, zone
@@ -287,18 +328,67 @@ def test_closed_days_follow_local_midnight_and_dst():
     assert spring_end.timestamp() - spring_start.timestamp() == 23 * 3600
 
 
+def test_missing_days_become_gaps_between_windows():
+    zone = ZoneInfo("Europe/Paris")
+    start, end = _closed_day_range(
+        datetime(2026, 10, 27, 12, tzinfo=timezone.utc), 5, zone
+    )
+    payload = documented_daily(
+        zone,
+        {
+            21: [None, None, 1000, 0],  # before the period: not requested
+            23: [None, None, 2000, 500],
+            24: [None, None, 0, 0],  # a measured zero is kept
+            25: [None, None, None, None],  # null columns: no measurement
+            26: [None, None, 300, None],
+        },
+    )
+    from custom_components.intuis_connect.intuis_api.api import IntuisAPI
+
+    windows = _validate_daily_values(
+        IntuisAPI._parse_energy_samples(payload, require_timestamps=True), start, end
+    )
+    day = lambda n: datetime(2026, 10, n, tzinfo=zone)  # noqa: E731
+    assert [(w[0], w[1]) for w in windows] == [(day(23), day(25)), (day(26), day(27))]
+    assert [value for w in windows for _, value in w[2]] == [2.5, 0, 0.3]
+
+
+@pytest.mark.parametrize(
+    "zone,offset_minutes",
+    [("Asia/Kolkata", 30), ("Asia/Kathmandu", 45), ("America/St_Johns", 30)],
+)
+def test_fractional_hour_zones_store_days_on_whole_hours(zone, offset_minutes):
+    zone = ZoneInfo(zone)
+    start, end = _closed_day_range(
+        datetime(2026, 10, 27, 12, tzinfo=timezone.utc), 2, zone
+    )
+    assert start.timestamp() % 3600 == 0 and end.timestamp() % 3600 == 0
+    # The row starts at the first whole UTC hour of its local day.
+    assert (start.hour, start.minute) == (0, offset_minutes)
+    values = [
+        (int(datetime(2026, 10, day, 12, tzinfo=zone).timestamp()), 1000)
+        for day in (25, 26)
+    ]
+    ((window_start, window_end, samples),) = _validate_daily_values(values, start, end)
+    assert (window_start, window_end) == (start, end)
+    assert [
+        (sample.astimezone(zone).date().day, sample.timestamp() % 3600)
+        for sample, _ in samples
+    ] == [(25, 0), (26, 0)]
+
+
 @pytest.mark.parametrize(
     "values",
     [
         [],
-        [(instant(23).timestamp(), 0)],
-        [(instant(23).timestamp(), 0), (instant(23).timestamp(), 1)],
+        [(instant(22, 12).timestamp(), 0)],
+        [(instant(23).timestamp(), 0), (instant(23, 12).timestamp(), 1)],
         [(instant(23).timestamp(), -1), (instant(24).timestamp(), 0)],
         [(instant(23).timestamp(), float("nan")), (instant(24).timestamp(), 0)],
-        [(instant(23, 1).timestamp(), 0), (instant(24).timestamp(), 0)],
+        [(instant(23).timestamp(), True)],
     ],
 )
-def test_invalid_or_incomplete_daily_coverage_is_rejected(values):
+def test_invalid_or_unmeasured_daily_values_are_rejected(values):
     with pytest.raises(HistoryReplacementError):
         _validate_daily_values(values, instant(23), instant(25))
 
@@ -369,6 +459,37 @@ async def test_importer_confirms_commit_and_reports_partial_failure(
     assert result["status"] == "partial" and result["rooms_imported"] == 1
     assert manager.get_room_progress("room")["cumulative_sum"] == 12
     assert (await rows(live_recorder))[1][2] == 12
+
+
+async def test_documented_response_imports_measured_days_and_keeps_gaps(
+    ha_hass, live_recorder, monkeypatch, frozen_clock
+):
+    from custom_components.intuis_connect.intuis_api.api import IntuisAPI
+
+    frozen_clock.move_to("2026-10-25 12:00:00")
+    await seed(live_recorder)
+    # Day 23 is measured (stamped at noon); day 24 has no measurement at all.
+    payload = documented_daily(timezone.utc, {23: [None, None, 1500, 500]})
+    api, home, manager = await importer_setup(
+        ha_hass,
+        monkeypatch,
+        [IntuisAPI._parse_energy_samples(payload, require_timestamps=True)],
+    )
+    result = await async_import_energy_history(ha_hass, api, home, manager, days=2)
+    assert result["status"] == "completed" and result["rooms_imported"] == 1
+    assert result["days_without_data"] == 1
+    # Day 23 is replaced; day 24 keeps its own value and only follows the sum.
+    assert [(state, total) for _, state, total in await rows(live_recorder)] == [
+        (7, 10),
+        (2, 12),
+        (8, 20),
+        (1, 21),
+        (2, 22),
+    ]
+    assert [r[0] for r in await rows(live_recorder)][1:3] == [
+        instant(23).timestamp(),
+        instant(24).timestamp(),
+    ]
 
 
 async def test_unload_cancels_fetch_and_disallows_restart(
@@ -467,7 +588,7 @@ async def test_adapter_rejects_bad_staging_before_queue(
     monkeypatch.setattr(live_recorder, "queue_task", queued)
     with pytest.raises(HistoryReplacementError):
         await async_replace_energy_history(
-            ha_hass, "sensor.room_energy", instant(23), instant(25), samples
+            ha_hass, "sensor.room_energy", ((instant(23), instant(25), samples),)
         )
     queued.assert_not_called()
 
