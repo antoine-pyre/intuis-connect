@@ -25,11 +25,11 @@ et [socle de fiabilisation](../openspec/README.md).
 
 | Ordre | Lot | Dépendances | Taille relative | Livraison |
 |---|---|---|---|---|
-| 1 | [Attribution et liens](../openspec/changes/preserve-contributor-attribution/proposal.md) | Aucune | Petite | Registre, mentions, URL et règles de provenance |
-| 2A | [Services de planning étendus](../openspec/changes/extend-schedule-editing/proposal.md) | 1 et socle actuel | Moyenne | Planning inactif, sync complet, away/hg, renommages et summaries |
-| 2B | [Énergie horaire](../openspec/changes/add-hourly-energy-statistics/proposal.md) | 1 et socle actuel | Grande | Série horaire, historique, updater et continuité recorder |
-| 3A | [Planning HTML embarqué](../openspec/changes/add-bundled-planning-ui/proposal.md) | 2A | Moyenne à grande | UI intégrée/autonome, route HTTP, cache, authentification et crédit |
-| 3B | [Coûts énergétiques](../openspec/changes/add-energy-cost-statistics/proposal.md) | 2B | Grande | Prix, séries/coûts, historique et recalcul |
+| 1 | [Attribution et liens](../openspec/changes/archive/2026-10-27-preserve-contributor-attribution/proposal.md) | Aucune | Petite | Registre, mentions, URL et règles de provenance |
+| 2A | [Services de planning étendus](../openspec/changes/archive/2026-10-27-extend-schedule-editing/proposal.md) | 1 et socle actuel | Moyenne | Planning inactif, sync complet, away/hg, renommages et summaries |
+| 2B | [Énergie horaire](../openspec/changes/archive/2026-10-27-add-hourly-energy-statistics/proposal.md) | 1 et socle actuel | Grande | Série horaire, historique, updater et continuité recorder |
+| 3A | [Planning HTML embarqué](../openspec/changes/archive/2026-10-27-add-bundled-planning-ui/proposal.md) | 2A | Moyenne à grande | UI intégrée/autonome, route HTTP, cache, authentification et crédit |
+| 3B | [Coûts énergétiques](../openspec/changes/archive/2026-10-27-add-energy-cost-statistics/proposal.md) | 2B | Grande | Prix, séries/coûts, historique et recalcul |
 
 Ordre séquentiel suggéré : **1 → 2A → 2B → 3B → 3A**. Les lettres A/B indiquent
 les dépendances fonctionnelles indépendantes, pas une délégation automatique à des
@@ -152,14 +152,12 @@ Un retour au code précédent ne doit pas effacer les statistiques déjà confir
 ## Suivi
 
 ```sh
-openspec list
+openspec list --specs
 openspec validate --all --strict
-openspec status --change add-hourly-energy-statistics
 ```
 
-Chaque changement contient proposal.md, design.md, specs/ et tasks.md.
-Les cases ouvertes représentent le travail à faire, y compris le contrôle final
-de l’attribution ; l’existence de ce document ne vaut pas réalisation de ces lots.
+Chaque changement archivé (`openspec/changes/archive/`) contient proposal.md,
+design.md, specs/ et tasks.md ; ses contrats livrés sont dans `openspec/specs/`.
 
 ## Validation de la planification
 
