@@ -35,5 +35,7 @@ jobs:
         run: python -m pip check
       - name: Run offline tests
         run: python -m pytest
+      - name: Run planning editor logic tests
+        run: node --test tests/js/*.test.js
       - name: Check correctness and imports
         run: python -m ruff check .

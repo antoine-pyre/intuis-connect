@@ -108,6 +108,7 @@ async def test_actual_summary_has_all_days_inherited_zone_and_room_names(homes):
     entity = IntuisScheduleSummarySensor(SimpleNamespace(data={'intuis_home':homes.second.home}), 'second',target)
     attrs = entity.extra_state_attributes
     assert attrs['home_id']=='second'
+    assert attrs['home_name']==homes.second.home.name
     assert attrs['room_names']=={'room-second':'Room'}
     assert len(attrs['weekly_timetable'])==7
     assert attrs['weekly_timetable']['Monday'][0]=={'time':'00:00','zone':'Eco'}
