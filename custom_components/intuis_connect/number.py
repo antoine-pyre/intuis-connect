@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -210,11 +210,9 @@ class IntuisZoneTemperatureNumber(CoordinatorEntity[IntuisDataUpdateCoordinator]
     @property
     def device_info(self) -> DeviceInfo:
         """Return device info - grouped by schedule."""
-        home = self.coordinator.data.get("intuis_home")
-        schedule = next((s for s in home.schedules if s.id == self._schedule_id), None) if home else None
         return DeviceInfo(
             identifiers={(DOMAIN, f"{self._home_id}_schedule_{self._schedule_id}")},
-            name=f"Schedule {schedule.name if schedule else self._schedule_name}",
+            name=f"Schedule {self._schedule_name}",
             manufacturer="Muller Intuitiv (Netatmo)",
             model="Heating Schedule",
             via_device=(DOMAIN, f"{self._home_id}_home"),
@@ -261,18 +259,26 @@ class IntuisZoneTemperatureNumber(CoordinatorEntity[IntuisDataUpdateCoordinator]
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        from homeassistant.helpers import device_registry as dr
-        registry = dr.async_get(self.hass)
-        if hasattr(registry, "async_get_devices"):
-            devices = registry.async_get_devices(identifiers=self.device_info["identifiers"])
-        else:
-            device = registry.async_get_device(identifiers=self.device_info["identifiers"])
-            devices = [device] if device else []
-        for device in devices:
-            if device.name != self.device_info["name"]:
-                registry.async_update_device(device.id, name=self.device_info["name"])
-        # Update cached value from coordinator if available
         intuis_home = self.coordinator.data.get("intuis_home")
+        schedule = next(
+            (s for s in intuis_home.schedules if s.id == self._schedule_id), None
+        ) if intuis_home else None
+        if schedule is not None and schedule.name != self._schedule_name:
+            # Only a rename in the app changes the device name, so the registry
+            # is read then rather than on every poll. A user-set name is kept.
+            self._schedule_name = schedule.name
+            registry = dr.async_get(self.hass)
+            identifiers = self.device_info["identifiers"]
+            # Recent HA deprecates async_get_device(identifiers=...).
+            if hasattr(registry, "async_get_devices"):
+                devices = registry.async_get_devices(identifiers=identifiers)
+            else:
+                device = registry.async_get_device(identifiers=identifiers)
+                devices = [device] if device else []
+            for device in devices:
+                if device.name != self.device_info["name"]:
+                    registry.async_update_device(device.id, name=self.device_info["name"])
+        # Update cached value from coordinator if available
         if intuis_home:
             for schedule in intuis_home.schedules:
                 if not isinstance(schedule, IntuisThermSchedule):

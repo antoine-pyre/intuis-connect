@@ -35,7 +35,6 @@ from .utils.const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-SERVICE_CLEAR_OVERRIDE = "clear_override"
 SERVICE_SWITCH_SCHEDULE = "switch_schedule"
 SERVICE_REFRESH_SCHEDULES = "refresh_schedules"
 SERVICE_SET_SCHEDULE_SLOT = "set_schedule_slot"
@@ -102,7 +101,6 @@ def _granularity(value: str) -> str:
 
 
 HOME_FIELD = {vol.Optional(ATTR_HOME_ID): _nonempty_name}
-CLEAR_OVERRIDE_SCHEMA = vol.Schema({vol.Required(ATTR_ROOM_ID): str})
 REFRESH_SCHEDULES_SCHEMA = vol.Schema(HOME_FIELD)
 SWITCH_SCHEDULE_SCHEMA = vol.Schema(
     {

@@ -98,6 +98,17 @@ async def test_renamed_schedule_names_keep_identity_and_user_name(homes):
     assert registry.async_get(device.id).name=='Schedule Renamed'
     assert registry.async_get(device.id).name_by_user=='My custom device'
     assert (number.unique_id,calendar.unique_id)==ids
+    # Later polls without a rename never read the device registry.
+    lookups=[]
+    lookup='async_get_devices' if hasattr(registry,'async_get_devices') else 'async_get_device'
+    original=getattr(registry,lookup)
+    setattr(registry,lookup,lambda **kwargs: lookups.append(kwargs) or original(**kwargs))
+    number._handle_coordinator_update()
+    number._handle_coordinator_update()
+    assert lookups==[]
+    schedule.name='Weekend'
+    number._handle_coordinator_update()
+    assert len(lookups)==1 and registry.async_get(device.id).name=='Schedule Weekend'
 
 
 async def test_actual_summary_has_all_days_inherited_zone_and_room_names(homes):
