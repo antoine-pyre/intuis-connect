@@ -2,19 +2,18 @@
 
 Le plan suivant est distinct du socle de fiabilisation ci-dessous :
 [intégration des apports des PRs et crédit des contributeurs](../docs/pr-integration-plan.md).
-Il ajoute cinq changements planifiés, dont les 36 tâches d’implémentation restent
-ouvertes ; les fonctionnalités concernées ne sont pas encore livrées.
+Il ajoute cinq changements, dont les 36 tâches sont réalisées et vérifiées localement.
 
 Établi le **26 octobre 2026** à partir de la review globale du dépôt.
-État : **61 tâches implémentées et validées localement sur la branche `codex/reliability-fixes` ; consolidation en attente de revue finale et commit**.
+État : **61 tâches implémentées et validées ; les onze changements (socle et apports des PRs) sont archivés le 27 octobre 2026**.
 
 ## Organisation OpenSpec
 
 Workflow `spec-driven` : `proposal.md` → `specs/` et `design.md` → `tasks.md`.
 Chaque lot dispose de métadonnées `.openspec.yaml`, d’une proposition, d’un design,
 de delta specs et de tâches numérotées. Les cases suivent l’implémentation effective et ses contrôles,
-pas le seul travail de planification. Les contrats sont ajoutés dans les changements ;
-`openspec/specs/` reste vide jusqu’à l’archivage de changements réellement livrés.
+pas le seul travail de planification. Les contrats livrés figurent dans
+`openspec/specs/` ; les changements archivés sont dans `openspec/changes/archive/`.
 
 Format de référence : [schéma officiel spec-driven](https://openspec.dev/docs/schemas/spec-driven).
 
@@ -22,12 +21,12 @@ Format de référence : [schéma officiel spec-driven](https://openspec.dev/docs
 
 | Changement | Priorité | Review | Tâches | Suivi |
 |---|---|---|---:|---|
-| [secure-energy-history-import](changes/secure-energy-history-import/proposal.md) | P1 | R1 | 10 | [Checklist](changes/secure-energy-history-import/tasks.md) |
-| [reconcile-heating-overrides](changes/reconcile-heating-overrides/proposal.md) | P1/P2 | R2, R5 | 9 | [Checklist](changes/reconcile-heating-overrides/tasks.md) |
-| [correct-schedule-mutations](changes/correct-schedule-mutations/proposal.md) | P1/P2 | R3, R7 | 10 | [Checklist](changes/correct-schedule-mutations/tasks.md) |
-| [harden-api-and-energy-cache](changes/harden-api-and-energy-cache/proposal.md) | P1/P2 | R4, R8 | 10 | [Checklist](changes/harden-api-and-energy-cache/tasks.md) |
-| [fix-multi-home-service-contracts](changes/fix-multi-home-service-contracts/proposal.md) | P2 | R6 | 10 | [Checklist](changes/fix-multi-home-service-contracts/tasks.md) |
-| [strengthen-quality-workflow](changes/strengthen-quality-workflow/proposal.md) | P2/transverse | Q1, Q2, Q3 | 12 | [Checklist](changes/strengthen-quality-workflow/tasks.md) |
+| [secure-energy-history-import](changes/archive/2026-10-27-secure-energy-history-import/proposal.md) | P1 | R1 | 10 | [Checklist](changes/archive/2026-10-27-secure-energy-history-import/tasks.md) |
+| [reconcile-heating-overrides](changes/archive/2026-10-27-reconcile-heating-overrides/proposal.md) | P1/P2 | R2, R5 | 9 | [Checklist](changes/archive/2026-10-27-reconcile-heating-overrides/tasks.md) |
+| [correct-schedule-mutations](changes/archive/2026-10-27-correct-schedule-mutations/proposal.md) | P1/P2 | R3, R7 | 10 | [Checklist](changes/archive/2026-10-27-correct-schedule-mutations/tasks.md) |
+| [harden-api-and-energy-cache](changes/archive/2026-10-27-harden-api-and-energy-cache/proposal.md) | P1/P2 | R4, R8 | 10 | [Checklist](changes/archive/2026-10-27-harden-api-and-energy-cache/tasks.md) |
+| [fix-multi-home-service-contracts](changes/archive/2026-10-27-fix-multi-home-service-contracts/proposal.md) | P2 | R6 | 10 | [Checklist](changes/archive/2026-10-27-fix-multi-home-service-contracts/tasks.md) |
+| [strengthen-quality-workflow](changes/archive/2026-10-27-strengthen-quality-workflow/proposal.md) | P2/transverse | Q1, Q2, Q3 | 12 | [Checklist](changes/archive/2026-10-27-strengthen-quality-workflow/tasks.md) |
 
 ## Traçabilité de la review
 
