@@ -156,7 +156,7 @@ avec succès partiel affiché, réconciliation des mises à jour distantes, domi
 sélectionnable, refus des noms ambigus, token jamais dans l’URL et déconnexion,
 route enregistrée une fois, servie seulement avec un domicile chargé, lectures
 hors boucle, ETag de contenu et CSP. Logs de debug et code mort non repris.
-Commits : `9ef3a49`, `1804049`, `bd24164`, `c430e2a` et le commit de livraison,
+Commits : `fe812f6`, `6ef6c45`, `f69a83e`, `f5c28d0` et `4670e9c`,
 avec trailers `Adapted-from`/`Original-author`.
 
 Vérifications : 491 tests sur HA 2024.6.4 et 2026.10.4 (vue HTTP réelle, cycle
@@ -164,7 +164,13 @@ de vie, parité JS/Python, contrat avec le capteur réel), 14 tests Node, Ruff ;
 parcours autonome et iframe dans Chromium 156 et Firefox 158 sur les vrais
 services HA (55/55 chacun, sur les deux versions de HA).
 
-Limites : cloud et matériel réels non éprouvés ; parcours navigateur exécutés
-contre un cloud simulé et un cadre de dashboard simulé (sandbox de HA reproduite),
-pas dans le frontend HA réel ; pas de détection d’une modification simultanée
-depuis l’application Intuis avant l’envoi.
+Vérification manuelle (27 octobre 2026) : le mainteneur a utilisé l’éditeur
+sur HA 2025.12.5 (conteneur de développement) avec son domicile et le cloud
+Intuis réels, dans le frontend HA, en suivant la liste de contrôle (dashboard,
+modification et sauvegarde, garde-fous, redémarrage, mode autonome) ;
+fonctionnement jugé correct.
+
+Limites : les parcours automatisés utilisent un cloud et un cadre de dashboard
+simulés ; la vérification réelle est manuelle et ponctuelle ; pas de détection
+d’une modification simultanée depuis l’application Intuis avant l’envoi ; la
+route ne répond pas à `HEAD` (405).
