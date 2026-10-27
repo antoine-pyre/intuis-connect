@@ -32,11 +32,18 @@ def validate_temperature(value: float) -> float:
     return float(value)
 
 
-def _schedule(home: IntuisHome, schedule_id: str) -> IntuisThermSchedule:
+def _find_schedule(home: IntuisHome, schedule_id: str) -> IntuisThermSchedule | None:
     for schedule in home.schedules:
         if isinstance(schedule, IntuisThermSchedule) and schedule.id == schedule_id:
             return schedule
-    raise ValueError(f"Schedule {schedule_id} no longer exists")
+    return None
+
+
+def _schedule(home: IntuisHome, schedule_id: str) -> IntuisThermSchedule:
+    schedule = _find_schedule(home, schedule_id)
+    if schedule is None:
+        raise ValueError(f"Schedule {schedule_id} no longer exists")
+    return schedule
 
 
 async def _async_mutate(
@@ -77,7 +84,12 @@ async def _async_mutate(
         )
         # Resolve again: a coordinator refresh may have replaced the models
         # while the network request was in flight. Never publish a stale object.
-        current = _schedule(get_home(), schedule_id)
+        # The cloud accepted the change; if that refresh no longer lists the
+        # schedule (deleted in the app), there is nothing to publish locally,
+        # and reporting an error would make the user retry an applied change.
+        current = _find_schedule(get_home(), schedule_id)
+        if current is None:
+            return
         current.timetables = proposed.timetables
         current.zones = proposed.zones
         current.away_temp = proposed.away_temp

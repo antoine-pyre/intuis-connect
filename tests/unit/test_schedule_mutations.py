@@ -319,3 +319,23 @@ async def test_service_and_number_serialize_and_resolve_fresh_models(schedule_se
     assert sent[1]["zones"][1]["rooms_temp"][0]["temp"] == 19.5
     assert h.home.schedules[0].zones[2].rooms_temp[0].temp == 21.5
     assert entity.native_value == 19.5
+
+
+@pytest.mark.parametrize("entrypoint", ["temperature", "number"])
+async def test_schedule_deleted_during_confirmed_write_is_not_an_error(
+    schedule_services, entrypoint
+):
+    # A refresh during the cloud write no longer lists the schedule (deleted in
+    # the app): the write was accepted, so no error asks the user to retry it.
+    h = schedule_services
+
+    async def sync(**payload):
+        h.home.schedules = []
+
+    h.api.async_sync_schedule.side_effect = sync
+    if entrypoint == "temperature":
+        await call(h, "set_zone_temperature", **temp_args())
+    else:
+        await number(h).async_set_native_value(19.5)
+    h.api.async_sync_schedule.assert_awaited_once()
+    h.coordinator.async_request_refresh.assert_awaited()
