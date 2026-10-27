@@ -344,3 +344,83 @@ These capabilities adapt TheFab21's proposals
 [#22](https://github.com/antoine-pyre/intuis-connect/pull/22) and
 [#24](https://github.com/antoine-pyre/intuis-connect/pull/24) to the shared,
 transaction-confirmed scheduling path. See [contribution provenance](contribution-provenance.md).
+
+## Bundled planning editor (TheFab21 #17/#22/#24 adaptation)
+
+The editor ships in `resources/planning/` and is served by `planning_view.py` at
+`/api/intuis_connect/planning`, with its assets under the same path. Usage,
+dashboard setup and migration from manual copies are described in the
+[README](../README.md#visual-schedule-editor).
+
+| File | Responsibility |
+|---|---|
+| `index.html` | Static shell, credit and dialogs; no inline script |
+| `planning-core.js` | Pure logic: summary parsing, interval and midnight rules, validation, save sequence, reconciliation |
+| `planning-app.js` | Rendering (text only), iframe and REST connections, token handling, polling |
+| `planning.css` | Layout and light/dark tokens |
+
+### Distribution
+
+`async_setup` registers the view once per Home Assistant run, whatever the
+number of homes; the manifest declares the `http` dependency and YAML
+configuration stays config-entry only. HTTP routes cannot be removed from a
+running server: after the last home is unloaded the route answers 404, and it
+serves again when a home is loaded. Only the four published names are served;
+any other path is a 404, never a file lookup.
+
+Files are read in the executor and cached by modification time and size. The
+ETag is derived from the content, `Cache-Control: no-cache` makes the browser
+revalidate on every load, and a matching `If-None-Match` (strong, weak, list or
+`*`) gets a 304. A new integration version therefore replaces the editor without
+stale caches. Responses carry a restrictive CSP (`script-src 'self'`,
+`frame-ancestors 'self'`), `nosniff` and `no-referrer`. The view does not
+allow CORS.
+
+### Authentication boundary
+
+The route needs no authentication because a dashboard iframe cannot send a
+bearer token. The shell holds no home data, token or command, and the route
+accepts only GET. Everything else uses Home Assistant's authenticated APIs:
+
+- In a dashboard (same-origin iframe, sandbox of HA's frontend), the editor uses
+  the parent `hass` object: its states, its entity registry (only
+  `intuis_connect` sensors are read) and `callService`. It waits up to 45 seconds
+  for Home Assistant to reconnect, with a countdown, then reports the failure.
+- In a standalone tab it uses the REST API with an explicit address and a
+  long-lived token. The token stays in memory and `sessionStorage`, or
+  `localStorage` only with *Remember*. It never appears in URLs or logs. Logout
+  also removes the keys used by earlier manual copies. Reading states is retried
+  with backoff for at most 45 seconds; commands are never retried. A rejected
+  token returns to the connection form.
+
+Cloud names (homes, schedules, zones, rooms) and error messages are rendered as
+text nodes, never as HTML.
+
+### Data and save sequence
+
+The editor reads the schedule summary sensors (`home_id`, `home_name`,
+`room_names`, raw `timetable`, zones with `room_temperatures`), ignoring
+malformed states. Interval edits apply the same rules as `set_schedule_slot`;
+a regression test compares `planning-core.js` with `timetable.py` on thousands
+of random cases.
+
+A save runs, in order:
+
+1. One `sync_schedule` (`home_id`, `schedule_id`) when the timetable or the
+   away/frost temperatures changed. It is atomic for the schedule.
+2. One `set_zone_temperature` per changed room (`home_id`, schedule, zone and
+   room names).
+
+Each acknowledged step enters the confirmed model; a failed step keeps its
+change marked as unsaved and is reported with its error. Nothing claims a global
+transaction. Edits are refused beforehand when a value is out of range or not a
+half degree, or when a schedule, zone or room name is ambiguous, since the
+temperature service addresses them by name.
+
+Unsaved edits are never overwritten by state updates. After a save the
+coordinator may still publish the previous state, or an intermediate one, for a
+few seconds. Such transition states (each value either pre-save or confirmed)
+are ignored for up to 20 seconds. Any other difference is treated as an outside
+change: the editor follows it when there is nothing to save, or shows a banner
+offering to reload. Without a compare-and-swap in the Intuis API, a change made
+elsewhere just before saving can still be overwritten.

@@ -14,7 +14,7 @@
 | **Climate Control** | Full thermostat control per room with Auto/Heat/Off modes |
 | **Presets** | Schedule, Away, and Boost modes with configurable durations |
 | **Energy Monitoring** | Daily kWh consumption per room with historical import |
-| **Schedule Management** | View, switch, and edit heating schedules |
+| **Schedule Management** | View, switch, and edit heating schedules, with a bundled visual editor |
 | **Calendar Integration** | Visualize weekly schedules as calendar events |
 | **Smart Detection** | Presence detection, open window detection, heating anticipation |
 | **Indefinite Override** | Keep manual temperatures active indefinitely |
@@ -67,7 +67,7 @@
 
 | Entity Type | Name | Description |
 |-------------|------|-------------|
-| **Sensor** | `sensor.<schedule>_summary` | Full schedule data (for cards) |
+| **Sensor** | `sensor.<schedule>_summary` | Full schedule data (for cards and the planning editor), including `home_id`, `home_name` and `room_names` |
 | **Calendar** | `calendar.<schedule>` | Weekly schedule visualization |
 
 ### Home Level
@@ -230,7 +230,9 @@ Energy data is fetched based on your configured scale:
 
 ### Editing Schedules
 
-Use the `set_schedule_slot` service or install the [Intuis Schedule Card](https://github.com/antoine-pyre/intuis-schedule-card) for visual editing.
+Use the bundled [planning editor](#visual-schedule-editor), the `set_schedule_slot`
+and `sync_schedule` services, or the companion
+[Intuis Schedule Card](https://github.com/antoine-pyre/intuis-schedule-card).
 
 ### Schedule Structure
 
@@ -298,7 +300,57 @@ hours_to_show: 168
 
 ### Visual Schedule Editor
 
-Install the companion [Intuis Schedule Card](https://github.com/antoine-pyre/intuis-schedule-card):
+The integration serves a weekly planning editor at `/api/intuis_connect/planning`,
+adapted from [TheFab21](https://github.com/TheFab21)'s editor
+([#17](https://github.com/antoine-pyre/intuis-connect/pull/17),
+[#22](https://github.com/antoine-pyre/intuis-connect/pull/22),
+[#24](https://github.com/antoine-pyre/intuis-connect/pull/24)). No file copy is
+needed: it is updated with the integration and revalidated by the browser on
+every load (ETag), so a HACS update is picked up after Home Assistant restarts.
+
+Recommended: create a dedicated dashboard (**Settings → Dashboards → Add
+dashboard → Webpage**) with the URL `/api/intuis_connect/planning`. Or add a card:
+
+```yaml
+type: iframe
+url: /api/intuis_connect/planning
+aspect_ratio: 100%
+```
+
+Inside a dashboard the editor uses your Home Assistant session; no token is
+needed. It provides the seven-day grid (click a segment or `+` to replace an
+interval, including across midnight or the week boundary), the home and schedule
+selectors, away/frost temperatures, per-zone room temperatures, an unsaved
+changes warning, refresh and HA's light/dark theme. After a restart it waits up
+to 45 seconds for Home Assistant to reconnect.
+
+**Saving.** Timetable and away/frost changes are sent as one `sync_schedule`
+command for the schedule. Each changed room temperature is a separate
+`set_zone_temperature` command. The editor lists every step's result; when one
+fails, the others stay saved and only the failed changes remain marked as unsaved.
+There is no global transaction, and changes made at the same time from the Intuis
+app are not detected before saving. A room whose name is ambiguous (two rooms,
+zones or schedules with the same name) cannot be changed from the editor.
+
+**Standalone tab.** Opening the URL directly asks for the Home Assistant address
+(prefilled with the current one) and a long-lived access token (**Profile →
+Security**). The token is kept for the browser tab only, unless you tick
+*Remember*; **Log out** removes it. Another address than the page's own must be
+allowed in Home Assistant's `http: cors_allowed_origins`; the integration does
+not open CORS itself.
+
+The page served without login is a static shell: it contains no home data,
+token or command, and all reads and changes go through Home Assistant's
+authenticated APIs. It is only available while an Intuis home is loaded.
+
+**Migrating from a manual copy.** If you previously copied `intuis_planning.html`
+to `/config/www/` (for example `/config/www/planning_intuis/`), point your
+dashboard to `/api/intuis_connect/planning`, then optionally delete the old file.
+Logging out of the bundled editor also removes a token remembered by the old copy
+in the same browser. Keeping the old copy does not affect the integration.
+
+The companion [Intuis Schedule Card](https://github.com/antoine-pyre/intuis-schedule-card)
+remains available:
 
 ```yaml
 type: custom:intuis-schedule-card

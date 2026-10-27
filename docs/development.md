@@ -34,6 +34,36 @@ puis vérifier les deux environnements avant de committer un nouvel instantané.
 Ne pas installer la version courante de HA avec Python 3.12 : son interpréteur
 minimal est différent. Installer les dépendances normalement, sans `--no-deps`.
 
+## Éditeur de planning embarqué
+
+La logique pure de l'éditeur (`resources/planning/planning-core.js`) se teste
+avec Node.js 18 ou plus, sans dépendance :
+
+```sh
+node --test tests/js/*.test.js
+```
+
+Avec Node disponible, pytest compare aussi cette logique à `timetable.py` et
+aux attributs réels du capteur de résumé ; sans Node, ces deux tests sont ignorés.
+Les tests HTTP de la vue passent par le vrai enregistrement de vue de HA, sur un
+socket Unix, puisque les sockets TCP restent interdits.
+
+Les parcours navigateur ne font pas partie de pytest. Ils pilotent Chromium
+(`google-chrome`, protocole DevTools) et Firefox (WebDriver BiDi) en headless,
+face à un objet HA local qui enregistre les vrais services et la vraie vue ;
+seuls le cloud Intuis, le délai de publication et le cadre du dashboard sont
+simulés :
+
+```sh
+.venv/bin/python tests/browser/planning_browser_check.py --browser all --long
+.venv/bin/python tests/browser/planning_browser_check.py --serve 8765
+```
+
+`--long` ajoute l'attente bornée de 45 secondes ; `--serve` garde le serveur
+simulé pour une vérification manuelle (`/dashboard` ou la page autonome, token
+`harness-token`). Le Firefox snap ne lit pas `/tmp` : son profil temporaire est
+créé puis supprimé sous `~/snap/firefox/common/`.
+
 ## Fixtures natives
 
 Les anciens tests unitaires conservent leurs mocks. Les nouveaux tests peuvent

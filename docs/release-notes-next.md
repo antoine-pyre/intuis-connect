@@ -119,3 +119,52 @@ service réel et le schéma énergie ; Ruff et contraintes.
 Limites : prix au début de l’heure (approximation intra-horaire documentée) ;
 historique de prix limité à la rétention du recorder ; pas de coût par appareil
 dans le tableau énergie de HA ; comportement réel non éprouvé hors ligne.
+
+## Éditeur de planning embarqué — réalisé localement
+
+Adaptation de l’éditeur HTML de **TheFab21**
+([#17](https://github.com/antoine-pyre/intuis-connect/pull/17) à
+`75ae980bd22c98b3fa42bb9f933c044d2c648c58`,
+[#22](https://github.com/antoine-pyre/intuis-connect/pull/22) à
+`3174384d9222bdca5310721940ece95fe6d1fce6`,
+[#24](https://github.com/antoine-pyre/intuis-connect/pull/24) à
+`fb39b93c1eaf2a498c7274210b566864a2497669`, fichier
+`custom_components/intuis_connect/resources/intuis_planning.html` de #24).
+
+Problème : l’éditeur visuel et sa distribution automatique étaient absents ; la
+version source s’appuyait sur une route servant le fichier sans contrôle de
+cycle de vie, sur des insertions HTML de noms cloud et sur un ETag lié à la seule
+version du manifest.
+
+Comportement nouveau : éditeur servi à `/api/intuis_connect/planning`, intégré
+dans un dashboard (session HA) ou dans un onglet autonome (adresse et token
+explicites) ; grille sept jours avec transitions de minuit et de fin de semaine,
+domicile et planning sélectionnables, absence/hors-gel, températures par pièce,
+modifications non enregistrées signalées, résultats de sauvegarde par étape,
+rafraîchissement, thème clair/sombre et reconnexion bornée à 45 secondes.
+
+Compatibilité : services, entités, identifiants et automatisations inchangés ;
+attribut `home_name` ajouté au capteur de résumé ; dépendance `http` déclarée.
+Les anciennes copies manuelles restent utilisables et peuvent être supprimées.
+
+Sources et adaptations : reprises de TheFab21 — grille hebdomadaire, dialogue
+de créneau, cartes de zones, absence/hors-gel, sélection du planning, détection
+des modifications, modes iframe/autonome, option *Remember*, attente de 45 s et
+distribution par route avec ETag. Réécrits ici : logique séparée et alignée sur
+`timetable.py`, rendu exclusivement textuel, sauvegarde par étapes confirmées
+avec succès partiel affiché, réconciliation des mises à jour distantes, domicile
+sélectionnable, refus des noms ambigus, token jamais dans l’URL et déconnexion,
+route enregistrée une fois, servie seulement avec un domicile chargé, lectures
+hors boucle, ETag de contenu et CSP. Logs de debug et code mort non repris.
+Commits : `9ef3a49`, `1804049`, `bd24164`, `c430e2a` et le commit de livraison,
+avec trailers `Adapted-from`/`Original-author`.
+
+Vérifications : 491 tests sur HA 2024.6.4 et 2026.10.4 (vue HTTP réelle, cycle
+de vie, parité JS/Python, contrat avec le capteur réel), 14 tests Node, Ruff ;
+parcours autonome et iframe dans Chromium 156 et Firefox 158 sur les vrais
+services HA (55/55 chacun, sur les deux versions de HA).
+
+Limites : cloud et matériel réels non éprouvés ; parcours navigateur exécutés
+contre un cloud simulé et un cadre de dashboard simulé (sandbox de HA reproduite),
+pas dans le frontend HA réel ; pas de détection d’une modification simultanée
+depuis l’application Intuis avant l’envoi.
