@@ -418,6 +418,7 @@ class IntuisScheduleSummarySensor(CoordinatorEntity[IntuisDataUpdateCoordinator]
             return attrs
 
         attrs["home_id"] = self._home_id
+        attrs["home_name"] = home.name if home else None
         attrs["room_names"] = {str(rid): room.name for rid, room in home.rooms.items()} if home else {}
         attrs["timetable"] = [{"m_offset": t.m_offset, "zone_id": t.zone_id} for t in schedule.timetables]
         attrs["schedule_id"] = schedule.id

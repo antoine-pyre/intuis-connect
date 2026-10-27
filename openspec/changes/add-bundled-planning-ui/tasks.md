@@ -4,7 +4,7 @@ Toutes les tâches d’implémentation restent ouvertes. Les documents présents
 
 ## 1. Adaptation du frontend
 
-- [ ] 1.1 Inventorier les comportements HTML #22/#24 et adapter la grille/horaires/zones aux summaries et services étendus.
+- [x] 1.1 Inventorier les comportements HTML #22/#24 et adapter la grille/horaires/zones aux summaries et services étendus.
 - [ ] 1.2 Ajouter sélection du domicile, mode intégré/autonome, état dirty, sauvegardes confirmées/partielles et rafraîchissement/reconnexion.
 - [ ] 1.3 Corriger les insertions HTML de données cloud ; implémenter la gestion explicite des tokens et la déconnexion.
 
