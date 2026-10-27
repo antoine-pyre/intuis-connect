@@ -8,6 +8,9 @@
     "@antoine-pyre"
   ],
   "config_flow": true,
+  "dependencies": [
+    "http"
+  ],
   "documentation": "https://github.com/antoine-pyre/intuis-connect#readme",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/antoine-pyre/intuis-connect/issues",

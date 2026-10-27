@@ -12,7 +12,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.storage import Store
 
@@ -44,6 +46,7 @@ from .history_import import (
 from .hourly_stats import HourlyStatisticsUpdater
 from .intuis_data import IntuisData
 from .overrides import OverrideManager, OverrideState
+from .planning_view import async_register_planning_view
 from .services import (
     async_register_services,
     async_unregister_services_if_unused,
@@ -70,6 +73,8 @@ _LOGGER = logging.getLogger(__name__)
 STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}.overrides"
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 PLATFORMS: list[Platform] = [
     Platform.CALENDAR,
     Platform.CLIMATE,
@@ -78,6 +83,12 @@ PLATFORMS: list[Platform] = [
     Platform.SELECT,
     Platform.NUMBER,
 ]
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Serve the bundled planning editor once, shared by every configured home."""
+    async_register_planning_view(hass)
+    return True
 
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
