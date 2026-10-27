@@ -74,17 +74,29 @@
           "name": "Identifiant du domicile",
           "description": "Identifiant Intuis d’un domicile chargé. Sans cible, le premier domicile chargé est utilisé, avec avertissement si plusieurs sont chargés."
         },
+        "schedule_id": {
+          "name": "Identifiant du planning",
+          "description": "Identifiant stable du planning. Indiquer l’identifiant, le nom, ou les deux (ils doivent concorder)."
+        },
         "schedule_name": {
           "name": "Nom du planning",
-          "description": "Nom exact du planning dans le domicile ciblé."
+          "description": "Nom exact du planning dans le domicile ciblé, à défaut d’identifiant. Doit être unique."
+        },
+        "zone_id": {
+          "name": "Identifiant de la zone",
+          "description": "Identifiant de la zone dans ce planning. Indiquer l’identifiant, le nom, ou les deux."
         },
         "zone_name": {
           "name": "Nom de la zone",
-          "description": "Nom de la zone dans le planning ciblé."
+          "description": "Nom de la zone dans ce planning, à défaut d’identifiant. Doit être unique."
+        },
+        "room_id": {
+          "name": "Identifiant de la pièce",
+          "description": "Identifiant de la pièce dans le domicile ciblé. Indiquer l’identifiant, le nom, ou les deux."
         },
         "room_name": {
           "name": "Nom de la pièce",
-          "description": "Nom de la pièce dans la zone et le domicile ciblés."
+          "description": "Nom de la pièce dans ce domicile, à défaut d’identifiant. Doit être unique."
         },
         "temperature": {
           "name": "Température",

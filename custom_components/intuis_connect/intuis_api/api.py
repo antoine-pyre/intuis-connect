@@ -684,8 +684,10 @@ class IntuisAPI:
             scale: Time scale for measures (5min, 30min, 1hour, 1day, etc.)
 
         Returns:
-            Only successfully measured room IDs, mapped to Wh (including valid
-            zeroes). Omitted IDs are unavailable and must be retried, not zeroed.
+            Room IDs with a valid response, mapped to Wh. A valid response
+            without any measurement means nothing was consumed so far: 0 Wh.
+            Omitted IDs failed (error, malformed data) and must be retried,
+            not zeroed. History imports keep such empty periods as gaps.
         """
         if not rooms:
             return {}
@@ -707,6 +709,10 @@ class IntuisAPI:
                     room_id, date_begin, date_end, scale
                 )
                 result[room_id] = energy
+            except EnergyDataUnavailable:
+                # A well-formed answer with no value (empty body or null tariff
+                # columns): the room has not consumed yet in this period.
+                result[room_id] = 0.0
             except (APIError, CannotConnect, RateLimitError, aiohttp.ClientError, asyncio.TimeoutError) as e:
                 _LOGGER.warning(
                     "Failed to get energy for room %s: %s", room_id, e

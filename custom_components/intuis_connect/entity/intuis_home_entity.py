@@ -676,14 +676,19 @@ class IntuisHomeEnergySensor(CoordinatorEntity[IntuisDataUpdateCoordinator], Sen
             logical_date = now.date()
         return logical_date.isoformat()
 
+    def _measured_rooms(self) -> list:
+        """Rooms with a bridge; a room without equipment has no energy to sum."""
+        rooms = self.coordinator.data.get("rooms", {})
+        return [room for room in rooms.values() if room.bridge_id]
+
     def _get_total_energy(self) -> float | None:
         """A partial home is not a measured zero or a complete total."""
-        rooms = self.coordinator.data.get("rooms", {})
-        if not rooms or any(room.energy is None for room in rooms.values()):
+        rooms = self._measured_rooms()
+        if not rooms or any(room.energy is None for room in rooms):
             return None
-        if len({room.energy_day for room in rooms.values()}) > 1:
+        if len({room.energy_day for room in rooms}) > 1:
             return None
-        return sum(room.energy for room in rooms.values())
+        return sum(room.energy for room in rooms)
 
     @property
     def available(self) -> bool:
@@ -697,8 +702,7 @@ class IntuisHomeEnergySensor(CoordinatorEntity[IntuisDataUpdateCoordinator], Sen
         current_energy = self._get_total_energy()
         if current_energy is None:
             return self._daily_max_energy if self._last_logical_day is not None else None
-        rooms = self.coordinator.data.get("rooms", {})
-        current_logical_day = next(iter(rooms.values())).energy_day or self._get_logical_day(
+        current_logical_day = self._measured_rooms()[0].energy_day or self._get_logical_day(
             dt_util.now(), self._get_reset_hour()
         )
         reset_hour = self._get_reset_hour()
@@ -726,15 +730,15 @@ class IntuisHomeEnergySensor(CoordinatorEntity[IntuisDataUpdateCoordinator], Sen
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Identify missing/stale rooms rather than present a partial total as fresh."""
-        rooms = self.coordinator.data.get("rooms", {})
-        updated = [room.energy_updated_at for room in rooms.values()]
+        rooms = self._measured_rooms()
+        updated = [room.energy_updated_at for room in rooms]
         return {
-            "room_breakdown": {room.name: room.energy for room in rooms.values()},
+            "room_breakdown": {room.name: room.energy for room in rooms},
             "room_count": len(rooms),
             "energy_stale": self._get_total_energy() is None or any(
-                room.energy_stale for room in rooms.values()
+                room.energy_stale for room in rooms
             ),
-            "incomplete_rooms": [room.id for room in rooms.values() if room.energy is None or room.energy_stale],
+            "incomplete_rooms": [room.id for room in rooms if room.energy is None or room.energy_stale],
             "last_successful_update": min(updated) if updated and all(updated) else None,
         }
 

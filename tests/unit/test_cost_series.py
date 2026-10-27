@@ -54,7 +54,10 @@ async def job(
     home = SimpleNamespace(
         id=home_id,
         name="House",
-        rooms={"a": SimpleNamespace(name="Living"), "b": SimpleNamespace(name="Bed")},
+        rooms={
+            "a": SimpleNamespace(name="Living", module_ids=["m"]),
+            "b": SimpleNamespace(name="Bed", module_ids=["m"]),
+        },
     )
     manager = HistoryImportManager(ha_hass, entry_id)
     await manager.async_load()
@@ -265,7 +268,10 @@ async def service_home(
     home = SimpleNamespace(
         id="home",
         name="House",
-        rooms={"a": SimpleNamespace(name="Living"), "b": SimpleNamespace(name="Bed")},
+        rooms={
+            "a": SimpleNamespace(name="Living", module_ids=["m"]),
+            "b": SimpleNamespace(name="Bed", module_ids=["m"]),
+        },
     )
     ha_hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "intuis_home": home,
@@ -363,7 +369,10 @@ H = 3600
 HOUSE = SimpleNamespace(
     id="home",
     name="House",
-    rooms={"a": SimpleNamespace(name="Living"), "b": SimpleNamespace(name="Bed")},
+    rooms={
+        "a": SimpleNamespace(name="Living", module_ids=["m"]),
+        "b": SimpleNamespace(name="Bed", module_ids=["m"]),
+    },
 )
 
 

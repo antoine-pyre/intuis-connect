@@ -870,7 +870,6 @@
     var target = {
       homeId: home.id,
       scheduleId: schedule.id,
-      scheduleName: schedule.name,
       rooms: home.rooms
     };
     core.saveSchedule(target, editor.baseline, editor.edited, function (service, data) {

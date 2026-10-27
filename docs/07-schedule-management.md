@@ -239,7 +239,7 @@ rejected instead of silently rounded.
 
 ### `intuis_connect.set_zone_temperature`
 
-Set a room's temperature in an existing zone of a named schedule:
+Set a room's temperature in an existing zone of a schedule:
 
 ```yaml
 service: intuis_connect.set_zone_temperature
@@ -249,6 +249,12 @@ data:
   room_name: "Living Room"
   temperature: 19.5
 ```
+
+Each target (schedule, zone, room) is given by its ID (`schedule_id`, `zone_id`,
+`room_id`), its name, or both, which must then designate the same target. Zone
+and room names are case-insensitive. A name shared by several targets is
+refused as ambiguous instead of picking one: use the IDs, as the planning editor
+does. IDs appear in the schedule summary sensor attributes.
 
 Both this service and the zone-temperature `number` entities retain half degrees.
 Accepted values are finite temperatures from **5 to 30 °C in 0.5 °C steps**.
@@ -408,14 +414,14 @@ A save runs, in order:
 
 1. One `sync_schedule` (`home_id`, `schedule_id`) when the timetable or the
    away/frost temperatures changed. It is atomic for the schedule.
-2. One `set_zone_temperature` per changed room (`home_id`, schedule, zone and
-   room names).
+2. One `set_zone_temperature` per changed room (`home_id`, `schedule_id`,
+   `zone_id`, `room_id`).
 
 Each acknowledged step enters the confirmed model; a failed step keeps its
 change marked as unsaved and is reported with its error. Nothing claims a global
 transaction. Edits are refused beforehand when a value is out of range or not a
-half degree, or when a schedule, zone or room name is ambiguous, since the
-temperature service addresses them by name.
+half degree, or when the room is no longer known to the home. Duplicate names do
+not block anything, since every call addresses its targets by ID.
 
 Unsaved edits are never overwritten by state updates. After a save the
 coordinator may still publish the previous state, or an intermediate one, for a

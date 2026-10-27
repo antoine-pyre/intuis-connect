@@ -64,6 +64,7 @@ ATTR_END_DAY = "end_day"
 ATTR_START_TIME = "start_time"
 ATTR_END_TIME = "end_time"
 ATTR_ZONE_NAME = "zone_name"
+ATTR_ZONE_ID = "zone_id"
 ATTR_ROOM_NAME = "room_name"
 ATTR_TEMPERATURE = "temperature"
 ATTR_DAYS = "days"
@@ -122,12 +123,39 @@ SET_SCHEDULE_SLOT_SCHEMA = vol.Schema(
         vol.Required(ATTR_ZONE_NAME): _nonempty_name,
     }
 )
-SET_ZONE_TEMPERATURE_SCHEMA = vol.Schema(
+def _zone_id(value) -> int:
+    """Zone IDs are integers; the UI text field sends them as digits."""
+    if isinstance(value, str) and value.strip().isdecimal():
+        return int(value)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise vol.Invalid("Zone ID must be an integer")
+    return value
+
+
+class ZoneTemperatureSchema(vol.Schema):
+    """Each target is given by its ID, its name, or both (which must agree)."""
+
+    def __call__(self, data):
+        value = super().__call__(data)
+        for keys in (
+            (ATTR_SCHEDULE_ID, ATTR_SCHEDULE_NAME),
+            (ATTR_ZONE_ID, ATTR_ZONE_NAME),
+            (ATTR_ROOM_ID, ATTR_ROOM_NAME),
+        ):
+            if not any(key in value for key in keys):
+                raise vol.Invalid(f"{keys[0]} or {keys[1]} is required")
+        return value
+
+
+SET_ZONE_TEMPERATURE_SCHEMA = ZoneTemperatureSchema(
     {
         **HOME_FIELD,
-        vol.Required(ATTR_SCHEDULE_NAME): _nonempty_name,
-        vol.Required(ATTR_ZONE_NAME): _nonempty_name,
-        vol.Required(ATTR_ROOM_NAME): _nonempty_name,
+        vol.Optional(ATTR_SCHEDULE_ID): _nonempty_name,
+        vol.Optional(ATTR_SCHEDULE_NAME): _nonempty_name,
+        vol.Optional(ATTR_ZONE_ID): _zone_id,
+        vol.Optional(ATTR_ZONE_NAME): _nonempty_name,
+        vol.Optional(ATTR_ROOM_ID): _nonempty_name,
+        vol.Optional(ATTR_ROOM_NAME): _nonempty_name,
         vol.Required(ATTR_TEMPERATURE): NumberSelector(
             NumberSelectorConfig(
                 min=5,
@@ -238,6 +266,19 @@ def resolve_schedule(home: IntuisHome, schedule_id=None, schedule_name=None):
     return candidates[0]
 
 
+def resolve_room(home: IntuisHome, room_id=None, room_name=None) -> str:
+    """One room by ID and/or case-insensitive name; ambiguity is refused."""
+    candidates = [
+        rid
+        for rid, room in home.rooms.items()
+        if (room_id is None or rid == room_id)
+        and (room_name is None or room.name.casefold() == room_name.casefold())
+    ]
+    if len(candidates) != 1:
+        raise ServiceValidationError("Room target is unknown, ambiguous or inconsistent")
+    return candidates[0]
+
+
 def _room_by_name(home: IntuisHome, name: str) -> str:
     room_id = next(
         (
@@ -314,8 +355,12 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
     async def set_zone_temperature(call: ServiceCall) -> None:
         entry_id, data = first_target(hass, call.data.get(ATTR_HOME_ID))
         home = data["intuis_home"]
-        schedule = _schedule_by_name(home, call.data[ATTR_SCHEDULE_NAME])
-        room_id = _room_by_name(home, call.data[ATTR_ROOM_NAME])
+        schedule = resolve_schedule(
+            home, call.data.get(ATTR_SCHEDULE_ID), call.data.get(ATTR_SCHEDULE_NAME)
+        )
+        room_id = resolve_room(
+            home, call.data.get(ATTR_ROOM_ID), call.data.get(ATTR_ROOM_NAME)
+        )
         try:
             await async_set_zone_temperature(
                 data["api"],
@@ -323,7 +368,8 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
                 schedule.id,
                 room_id,
                 call.data[ATTR_TEMPERATURE],
-                zone_name=call.data[ATTR_ZONE_NAME],
+                zone_id=call.data.get(ATTR_ZONE_ID),
+                zone_name=call.data.get(ATTR_ZONE_NAME),
             )
         except ValueError as err:
             raise ServiceValidationError(str(err)) from err

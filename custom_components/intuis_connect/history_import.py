@@ -14,7 +14,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 
 from .intuis_api.api import APIError, CannotConnect, InvalidAuth, RateLimitError
-from .hourly_series import HOUR
+from .hourly_series import HOUR, energy_rooms
 from .recorder_import import (
     HistoryReplacementError,
     Window,
@@ -290,17 +290,15 @@ async def async_import_energy_history(
         home_id = home_id or intuis_home.id
         registry = er.async_get(hass)
         rooms = []
-        for room_id, room in intuis_home.rooms.items():
-            if room_filter and room.name.casefold() != room_filter.casefold():
-                continue
+        for room_id, room_name in energy_rooms(intuis_home, room_filter):
             entity_id = registry.async_get_entity_id(
                 "sensor", DOMAIN, f"intuis_{home_id}_{room_id}_energy"
             )
             if entity_id:
-                rooms.append((room_id, room.name, entity_id))
+                rooms.append((room_id, room_name, entity_id))
             else:
                 results["errors"].append(
-                    f"Energy sensor for {room.name} is not registered"
+                    f"Energy sensor for {room_name} is not registered"
                 )
         manager.total_rooms = len(rooms)
         manager.total_days = days

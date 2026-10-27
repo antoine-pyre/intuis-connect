@@ -74,17 +74,29 @@
           "name": "Home ID",
           "description": "Target a loaded home by its Intuis home ID. Without a target, uses the first loaded home (and warns if several are loaded)."
         },
+        "schedule_id": {
+          "name": "Schedule ID",
+          "description": "Stable schedule ID. Give the ID, the name, or both (they must match)."
+        },
         "schedule_name": {
           "name": "Schedule Name",
-          "description": "Exact schedule name in the selected home."
+          "description": "Exact schedule name in the selected home, if no ID is given. Must be unique."
+        },
+        "zone_id": {
+          "name": "Zone ID",
+          "description": "Zone ID in that schedule. Give the ID, the name, or both."
         },
         "zone_name": {
           "name": "Zone Name",
-          "description": "Zone name in that schedule."
+          "description": "Zone name in that schedule, if no ID is given. Must be unique."
+        },
+        "room_id": {
+          "name": "Room ID",
+          "description": "Room ID in the selected home. Give the ID, the name, or both."
         },
         "room_name": {
           "name": "Room Name",
-          "description": "Room name in that zone and home."
+          "description": "Room name in that home, if no ID is given. Must be unique."
         },
         "temperature": {
           "name": "Temperature",

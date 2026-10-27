@@ -61,7 +61,10 @@ async def importer(ha_hass, monkeypatch, responses):
     home = SimpleNamespace(
         id="home",
         name="House",
-        rooms={"a": SimpleNamespace(name="Living"), "b": SimpleNamespace(name="Bed")},
+        rooms={
+            "a": SimpleNamespace(name="Living", module_ids=["m"]),
+            "b": SimpleNamespace(name="Bed", module_ids=["m"]),
+        },
     )
     manager = HistoryImportManager(ha_hass, "entry")
     await manager.async_load()
@@ -154,6 +157,25 @@ async def test_unmeasured_hour_keeps_its_statistics_until_a_later_run(
     ]
 
 
+async def test_room_without_equipment_is_not_imported(
+    ha_hass, live_recorder, monkeypatch
+):
+    api, home, manager = await importer(ha_hass, monkeypatch, [wh(0, (1000, 2000))])
+    home.rooms["b"].module_ids = []  # declared in the app, no module
+    result = await run(ha_hass, api, home, manager, 0, 2)
+    assert result["status"] == "completed" and result["home_total"] == "complete"
+    assert [c.args[0] for c in api.async_get_room_energy_hourly.await_args_list] == [
+        "a"
+    ]
+    assert await series(live_recorder, statistic_id("home", "b")) is None
+    assert [
+        row[2] for row in await series(live_recorder, statistic_id("home", None))
+    ] == [
+        1.0,
+        3.0,
+    ]
+
+
 async def test_room_without_any_measurement_keeps_home_total(
     ha_hass, live_recorder, monkeypatch
 ):
@@ -194,7 +216,9 @@ async def test_updater_defers_to_running_import_and_stops_on_close(
 ):
     entry = ha_entry_factory(home_id="home")
     home = SimpleNamespace(
-        id="home", name="House", rooms={"a": SimpleNamespace(name="A")}
+        id="home",
+        name="House",
+        rooms={"a": SimpleNamespace(name="A", module_ids=["m"])},
     )
     manager = SimpleNamespace(start=Mock(side_effect=[False, True]))
     monkeypatch.setattr(
@@ -356,7 +380,9 @@ def blocking_fetch(responses):
 
 def one_room_home(home_id, name="Living"):
     return SimpleNamespace(
-        id=home_id, name=home_id, rooms={"a": SimpleNamespace(name=name)}
+        id=home_id,
+        name=home_id,
+        rooms={"a": SimpleNamespace(name=name, module_ids=["m"])},
     )
 
 
@@ -537,7 +563,7 @@ async def test_room_rename_keeps_one_continuous_series(
     api, home, manager = await importer(
         ha_hass, monkeypatch, [wh(0, (1000, 1000)), wh(2, (500,))]
     )
-    home.rooms = {"a": SimpleNamespace(name="Living")}
+    home.rooms = {"a": SimpleNamespace(name="Living", module_ids=["m"])}
     await run(ha_hass, api, home, manager, 0, 2)
     home.rooms["a"].name = "Lounge"
     await run(ha_hass, api, home, manager, 2, 1)

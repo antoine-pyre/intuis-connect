@@ -139,7 +139,7 @@ test('a complete save is one sync_schedule plus one call per changed room', asyn
   edited.zones[1].temps.r1 = 21.5;
   const calls = [];
   const outcome = await core.saveSchedule(
-    { homeId: 'home-1', scheduleId: 'sched-1', scheduleName: 'Semaine', rooms: home.rooms },
+    { homeId: 'home-1', scheduleId: 'sched-1', rooms: home.rooms },
     baseline, edited,
     async (service, data) => { calls.push([service, data]); },
   );
@@ -148,8 +148,7 @@ test('a complete save is one sync_schedule plus one call per changed room', asyn
       home_id: 'home-1', schedule_id: 'sched-1', timetable: edited.timetable, hg_temp: 7.5,
     }],
     ['set_zone_temperature', {
-      home_id: 'home-1', schedule_name: 'Semaine', zone_name: 'Confort', room_name: 'Salon',
-      temperature: 21.5,
+      home_id: 'home-1', schedule_id: 'sched-1', zone_id: 2, room_id: 'r1', temperature: 21.5,
     }],
   ]);
   assert.equal(outcome.complete, true);
@@ -163,10 +162,10 @@ test('a failed temperature after a confirmed change leaves only it unsaved', asy
   edited.zones[0].temps.r1 = 17.5;
   edited.zones[1].temps.r2 = 20;
   const outcome = await core.saveSchedule(
-    { homeId: 'home-1', scheduleId: 'sched-1', scheduleName: 'Semaine', rooms: home.rooms },
+    { homeId: 'home-1', scheduleId: 'sched-1', rooms: home.rooms },
     baseline, edited,
     async (service, data) => {
-      if (data.room_name === 'Chambre') {
+      if (data.room_id === 'r2') {
         throw { code: 'service_validation_error', message: 'Cloud refused' };
       }
     },
@@ -190,7 +189,7 @@ test('a failed sync keeps the timetable unsaved while later rooms may succeed', 
   edited.awayTemp = 15;
   edited.zones[0].temps.r2 = 15;
   const outcome = await core.saveSchedule(
-    { homeId: 'home-1', scheduleId: 'sched-1', scheduleName: 'Semaine', rooms: home.rooms },
+    { homeId: 'home-1', scheduleId: 'sched-1', rooms: home.rooms },
     baseline, edited,
     async (service) => { if (service === 'sync_schedule') throw new Error('offline'); },
   );
@@ -239,22 +238,30 @@ test('remote updates never overwrite unsaved edits and stale states are ignored'
   assert.deepEqual([flagged.remoteChanged, flagged.pending, flagged.edited.awayTemp], [true, null, 19]);
 });
 
-test('ambiguous names block room edits before any call', () => {
+test('duplicate names do not block room edits: calls target IDs', async () => {
   const [home] = homes({ 'sensor.week': summary({ room_names: { r1: 'Salon', r2: 'SALON' } }) });
   const schedule = home.schedules[0];
   const zone = schedule.model.zones[0];
-  assert.deepEqual(core.temperatureBlockers(home, schedule, zone, 'r1'),
-    ['plusieurs pièces portent le nom « Salon »']);
+  assert.deepEqual(core.temperatureBlockers(home, schedule, zone, 'r1'), []);
   const edited = core.cloneModel(schedule.model);
   edited.zones[0].temps.r1 = 18;
-  assert.equal(core.validationErrors(home, schedule, schedule.model, edited).length, 1);
+  assert.deepEqual(core.validationErrors(home, schedule, schedule.model, edited), []);
+  const calls = [];
+  await core.saveSchedule(
+    { homeId: 'home-1', scheduleId: 'sched-1', rooms: home.rooms },
+    schedule.model, edited,
+    async (service, data) => { calls.push([service, data]); },
+  );
+  assert.deepEqual(calls.map(([, data]) => [data.schedule_id, data.zone_id, data.room_id]),
+    [['sched-1', zone.id, 'r1']]);
 
   const sameNames = homes({
     'sensor.a': summary(),
     'sensor.b': summary({ schedule_id: 'sched-2' }),
   })[0];
-  assert.match(core.temperatureBlockers(sameNames, sameNames.schedules[0],
-    sameNames.schedules[0].model.zones[0], 'r1')[0], /plannings/);
+  assert.deepEqual(core.temperatureBlockers(sameNames, sameNames.schedules[0],
+    sameNames.schedules[0].model.zones[0], 'r1'), []);
+  assert.deepEqual(core.temperatureBlockers(home, schedule, zone, 'gone'), ['pièce inconnue']);
 });
 
 test('planning temperatures follow the service ranges and half degrees', () => {
