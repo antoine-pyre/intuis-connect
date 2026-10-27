@@ -1,6 +1,6 @@
 # Tasks
 
-Toutes les tâches d’implémentation restent ouvertes. Les documents présents ne constituent pas leur réalisation.
+Tâches réalisées et vérifiées localement ; résultats consignés dans le journal de progression.
 
 ## 1. Adaptation du frontend
 
@@ -16,5 +16,5 @@ Toutes les tâches d’implémentation restent ouvertes. Les documents présents
 ## 3. Validation et livraison
 
 - [x] 3.1 Tester la logique JavaScript et les parcours HTTP, puis iframe et autonome sous Firefox/Chromium : minuit/semaine, erreurs, token, sauvegarde, cache et retour après redémarrage.
-- [ ] 3.2 Exécuter la matrice backend, Ruff et les contrôles frontend ; documenter dashboards et migration facultative des anciennes copies HTML.
-- [ ] 3.3 Conserver le crédit TheFab21 dans l’interface, les sources et les notes de version ; relier chaque adaptation à ses PRs/révisions avant livraison.
+- [x] 3.2 Exécuter la matrice backend, Ruff et les contrôles frontend ; documenter dashboards et migration facultative des anciennes copies HTML.
+- [x] 3.3 Conserver le crédit TheFab21 dans l’interface, les sources et les notes de version ; relier chaque adaptation à ses PRs/révisions avant livraison.
