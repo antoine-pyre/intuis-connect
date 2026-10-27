@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 from homeassistant.components.climate import HVACAction, HVACMode
 
@@ -17,7 +17,6 @@ from custom_components.intuis_connect.utils.const import (
     PRESET_AWAY,
     PRESET_BOOST,
     PRESET_SCHEDULE,
-    DOMAIN,
 )
 
 
@@ -76,12 +75,12 @@ class TestClimateProperties:
         entity = climate_entity_factory(room=sample_room)
         assert entity.hvac_mode == HVACMode.AUTO
 
-    def test_hvac_mode_respects_override(self, climate_entity_factory, sample_room):
-        """hvac_mode returns override when _attr_hvac_mode is set."""
+    def test_permanent_hvac_cache_does_not_hide_observed_state(self, climate_entity_factory, sample_room):
+        """An old cached mode without a pending command cannot mask cloud state."""
         sample_room.mode = API_MODE_AUTO
         entity = climate_entity_factory(room=sample_room)
         entity._attr_hvac_mode = HVACMode.OFF
-        assert entity.hvac_mode == HVACMode.OFF
+        assert entity.hvac_mode == HVACMode.AUTO
 
     def test_preset_mode_away(self, climate_entity_factory, sample_room):
         """preset_mode returns PRESET_AWAY for API_MODE_AWAY."""
@@ -544,16 +543,6 @@ class TestClimateHelperMethods:
         result = entity._get_overrides()
 
         assert result == {}
-
-    def test_get_save_overrides_returns_callback(
-        self, climate_entity_factory, mock_save_overrides
-    ):
-        """_get_save_overrides returns the callback."""
-        entity = climate_entity_factory()
-
-        result = entity._get_save_overrides()
-
-        assert result == mock_save_overrides
 
     def test_get_option_returns_value(
         self, climate_entity_factory, default_options

@@ -3,6 +3,7 @@
 This module provides utility functions for working with Intuis heating schedule
 timetables, including zone lookup, entry insertion, and duplicate removal.
 """
+
 from __future__ import annotations
 
 import logging
@@ -10,8 +11,24 @@ import logging
 _LOGGER = logging.getLogger(__name__)
 
 # Day constants for readability
-DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-DAYS_OF_WEEK_LABELS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+DAYS_OF_WEEK = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+]
+DAYS_OF_WEEK_LABELS = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]
 MINUTES_PER_DAY = 1440
 
 
@@ -146,3 +163,113 @@ def parse_time_value(time_value: dict | str) -> tuple[int, int]:
     if isinstance(time_value, dict):
         return time_value.get("hours", 0), time_value.get("minutes", 0)
     return parse_time_string(str(time_value))
+
+
+MINUTES_PER_WEEK = 7 * MINUTES_PER_DAY
+
+
+def replace_timetable_interval(
+    timetable: list[dict],
+    start: int,
+    end: int,
+    zone_id: int,
+) -> list[dict]:
+    """Replace [start, end) on a cyclic week, without changing its complement.
+
+    End may be 10080 for Sunday midnight. Equal normalized bounds are ambiguous
+    (empty vs a full week) and rejected. The input is never modified.
+    """
+    if (
+        isinstance(start, bool)
+        or isinstance(end, bool)
+        or not isinstance(start, int)
+        or not isinstance(end, int)
+        or not 0 <= start < MINUTES_PER_WEEK
+        or not 0 <= end <= MINUTES_PER_WEEK
+    ):
+        raise ValueError("Schedule offsets must be integer minutes within the week")
+    end %= MINUTES_PER_WEEK
+    duration = (end - start) % MINUTES_PER_WEEK
+    if not duration:
+        raise ValueError(
+            "A schedule interval must have distinct start and end boundaries"
+        )
+    if not timetable:
+        raise ValueError("Cannot edit a schedule without timetable entries")
+    original = []
+    offsets = set()
+    for entry in timetable:
+        offset = entry["m_offset"]
+        if (
+            isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or not 0 <= offset < MINUTES_PER_WEEK
+            or offset in offsets
+        ):
+            raise ValueError(
+                "Existing timetable offsets must be unique integer minutes within the week"
+            )
+        offsets.add(offset)
+        original.append({"m_offset": offset, "zone_id": entry["zone_id"]})
+    restore_zone = find_zone_at_offset(original, end)
+    updated = [
+        entry
+        for entry in original
+        if (entry["m_offset"] - start) % MINUTES_PER_WEEK >= duration
+    ]
+    upsert_timetable_entry(updated, start, zone_id)
+    upsert_timetable_entry(updated, end, restore_zone)
+    return remove_consecutive_duplicates(updated)
+
+
+def schedule_slot_offsets(
+    start_day: int | str,
+    start_time: str | dict,
+    end_day: int | str,
+    end_time: str | dict,
+) -> tuple[int, int]:
+    """Validate minute-precision service inputs, keeping same-day midnight semantics."""
+
+    def day_value(value):
+        if isinstance(value, bool) or str(value) not in {str(day) for day in range(7)}:
+            raise ValueError("Days must be integers from 0 (Monday) to 6 (Sunday)")
+        return int(value)
+
+    def clock_value(value):
+        if isinstance(value, dict):
+            parts = [
+                value.get("hours", 0),
+                value.get("minutes", 0),
+                value.get("seconds", 0),
+            ]
+        elif isinstance(value, str) and len(value.split(":")) in (2, 3):
+            parts = value.split(":")
+            if len(parts) == 2:
+                parts.append("0")
+        else:
+            raise ValueError("Time must use HH:MM or HH:MM:00")
+        if any(
+            isinstance(part, bool)
+            or not (isinstance(part, int) or isinstance(part, str) and part.isdecimal())
+            for part in parts
+        ):
+            raise ValueError("Time must use integer hours and minutes")
+        hours, minutes, seconds = (int(part) for part in parts)
+        if not (0 <= hours < 24 and 0 <= minutes < 60 and seconds == 0):
+            raise ValueError("Time must be a valid clock time with zero seconds")
+        return hours, minutes
+
+    first, last = day_value(start_day), day_value(end_day)
+    sh, sm = clock_value(start_time)
+    eh, em = clock_value(end_time)
+    start = calculate_m_offset(first, sh, sm)
+    end = calculate_m_offset(last, eh, em)
+    if first == last and eh == em == 0:
+        end = (last + 1) * MINUTES_PER_DAY
+    if first == last and end <= start:
+        raise ValueError("End must be after start on the same day")
+    if start % MINUTES_PER_WEEK == end % MINUTES_PER_WEEK:
+        raise ValueError(
+            "A schedule interval must have distinct start and end boundaries"
+        )
+    return start, end

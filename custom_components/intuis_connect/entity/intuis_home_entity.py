@@ -15,6 +15,7 @@ from .intuis_home import IntuisHome
 from .intuis_module import NMGIntuisModule
 from .intuis_schedule import IntuisThermSchedule, IntuisThermZone, IntuisTimetable
 from ..entity.intuis_entity import IntuisDataUpdateCoordinator
+from ..timetable import find_zone_at_offset
 from ..utils.const import DOMAIN, CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR
 
 _LOGGER = logging.getLogger(__name__)
@@ -416,6 +417,10 @@ class IntuisScheduleSummarySensor(CoordinatorEntity[IntuisDataUpdateCoordinator]
         if not schedule:
             return attrs
 
+        attrs["home_id"] = self._home_id
+        attrs["home_name"] = home.name if home else None
+        attrs["room_names"] = {str(rid): room.name for rid, room in home.rooms.items()} if home else {}
+        attrs["timetable"] = [{"m_offset": t.m_offset, "zone_id": t.zone_id} for t in schedule.timetables]
         attrs["schedule_id"] = schedule.id
         attrs["is_default"] = schedule.default
         attrs["is_active"] = schedule.selected
@@ -457,8 +462,11 @@ class IntuisScheduleSummarySensor(CoordinatorEntity[IntuisDataUpdateCoordinator]
                         "time": f"{hour:02d}:{minute:02d}",
                         "zone": zone_name or f"Zone {tt.zone_id}"
                     })
-            if day_entries:
-                weekly_summary[day_name] = day_entries
+            if not day_entries or day_entries[0]["time"] != "00:00":
+                zone_id = find_zone_at_offset(attrs["timetable"], day_start)
+                zone = next((z for z in schedule.zones if z.id == zone_id), None)
+                day_entries.insert(0, {"time": "00:00", "zone": zone.name if zone else f"Zone {zone_id}"})
+            weekly_summary[day_name] = day_entries
         attrs["weekly_timetable"] = weekly_summary
 
         # All available schedules (for switching)
@@ -668,22 +676,36 @@ class IntuisHomeEnergySensor(CoordinatorEntity[IntuisDataUpdateCoordinator], Sen
             logical_date = now.date()
         return logical_date.isoformat()
 
-    def _get_total_energy(self) -> float:
-        """Sum energy from all rooms."""
+    def _measured_rooms(self) -> list:
+        """Rooms with a bridge; a room without equipment has no energy to sum."""
         rooms = self.coordinator.data.get("rooms", {})
-        total = 0.0
-        for room in rooms.values():
-            if room.energy:
-                total += room.energy
-        return total
+        return [room for room in rooms.values() if room.bridge_id]
+
+    def _get_total_energy(self) -> float | None:
+        """A partial home is not a measured zero or a complete total."""
+        rooms = self._measured_rooms()
+        if not rooms or any(room.energy is None for room in rooms):
+            return None
+        if len({room.energy_day for room in rooms}) > 1:
+            return None
+        return sum(room.energy for room in rooms)
 
     @property
-    def native_value(self) -> float:
-        """Return the cumulative daily home energy value."""
+    def available(self) -> bool:
+        return super().available and (
+            self._get_total_energy() is not None or self._last_logical_day is not None
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        """Return a complete daily total or the last complete, now stale value."""
         current_energy = self._get_total_energy()
-        now = dt_util.now()
+        if current_energy is None:
+            return self._daily_max_energy if self._last_logical_day is not None else None
+        current_logical_day = self._measured_rooms()[0].energy_day or self._get_logical_day(
+            dt_util.now(), self._get_reset_hour()
+        )
         reset_hour = self._get_reset_hour()
-        current_logical_day = self._get_logical_day(now, reset_hour)
 
         if self._last_logical_day is None:
             self._daily_max_energy = current_energy
@@ -707,15 +729,17 @@ class IntuisHomeEnergySensor(CoordinatorEntity[IntuisDataUpdateCoordinator], Sen
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return room breakdown as attributes."""
-        rooms = self.coordinator.data.get("rooms", {})
-        room_breakdown = {}
-        for room in rooms.values():
-            if hasattr(room, 'name') and hasattr(room, 'energy'):
-                room_breakdown[room.name] = room.energy or 0.0
+        """Identify missing/stale rooms rather than present a partial total as fresh."""
+        rooms = self._measured_rooms()
+        updated = [room.energy_updated_at for room in rooms]
         return {
-            "room_breakdown": room_breakdown,
+            "room_breakdown": {room.name: room.energy for room in rooms},
             "room_count": len(rooms),
+            "energy_stale": self._get_total_energy() is None or any(
+                room.energy_stale for room in rooms
+            ),
+            "incomplete_rooms": [room.id for room in rooms if room.energy is None or room.energy_stale],
+            "last_successful_update": min(updated) if updated and all(updated) else None,
         }
 
 

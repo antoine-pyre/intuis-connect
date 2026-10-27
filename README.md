@@ -3,7 +3,7 @@
 > **Full control of your Muller / Campa / Intuis electric radiators** with Netatmo "Intuitiv" modules – climate control, energy tracking, schedule management, and more.
 
 [![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![GitHub Release](https://img.shields.io/github/v/release/antoine-pyre/homeassistant-intuis-connect)](https://github.com/antoine-pyre/homeassistant-intuis-connect/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/antoine-pyre/intuis-connect)](https://github.com/antoine-pyre/intuis-connect/releases)
 
 ---
 
@@ -14,7 +14,7 @@
 | **Climate Control** | Full thermostat control per room with Auto/Heat/Off modes |
 | **Presets** | Schedule, Away, and Boost modes with configurable durations |
 | **Energy Monitoring** | Daily kWh consumption per room with historical import |
-| **Schedule Management** | View, switch, and edit heating schedules |
+| **Schedule Management** | View, switch, and edit heating schedules, with a bundled visual editor |
 | **Calendar Integration** | Visualize weekly schedules as calendar events |
 | **Smart Detection** | Presence detection, open window detection, heating anticipation |
 | **Indefinite Override** | Keep manual temperatures active indefinitely |
@@ -27,7 +27,7 @@
 
 ### One-Click Install (Recommended)
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=antoine-pyre&repository=homeassistant-intuis-connect&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=antoine-pyre&repository=intuis-connect&category=integration)
 
 ### Manual HACS Install
 
@@ -55,7 +55,6 @@
 |-------------|------|-------------|
 | **Climate** | `climate.<room>` | Full thermostat control |
 | **Sensor** | `sensor.<room>_temperature` | Current room temperature (°C) |
-| **Sensor** | `sensor.<room>_target_temperature` | Current setpoint (°C) |
 | **Sensor** | `sensor.<room>_scheduled_temperature` | Temperature according to schedule |
 | **Sensor** | `sensor.<room>_energy` | Daily energy consumption (kWh) |
 | **Sensor** | `sensor.<room>_heating_minutes` | Heating time today |
@@ -63,15 +62,12 @@
 | **Binary Sensor** | `binary_sensor.<room>_presence` | Motion/presence detected |
 | **Binary Sensor** | `binary_sensor.<room>_open_window` | Window open detected |
 | **Binary Sensor** | `binary_sensor.<room>_anticipation` | Pre-heating active |
-| **Binary Sensor** | `binary_sensor.<room>_boost` | Boost mode active |
 
 ### Per Schedule
 
 | Entity Type | Name | Description |
 |-------------|------|-------------|
-| **Sensor** | `sensor.<schedule>_current_zone` | Currently active zone (Comfort, Night, Eco...) |
-| **Sensor** | `sensor.<schedule>_next_zone_change` | When the next zone starts |
-| **Sensor** | `sensor.<schedule>_summary` | Full schedule data (for cards) |
+| **Sensor** | `sensor.<schedule>_summary` | Full schedule data (for cards and the planning editor), including `home_id`, `home_name` and `room_names` |
 | **Calendar** | `calendar.<schedule>` | Weekly schedule visualization |
 
 ### Home Level
@@ -79,6 +75,7 @@
 | Entity Type | Name | Description |
 |-------------|------|-------------|
 | **Select** | `select.intuis_active_schedule` | Switch between schedules |
+| **Sensor** | Current zone / next zone change | Active schedule transitions for this home |
 | **Sensor** | Various config sensors | Home settings and configuration |
 
 ---
@@ -91,7 +88,7 @@
 |------|-------------|
 | **Auto** | Follow the active schedule |
 | **Heat** | Manual temperature control |
-| **Off** | Frost protection only |
+| **Off** | Send the cloud off mode |
 
 ### Presets
 
@@ -99,10 +96,10 @@
 |-----------|-------------|
 | **Home**  | Return to automatic schedule (mapped to HA Home preset) |
 | **Away**  | Reduced temperature for extended absence |
-| **Boost** | Maximum heating for quick warmup |
+| **Boost** | Temporary boost using the configured setpoint |
 | **Eco**   | Minimum temperature for frost protection (mapped to HA Eco preset) |
 
-All preset durations and temperatures are configurable in the integration options.
+Manual, Away and Boost durations and the Away/Boost temperatures are configurable in the integration options. Frost protection uses the current defaults of 7°C and 365 days. Climate commands are shown as assumed state for at most 120 seconds while awaiting confirmation; subsequent cloud updates determine the displayed mode. See [heating state and persistence](docs/09-heating-overrides.md).
 
 ---
 
@@ -142,6 +139,19 @@ service: intuis_connect.refresh_schedules
 
 ---
 
+## Multi-Home Services
+
+All domain services accept optional `home_id` to target an Intuis home. Without
+it, planning mutations use the first loaded home (with a warning if several are
+loaded), while refresh and history import target all homes. A nonempty import
+`room_name` filters homes containing that room. Unknown or blank explicit home
+IDs are rejected before any command.
+
+Schedule, zone and room names are text inputs validated against the target home’s
+current data. Run `refresh_schedules` after renaming them; no restart is needed.
+Installed `services.yaml` is static and is never rewritten with account data.
+See [multi-home service examples and lifecycle](docs/10-multi-home-services.md).
+
 ## Configuration Options
 
 Accessible via **Settings → Devices & Services → Intuis Connect → Configure**
@@ -150,16 +160,16 @@ Accessible via **Settings → Devices & Services → Intuis Connect → Configur
 
 | Option | Default | Range | Description |
 |--------|---------|-------|-------------|
-| Manual Duration | 5 min | 1-720 min | How long manual temperature lasts |
-| Away Duration | 24 hours | 1-10080 min | How long away mode lasts |
-| Boost Duration | 30 min | 1-720 min | How long boost mode lasts |
+| Manual Duration | 60 min | Choices from 15-720 min | How long manual temperature lasts |
+| Away Duration | 4 hours | Choices from 60-10080 min | How long away mode lasts |
+| Boost Duration | 30 min | Choices from 15-720 min | How long boost mode lasts |
 
 ### Override Temperatures
 
 | Option | Default | Range | Description |
 |--------|---------|-------|-------------|
 | Away Temperature | 16°C | 5-30°C | Temperature during away mode |
-| Boost Temperature | 30°C | 5-30°C | Temperature during boost mode |
+| Boost Temperature | 22°C | 5-30°C | Temperature during boost mode |
 
 ### Energy Settings
 
@@ -167,7 +177,11 @@ Accessible via **Settings → Devices & Services → Intuis Connect → Configur
 |--------|---------|-------------|
 | Energy Scale | 1 day | Granularity: 5min, 30min, 1hour, or 1day |
 | Import History | Off | Import historical energy data on setup |
-| History Days | 30 | Days of history to import (7, 30, 90, 365) |
+| History Days | 365 | Setup choices: 30, 90, 180, 365, 730 days |
+| Energy Reset Hour | 02:00 | Configured boundary for daily counters |
+| Hourly Statistics | Off | Opt-in separate hourly statistics per room and home |
+| Hourly Update Interval | 2 hours | 1, 2, 4 or 6 hours between hourly updates |
+| Energy Costs | Off | Opt-in hourly costs from a fixed price or a price sensor (requires hourly statistics) |
 
 ### Special Modes
 
@@ -183,12 +197,27 @@ The integration tracks energy consumption per room:
 
 - **Daily consumption** in kWh
 - **Heating minutes** per day
-- **Historical import** available (up to 365 days)
+- **Historical import** available (up to 730 complete local days)
+- Historical imports replace complete local days only and preserve existing statistics on failure.
+  Let energy sensors record their first live statistics before importing; if the automatic
+  setup attempt reports a missing live baseline, wait and retry the import service.
+  See [safe import prerequisites and recovery](docs/08-safe-energy-history-import.md).
+- **Hourly statistics** (opt-in): closed hours in separate external statistics per room and
+  for the home, kept up to date automatically; `import_energy_history` with
+  `granularity: hourly` fills older periods. The `1hour` energy scale is unrelated: it only
+  refreshes the daily sensors. See [hourly energy statistics](docs/11-hourly-energy.md).
+- **Energy costs** (opt-in): hourly cost statistics per room and for the home from confirmed
+  hourly energy and an explicit price (fixed or a `<currency>/kWh` sensor); missing prices are
+  refused, never guessed. `recalculate_cost_history` rewrites past costs. See
+  [energy costs](docs/12-energy-costs.md).
 - **Multiple tariff support** (aggregates all EJP tariffs)
 
 Energy data is fetched based on your configured scale:
-- `1day`: Cached daily totals (fetched after 2 AM)
-- `5min/30min/1hour`: Real-time tracking
+- `1day`: Successful measurements cached per room after the configured reset hour (02:00 by default); failed rooms retry on the next cycle
+- `5min/30min/1hour`: Measurements refreshed each polling cycle
+- A failed reading is not fabricated as zero. The last valid measurement retains its date and freshness attributes; an incomplete home aggregate is marked stale.
+- A valid cloud answer without any value (a room that has not heated yet) reads 0 kWh. Rooms without equipment are left out of the home total.
+- After a restart before the reset hour, `1day` reads the current logical day (the previous calendar day) instead of staying unavailable until the reset hour.
 
 ---
 
@@ -203,7 +232,9 @@ Energy data is fetched based on your configured scale:
 
 ### Editing Schedules
 
-Use the `set_schedule_slot` service or install the [Intuis Schedule Card](https://github.com/antoine-pyre/intuis-schedule-card) for visual editing.
+Use the bundled [planning editor](#visual-schedule-editor), the `set_schedule_slot`
+and `sync_schedule` services, or the companion
+[Intuis Schedule Card](https://github.com/antoine-pyre/intuis-schedule-card).
 
 ### Schedule Structure
 
@@ -271,7 +302,57 @@ hours_to_show: 168
 
 ### Visual Schedule Editor
 
-Install the companion [Intuis Schedule Card](https://github.com/antoine-pyre/intuis-schedule-card):
+The integration serves a weekly planning editor at `/api/intuis_connect/planning`,
+adapted from [TheFab21](https://github.com/TheFab21)'s editor
+([#17](https://github.com/antoine-pyre/intuis-connect/pull/17),
+[#22](https://github.com/antoine-pyre/intuis-connect/pull/22),
+[#24](https://github.com/antoine-pyre/intuis-connect/pull/24)). No file copy is
+needed: it is updated with the integration and revalidated by the browser on
+every load (ETag), so a HACS update is picked up after Home Assistant restarts.
+
+Recommended: create a dedicated dashboard (**Settings → Dashboards → Add
+dashboard → Webpage**) with the URL `/api/intuis_connect/planning`. Or add a card:
+
+```yaml
+type: iframe
+url: /api/intuis_connect/planning
+aspect_ratio: 100%
+```
+
+Inside a dashboard the editor uses your Home Assistant session; no token is
+needed. It provides the seven-day grid (click a segment or `+` to replace an
+interval, including across midnight or the week boundary), the home and schedule
+selectors, away/frost temperatures, per-zone room temperatures, an unsaved
+changes warning, refresh and HA's light/dark theme. After a restart it waits up
+to 45 seconds for Home Assistant to reconnect.
+
+**Saving.** Timetable and away/frost changes are sent as one `sync_schedule`
+command for the schedule. Each changed room temperature is a separate
+`set_zone_temperature` command. The editor lists every step's result; when one
+fails, the others stay saved and only the failed changes remain marked as unsaved.
+There is no global transaction, and changes made at the same time from the Intuis
+app are not detected before saving. Room temperatures are addressed by schedule,
+zone and room IDs, so rooms, zones or schedules sharing a name remain editable.
+
+**Standalone tab.** Opening the URL directly asks for the Home Assistant address
+(prefilled with the current one) and a long-lived access token (**Profile →
+Security**). The token is kept for the browser tab only, unless you tick
+*Remember*; **Log out** removes it. Another address than the page's own must be
+allowed in Home Assistant's `http: cors_allowed_origins`; the integration does
+not open CORS itself.
+
+The page served without login is a static shell: it contains no home data,
+token or command, and all reads and changes go through Home Assistant's
+authenticated APIs. It is only available while an Intuis home is loaded.
+
+**Migrating from a manual copy.** If you previously copied `intuis_planning.html`
+to `/config/www/` (for example `/config/www/planning_intuis/`), point your
+dashboard to `/api/intuis_connect/planning`, then optionally delete the old file.
+Logging out of the bundled editor also removes a token remembered by the old copy
+in the same browser. Keeping the old copy does not affect the integration.
+
+The companion [Intuis Schedule Card](https://github.com/antoine-pyre/intuis-schedule-card)
+remains available:
 
 ```yaml
 type: custom:intuis-schedule-card
@@ -304,13 +385,13 @@ When enabled, the integration automatically re-applies manual overrides before t
 - Try the `refresh_schedules` service
 
 ### Energy data missing
-- Energy is only fetched after 2 AM for daily scale
+- Daily-scale energy is fetched after the configured reset hour (02:00 by default)
 - Check that rooms have associated bridge IDs
 - Try switching to a different energy scale
 
 ### Schedule changes not appearing
 - Click the refresh button or call `refresh_schedules`
-- Changes made in the Intuis app may take 2 minutes to sync
+- Call `refresh_schedules` after editing schedule definitions in the Intuis app; room status is polled normally
 
 ### Authentication errors
 - Re-authenticate by removing and re-adding the integration
@@ -341,4 +422,12 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 Created by [antoine-pyre](https://github.com/antoine-pyre)
 
+See [Contributors and contribution sources](CONTRIBUTORS.md) for contributor
+credits, original pull requests, and attribution of planned adaptations.
+
 Based on reverse-engineering of the Intuis/Netatmo API.
+
+## Development
+
+See [Development and validation](docs/development.md) for the pinned Python/Home
+Assistant test matrix, offline test fixtures, and the same checks used in CI.

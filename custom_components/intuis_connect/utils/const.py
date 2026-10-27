@@ -1,4 +1,4 @@
-"""Constants for Intuis Connect integration (v1.9.6)."""
+"""Integration options, defaults and cloud endpoint constants."""
 
 DOMAIN = "intuis_connect"
 
@@ -135,6 +135,26 @@ IMPORT_DAYS_OPTIONS = [
     {"value": "365", "label": "365 days (1 year)"},
     {"value": "730", "label": "730 days (2 years)"},
 ]
+
+# Hourly external statistics (opt-in, distinct from the daily energy sensors)
+CONF_HOURLY_STATISTICS = "hourly_statistics"
+CONF_HOURLY_STATISTICS_INTERVAL = "hourly_statistics_interval"
+DEFAULT_HOURLY_STATISTICS = False
+DEFAULT_HOURLY_STATISTICS_INTERVAL = 120  # minutes
+HOURLY_INTERVAL_OPTIONS = [
+    {"value": "60", "label": "1 hour"},
+    {"value": "120", "label": "2 hours"},
+    {"value": "240", "label": "4 hours"},
+    {"value": "360", "label": "6 hours"},
+]
+
+# Energy cost statistics (opt-in; keys distinct from community #22 options)
+CONF_COST_STATISTICS = "cost_statistics"
+CONF_COST_PRICE_MODE = "cost_price_mode"
+CONF_COST_FIXED_PRICE = "cost_fixed_price"
+CONF_COST_PRICE_ENTITY = "cost_price_entity"
+DEFAULT_COST_STATISTICS = False
+SUGGESTED_COST_FIXED_PRICE = 0.25  # form suggestion only, never applied implicitly
 
 # API modes
 API_MODE_OFF = "off"

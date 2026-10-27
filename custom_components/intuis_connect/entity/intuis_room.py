@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from datetime import datetime
 
 from ..entity.intuis_module import IntuisModule, NMHIntuisModule
 
@@ -67,7 +68,10 @@ class IntuisRoom:
         self.heating = heating
         # Accumulated counters (updated by mapper, not from API)
         self.minutes: float = 0.0
-        self.energy: float = 0.0
+        self.energy: float | None = None
+        self.energy_day: str | None = None
+        self.energy_updated_at: datetime | None = None
+        self.energy_stale: bool = True
 
     @staticmethod
     def from_dict(definition: IntuisRoomDefinition, data: dict[str, Any], modules: list[IntuisModule]) -> IntuisRoom:

@@ -238,3 +238,9 @@ for base_url in BASE_URLS:
     except:
         continue
 ```
+
+
+## Heating state reconciliation
+
+See [Dérogations et état climate](09-heating-overrides.md) for the shared intention
+store, bounded pending display, cloud confirmation and entity cleanup guarantees.

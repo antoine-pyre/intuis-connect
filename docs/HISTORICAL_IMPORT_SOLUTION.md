@@ -1,3 +1,7 @@
+> Historical design notes. The current implementation uses an acknowledged recorder
+> transaction and validates closed-day coverage before replacement. Refer to
+> [Safe energy history import](08-safe-energy-history-import.md) for the supported behavior.
+
 # Solution: Import Historical Energy Data to Existing Entity Statistics
 
 ## Problem Statement

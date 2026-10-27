@@ -1,19 +1,24 @@
-"""Setup for Intuis Connect (v1.9.6)."""
+"""Set up and unload the Intuis Connect integration."""
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import datetime
 import logging
+
+import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.storage import Store
 
-from .intuis_api.api import IntuisAPI, InvalidAuth, CannotConnect, APIError
+from .intuis_api.api import IntuisAPI, InvalidAuth, CannotConnect, APIError, RateLimitError
 from .utils.const import (
     DOMAIN,
     CONF_REFRESH_TOKEN,
@@ -21,6 +26,9 @@ from .utils.const import (
     CONF_HOME_NAME,
     CONF_IMPORT_HISTORY,
     CONF_IMPORT_HISTORY_DAYS,
+    CONF_HOURLY_STATISTICS,
+    CONF_HOURLY_STATISTICS_INTERVAL,
+    DEFAULT_HOURLY_STATISTICS_INTERVAL,
     DEFAULT_UPDATE_INTERVAL,
     CONF_RATE_LIMIT_DELAY,
     CONF_CIRCUIT_BREAKER_THRESHOLD,
@@ -33,28 +41,30 @@ from .utils.const import (
 )
 from .entity.intuis_entity import IntuisDataUpdateCoordinator
 from .history_import import (
-    HistoryImportManager,
-    async_import_energy_history,
+    async_get_import_manager,
 )
+from .hourly_stats import HourlyStatisticsUpdater
 from .intuis_data import IntuisData
+from .overrides import OverrideManager, OverrideState
+from .planning_view import async_register_planning_view
 from .services import (
-    async_generate_services_yaml,
     async_register_services,
-    SERVICE_SWITCH_SCHEDULE,
-    SERVICE_REFRESH_SCHEDULES,
-    SERVICE_SET_SCHEDULE_SLOT,
-    SERVICE_SET_ZONE_TEMPERATURE,
-    SERVICE_IMPORT_ENERGY_HISTORY,
-    ATTR_SCHEDULE_NAME,
-    ATTR_DAY,
-    ATTR_START_DAY,
-    ATTR_END_DAY,
-    ATTR_START_TIME,
-    ATTR_END_TIME,
-    ATTR_ZONE_NAME,
-    ATTR_ROOM_NAME,
-    ATTR_TEMPERATURE,
-    ATTR_DAYS,
+    async_unregister_services_if_unused,
+    SERVICE_SWITCH_SCHEDULE as SERVICE_SWITCH_SCHEDULE,
+    SERVICE_REFRESH_SCHEDULES as SERVICE_REFRESH_SCHEDULES,
+    SERVICE_SET_SCHEDULE_SLOT as SERVICE_SET_SCHEDULE_SLOT,
+    SERVICE_SET_ZONE_TEMPERATURE as SERVICE_SET_ZONE_TEMPERATURE,
+    SERVICE_IMPORT_ENERGY_HISTORY as SERVICE_IMPORT_ENERGY_HISTORY,
+    ATTR_SCHEDULE_NAME as ATTR_SCHEDULE_NAME,
+    ATTR_DAY as ATTR_DAY,
+    ATTR_START_DAY as ATTR_START_DAY,
+    ATTR_END_DAY as ATTR_END_DAY,
+    ATTR_START_TIME as ATTR_START_TIME,
+    ATTR_END_TIME as ATTR_END_TIME,
+    ATTR_ZONE_NAME as ATTR_ZONE_NAME,
+    ATTR_ROOM_NAME as ATTR_ROOM_NAME,
+    ATTR_TEMPERATURE as ATTR_TEMPERATURE,
+    ATTR_DAYS as ATTR_DAYS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -62,6 +72,8 @@ _LOGGER = logging.getLogger(__name__)
 # Storage for persisting overrides across restarts
 STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}.overrides"
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 PLATFORMS: list[Platform] = [
     Platform.CALENDAR,
@@ -73,8 +85,22 @@ PLATFORMS: list[Platform] = [
 ]
 
 
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Serve the bundled planning editor once, shared by every configured home."""
+    async_register_planning_view(hass)
+    return True
+
+
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""
+    data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    previous = data.get("options")
+    current = dict(entry.options)
+    data["options"] = current
+    if previous is not None and previous.get(CONF_IMPORT_HISTORY) and not current.get(CONF_IMPORT_HISTORY):
+        if {k: v for k, v in previous.items() if k != CONF_IMPORT_HISTORY} == {k: v for k, v in current.items() if k != CONF_IMPORT_HISTORY}:
+            # Consuming the one-shot flag must not reload/cancel its own import.
+            return
     _LOGGER.debug("Reloading entry %s due to options update", entry.entry_id)
     await hass.config_entries.async_reload(entry.entry_id)
 
@@ -113,16 +139,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     intuis_home = await intuis_api.async_get_homes_data()
     _LOGGER.debug("Intuis home: %s", intuis_home.__str__())
 
-    # ---------- generate dynamic services.yaml -------------------------------------
-    await async_generate_services_yaml(hass, intuis_home)
-
     # ---------- shared overrides (sticky intents) with persistence -----------------
     # Set up storage for persisting overrides across restarts
     store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}.{entry.entry_id}")
 
     # Load persisted overrides
     stored_data = await store.async_load()
-    overrides: dict[str, dict] = stored_data.get("overrides", {}) if stored_data else {}
+    overrides: OverrideState = stored_data.get("overrides", {}) if stored_data else {}
 
     if overrides:
         _LOGGER.info("Loaded %d persisted overrides from storage", len(overrides))
@@ -130,7 +153,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Callback to save overrides to storage
     async def save_overrides() -> None:
         """Persist overrides to storage."""
-        await store.async_save({"overrides": overrides})
+        await store.async_save({"overrides": deepcopy(overrides)})
         _LOGGER.debug("Saved %d overrides to storage", len(overrides))
 
     # ---------- setup coordinator --------------------------------------------------
@@ -138,12 +161,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def get_options() -> dict:
         return dict(entry.options)
 
+    override_manager = OverrideManager(overrides, save_overrides)
     intuis_data = IntuisData(
         intuis_api,
         intuis_home,
         overrides,
         get_options,
         save_overrides_callback=save_overrides,
+        override_manager=override_manager,
     )
 
     coordinator: IntuisDataUpdateCoordinator = DataUpdateCoordinator(
@@ -193,7 +218,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
         "intuis_home": intuis_home,
         "overrides": overrides,
+        "override_manager": override_manager,
         "save_overrides": save_overrides,
+        "options": dict(entry.options),
     }
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)
 
@@ -209,7 +236,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         existing_manager = hass.data[DOMAIN]["import_managers"].get(entry.entry_id)
         if existing_manager and existing_manager.is_running:
             _LOGGER.info("Cancelling previous import that was still running")
-            existing_manager.cancel()
+            await existing_manager.async_close()
+            hass.data[DOMAIN]["import_managers"].pop(entry.entry_id, None)
 
     import_history = entry.options.get(CONF_IMPORT_HISTORY, False)
     import_days = entry.options.get(CONF_IMPORT_HISTORY_DAYS, 0)
@@ -220,31 +248,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             import_days,
         )
 
-        # Create import manager
-        manager = HistoryImportManager(hass, entry.entry_id)
-        await manager.async_load()
+        manager = await async_get_import_manager(hass, entry.entry_id)
 
-        # Store manager for potential service access
-        if "import_managers" not in hass.data[DOMAIN]:
-            hass.data[DOMAIN]["import_managers"] = {}
-        hass.data[DOMAIN]["import_managers"][entry.entry_id] = manager
-
-        # Start import in background task
-        hass.async_create_task(
-            async_import_energy_history(
-                hass=hass,
-                api=intuis_api,
-                intuis_home=intuis_home,
-                manager=manager,
-                days=import_days,
-                room_filter=None,
-                home_id=entry.data["home_id"],
-            )
+        manager.start(
+            intuis_api, intuis_home, days=import_days,
+            room_filter=None, home_id=entry.data["home_id"],
         )
 
         # Clear the import flag so it doesn't run again on reload
         new_options = {**entry.options, CONF_IMPORT_HISTORY: False}
         hass.config_entries.async_update_entry(entry, options=new_options)
+
+    # ---------- opt-in hourly external statistics, isolated per entry --------------
+    if entry.options.get(CONF_HOURLY_STATISTICS, False):
+        updater = HourlyStatisticsUpdater(
+            hass,
+            entry,
+            intuis_api,
+            intuis_home,
+            int(entry.options.get(
+                CONF_HOURLY_STATISTICS_INTERVAL, DEFAULT_HOURLY_STATISTICS_INTERVAL
+            )),
+        )
+        hass.data[DOMAIN][entry.entry_id]["hourly_updater"] = updater
+        updater.async_start()
 
     return True
 
@@ -252,9 +279,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     _LOGGER.debug("Unloading entry %s", entry.entry_id)
+    # Stop scheduling first so no new hourly job can reserve the manager.
+    updater = hass.data[DOMAIN].get(entry.entry_id, {}).get("hourly_updater")
+    if updater is not None:
+        await updater.async_close()
+    manager = hass.data[DOMAIN].get("import_managers", {}).get(entry.entry_id)
+    if manager is not None:
+        await manager.async_close()
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        hass.data[DOMAIN].get("import_managers", {}).pop(entry.entry_id, None)
         hass.data[DOMAIN].pop(entry.entry_id)
+        async_unregister_services_if_unused(hass)
         _LOGGER.debug("Unloaded entry %s", entry.entry_id)
+    if not unload_ok and manager is not None:
+        manager._closing = False
+    if not unload_ok and updater is not None:
+        updater.async_start()
     return unload_ok
 
 
@@ -292,7 +332,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     home_name,
                     home_id,
                 )
-            except (InvalidAuth, CannotConnect, APIError) as err:
+            except (InvalidAuth, CannotConnect, APIError, RateLimitError) as err:
                 _LOGGER.warning(
                     "Migration: Could not fetch home name from API: %s",
                     err,
@@ -301,9 +341,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _LOGGER.warning(
                     "Migration: Timeout while fetching home name from API"
                 )
-            except Exception as err:
+            except (aiohttp.ClientError, KeyError, TypeError, ValueError) as err:
                 _LOGGER.warning(
-                    "Migration: Unexpected error fetching home name: %s",
+                    "Migration: Invalid or unavailable home name response: %s",
                     err,
                 )
 

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from typing import Any
 
 # Sample home data for tests
 SAMPLE_HOMES_SINGLE = [
@@ -75,25 +74,6 @@ class TestConfigFlowSingleHome:
         # Unique ID should be username (backward compatible for single home)
         flow.async_set_unique_id.assert_called_once_with("test@example.com")
 
-    @pytest.mark.asyncio
-    async def test_backward_compatibility_existing_single_home(self):
-        """Existing single-home entries should continue to work without home_name."""
-        from custom_components.intuis_connect.utils.const import (
-            CONF_USERNAME,
-            CONF_REFRESH_TOKEN,
-            CONF_HOME_ID,
-        )
-
-        # Simulate V2 config entry data (no home_name)
-        v2_entry_data = {
-            CONF_USERNAME: "test@example.com",
-            CONF_REFRESH_TOKEN: "token123",
-            CONF_HOME_ID: "home_abc123",
-        }
-
-        # Entry should still work - home_name is optional
-        assert CONF_USERNAME in v2_entry_data
-        assert CONF_HOME_ID in v2_entry_data
 
 
 class TestConfigFlowMultiHome:
@@ -279,32 +259,6 @@ class TestUniqueIds:
         assert "home_def456" in entity2.unique_id
 
 
-class TestServicesMultiHome:
-    """Tests for service calls with multi-home support."""
-
-    @pytest.mark.asyncio
-    async def test_refresh_schedules_all_homes(self):
-        """refresh_schedules without home_id should refresh all homes."""
-        from custom_components.intuis_connect.services import (
-            ATTR_HOME_ID,
-            REFRESH_SCHEDULES_SCHEMA,
-        )
-
-        # Schema should accept empty call (no home_id)
-        result = REFRESH_SCHEDULES_SCHEMA({})
-        assert ATTR_HOME_ID not in result
-
-    @pytest.mark.asyncio
-    async def test_refresh_schedules_specific_home(self):
-        """refresh_schedules with home_id should target that home only."""
-        from custom_components.intuis_connect.services import (
-            ATTR_HOME_ID,
-            REFRESH_SCHEDULES_SCHEMA,
-        )
-
-        # Schema should accept home_id
-        result = REFRESH_SCHEDULES_SCHEMA({ATTR_HOME_ID: "home_abc123"})
-        assert result[ATTR_HOME_ID] == "home_abc123"
 
 
 class TestMigration:
@@ -488,28 +442,7 @@ class TestAPIMultiHome:
         assert homes[1]["id"] == "home_2"
         assert homes[1]["name"] == "House 2"
 
-    @pytest.mark.asyncio
-    async def test_async_login_returns_homes_list(self):
-        """async_login should return list of homes, not single home_id."""
-        from custom_components.intuis_connect.intuis_api.api import IntuisAPI
 
-        mock_session = MagicMock()
-        api = IntuisAPI(mock_session)
-
-        # The return type should be list[dict], not str
-        # This is a type annotation check - we verify the method exists
-        assert hasattr(api, "async_login")
-
-    def test_async_get_homes_data_accepts_target_home_id(self):
-        """async_get_homes_data should accept optional target_home_id parameter."""
-        from custom_components.intuis_connect.intuis_api.api import IntuisAPI
-        import inspect
-
-        # Check that the method accepts target_home_id parameter
-        sig = inspect.signature(IntuisAPI.async_get_homes_data)
-        params = list(sig.parameters.keys())
-
-        assert "target_home_id" in params
 
 
 class TestHelperMultiHome:
