@@ -10,8 +10,8 @@ Toutes les tâches d’implémentation restent ouvertes. Les documents présents
 
 ## 2. Distribution
 
-- [ ] 2.1 Ajouter la vue HTTP, dépendance http si requise, assets embarqués et ETag/304 sans lecture bloquante.
-- [ ] 2.2 Tester multi-entrée, reload, dernier unload, fichiers absents et nouvelle version sans données secrètes dans la coque.
+- [x] 2.1 Ajouter la vue HTTP, dépendance http si requise, assets embarqués et ETag/304 sans lecture bloquante.
+- [x] 2.2 Tester multi-entrée, reload, dernier unload, fichiers absents et nouvelle version sans données secrètes dans la coque.
 
 ## 3. Validation et livraison
 
