@@ -1,0 +1,5 @@
+# Correctness/import checks apply to production and tests without file exemptions.
+target-version = "py312"
+
+[lint]
+select = ["E4", "E7", "E9", "F"]

@@ -11,6 +11,8 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector,
+    EntitySelector,
+    EntitySelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -40,6 +42,14 @@ from .utils.const import (
     CONF_ENERGY_RESET_HOUR,
     CONF_IMPORT_HISTORY,
     CONF_IMPORT_HISTORY_DAYS,
+    CONF_HOURLY_STATISTICS,
+    CONF_HOURLY_STATISTICS_INTERVAL,
+    CONF_COST_STATISTICS,
+    CONF_COST_PRICE_MODE,
+    CONF_COST_FIXED_PRICE,
+    CONF_COST_PRICE_ENTITY,
+    DEFAULT_COST_STATISTICS,
+    SUGGESTED_COST_FIXED_PRICE,
     CONF_RATE_LIMIT_DELAY,
     CONF_CIRCUIT_BREAKER_THRESHOLD,
     CONF_MAX_UPDATE_INTERVAL,
@@ -53,6 +63,8 @@ from .utils.const import (
     DEFAULT_ENERGY_RESET_HOUR,
     DEFAULT_IMPORT_HISTORY,
     DEFAULT_IMPORT_HISTORY_DAYS,
+    DEFAULT_HOURLY_STATISTICS,
+    DEFAULT_HOURLY_STATISTICS_INTERVAL,
     DEFAULT_RATE_LIMIT_DELAY,
     DEFAULT_CIRCUIT_THRESHOLD,
     DEFAULT_MAX_UPDATE_INTERVAL,
@@ -60,10 +72,12 @@ from .utils.const import (
     DURATION_OPTIONS_SHORT,
     DURATION_OPTIONS_LONG,
     IMPORT_DAYS_OPTIONS,
+    HOURLY_INTERVAL_OPTIONS,
     RATE_LIMIT_DELAY_OPTIONS,
     CIRCUIT_THRESHOLD_OPTIONS,
     MAX_UPDATE_INTERVAL_OPTIONS,
 )
+from .cost_stats import PRICE_MODE_ENTITY, PRICE_MODE_FIXED, validate_cost_options
 from .utils.helper import async_validate_api
 
 _LOGGER = logging.getLogger(__name__)
@@ -536,7 +550,15 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
                 CONF_ENERGY_SCALE, DEFAULT_ENERGY_SCALE
             )
             self._override_options[CONF_ENERGY_RESET_HOUR] = reset_hour
-            return await self.async_step_rate_limit()
+            self._override_options[CONF_HOURLY_STATISTICS] = bool(
+                user_input.get(CONF_HOURLY_STATISTICS, DEFAULT_HOURLY_STATISTICS)
+            )
+            self._override_options[CONF_HOURLY_STATISTICS_INTERVAL] = int(
+                user_input.get(
+                    CONF_HOURLY_STATISTICS_INTERVAL, DEFAULT_HOURLY_STATISTICS_INTERVAL
+                )
+            )
+            return await self.async_step_cost()
 
         # Build select options for energy scale
         energy_options = [
@@ -571,6 +593,25 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
                 ): SelectSelector(
                     SelectSelectorConfig(options=reset_hour_options, mode=SelectSelectorMode.DROPDOWN)
                 ),
+                vol.Optional(
+                    CONF_HOURLY_STATISTICS,
+                    default=self._entry.options.get(
+                        CONF_HOURLY_STATISTICS, DEFAULT_HOURLY_STATISTICS
+                    ),
+                ): BooleanSelector(),
+                vol.Optional(
+                    CONF_HOURLY_STATISTICS_INTERVAL,
+                    default=str(
+                        self._entry.options.get(
+                            CONF_HOURLY_STATISTICS_INTERVAL,
+                            DEFAULT_HOURLY_STATISTICS_INTERVAL,
+                        )
+                    ),
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=HOURLY_INTERVAL_OPTIONS, mode=SelectSelectorMode.DROPDOWN
+                    )
+                ),
             }
         )
         return self.async_show_form(
@@ -578,10 +619,77 @@ class IntuisOptionsFlow(config_entries.OptionsFlow):
             data_schema=options_schema,
         )
 
+    async def async_step_cost(
+            self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Step 4: Opt-in energy costs with an explicit price source."""
+        errors: dict[str, str] = {}
+        current = {**self._entry.options}
+        if user_input is not None:
+            candidate = {
+                **self._override_options,
+                CONF_COST_STATISTICS: bool(user_input.get(CONF_COST_STATISTICS)),
+                CONF_COST_PRICE_MODE: user_input.get(CONF_COST_PRICE_MODE),
+                CONF_COST_FIXED_PRICE: user_input.get(CONF_COST_FIXED_PRICE),
+                CONF_COST_PRICE_ENTITY: user_input.get(CONF_COST_PRICE_ENTITY),
+            }
+            errors = validate_cost_options(
+                candidate, self.hass.config.currency, self.hass
+            )
+            if not errors:
+                self._override_options = candidate
+                return await self.async_step_rate_limit()
+            current.update(user_input)
+
+        def suggested(key, fallback=None):
+            value = current.get(key, fallback)
+            return {} if value is None else {"suggested_value": value}
+
+        options_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_COST_STATISTICS,
+                    default=bool(current.get(CONF_COST_STATISTICS, DEFAULT_COST_STATISTICS)),
+                ): BooleanSelector(),
+                vol.Optional(
+                    CONF_COST_PRICE_MODE,
+                    default=current.get(CONF_COST_PRICE_MODE) or PRICE_MODE_FIXED,
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[PRICE_MODE_FIXED, PRICE_MODE_ENTITY],
+                        translation_key="cost_price_mode",
+                        mode=SelectSelectorMode.LIST,
+                    )
+                ),
+                vol.Optional(
+                    CONF_COST_FIXED_PRICE,
+                    description=suggested(CONF_COST_FIXED_PRICE, SUGGESTED_COST_FIXED_PRICE),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=-10,
+                        max=10,
+                        step="any",
+                        mode=NumberSelectorMode.BOX,
+                        unit_of_measurement=f"{self.hass.config.currency}/kWh",
+                    )
+                ),
+                vol.Optional(
+                    CONF_COST_PRICE_ENTITY,
+                    description=suggested(CONF_COST_PRICE_ENTITY),
+                ): EntitySelector(EntitySelectorConfig(domain="sensor")),
+            }
+        )
+        return self.async_show_form(
+            step_id="cost",
+            data_schema=options_schema,
+            errors=errors,
+            description_placeholders={"currency": self.hass.config.currency},
+        )
+
     async def async_step_rate_limit(
             self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Step 4: Configure rate limiting settings."""
+        """Step 5: Configure rate limiting settings."""
         if user_input is not None:
             # Convert values to integers
             rate_limit_delay = user_input.get(

@@ -1,8 +1,8 @@
 {
   "name": "Intuis Connect Dev",
-  "image": "mcr.microsoft.com/devcontainers/python:3.13",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
   "runArgs": ["--network=host"],
-  "postCreateCommand": "pip install -r requirements_dev.txt",
+  "postCreateCommand": "python -m pip install -r requirements_dev.txt -c requirements/constraints-ha-2024.6.txt",
   "forwardPorts": [8123],
   "portsAttributes": {
     "8123": {
