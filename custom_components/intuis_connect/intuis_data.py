@@ -4,16 +4,17 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from .overrides import OverrideManager, OverrideState
 from .entity.intuis_home import IntuisHome
 from .entity.intuis_home_config import IntuisHomeConfig
 from .intuis_api.api import IntuisAPI, APIError, CannotConnect, RateLimitError
 from .intuis_api.mapper import extract_modules, extract_rooms
 from .utils.const import (
-    API_MODE_MANUAL,
     API_MODE_AWAY,
     API_MODE_BOOST,
     API_MODE_HG,
@@ -42,6 +43,16 @@ MIN_REAPPLY_INTERVAL = 120  # 2 minutes
 _LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class EnergyCacheEntry:
+    """Last successful room measurement; failure never advances this record."""
+
+    day: str
+    scale: str
+    kwh: float
+    updated_at: datetime
+
+
 class IntuisData:
     """Class to handle data fetching and processing for the Intuis Connect integration."""
 
@@ -49,24 +60,24 @@ class IntuisData:
         self,
         api: IntuisAPI,
         intuis_home: IntuisHome,
-        overrides: dict[str, dict] | None = None,
+        overrides: OverrideState | None = None,
         get_options: Callable[[], dict[str, Any]] | None = None,
         save_overrides_callback: Callable[[], Awaitable[None]] | None = None,
+        override_manager: OverrideManager | None = None,
     ) -> None:
         """Initialize the data handler."""
         self._api = api
-        self._energy_cache: dict[str, float] = {}
-        self._minutes_counter: dict[str, int] = {}
+        self._energy_cache: dict[str, EnergyCacheEntry] = {}
+        self._minutes_counter: dict[str, float] = {}
         self._intuis_home = intuis_home
         self._last_update_timestamp: datetime | None = None
         # Track the last "logical day" we processed (based on reset hour, not midnight)
         self._last_logical_day: str | None = None
         # sticky overrides: { room_id: { mode, temp, end, sticky, last_reapply } }
-        self._overrides: dict[str, dict] = overrides or {}
+        self._override_manager = override_manager or OverrideManager(overrides, save_overrides_callback)
+        self._overrides = self._override_manager.overrides
         # Callback to get current options from config entry
         self._get_options = get_options or (lambda: {})
-        # Callback to persist overrides to storage
-        self._save_overrides = save_overrides_callback
         # Callback to invoke on successful update (for rate limit recovery)
         self._success_callback: Callable[[], Awaitable[None]] | None = None
 
@@ -119,7 +130,6 @@ class IntuisData:
                 current_logical_day,
             )
             self._minutes_counter.clear()
-            self._energy_cache.clear()
 
         self._last_logical_day = current_logical_day
 
@@ -155,7 +165,7 @@ class IntuisData:
                     "Removing orphaned override for room %s (room no longer in API response)",
                     room_id,
                 )
-                rooms_to_clear.append(room_id)
+                rooms_to_clear.append((room_id, self._overrides[room_id]))
                 overrides_changed = True
 
         for room_id, room in data_by_room.items():
@@ -201,16 +211,10 @@ class IntuisData:
                             desired_temp,
                             duration_min,
                         )
-                        await self._api.async_set_room_state(
-                            room_id,
-                            desired_mode,
-                            float(desired_temp) if desired_temp is not None else None,
-                            duration_min,
-                        )
-                        # Update timestamps
-                        self._overrides[room_id]["end"] = now_ts + duration_min * 60
-                        self._overrides[room_id]["last_reapply"] = now_ts
-                        overrides_changed = True
+                        if await self._override_manager.async_reapply(
+                            self._api, room_id, override, duration_min,
+                        ):
+                            overrides_changed = True
                     except (APIError, CannotConnect, RateLimitError) as err:
                         _LOGGER.error(
                             "Failed to re-apply override for room %s: %s",
@@ -228,16 +232,16 @@ class IntuisData:
                         end_ts,
                         now_ts,
                     )
-                    rooms_to_clear.append(room_id)
+                    rooms_to_clear.append((room_id, self._overrides[room_id]))
                     overrides_changed = True
 
         # Clear expired overrides (outside loop to avoid dict modification during iteration)
-        for room_id in rooms_to_clear:
-            self._overrides.pop(room_id, None)
+        for room_id, expected in rooms_to_clear:
+            self._override_manager.discard(room_id, expected)
 
         # Persist overrides if changed
-        if overrides_changed and self._save_overrides:
-            await self._save_overrides()
+        if overrides_changed:
+            await self._override_manager.async_save()
 
         config = IntuisHomeConfig.from_dict(await self._api.async_get_config())
 
@@ -297,82 +301,56 @@ class IntuisData:
             )
             home_tz = timezone.utc
 
-        now_local = datetime.now(home_tz)
-        today_iso = now_local.date().isoformat()
+        now_local = now.astimezone(home_tz)
 
-        # For daily scale, only fetch after reset hour to ensure data is available
-        if not is_realtime and now_local.hour < reset_hour:
-            _LOGGER.debug(
-                "Skipping energy fetch before reset hour %02d:00 (daily mode)",
-                reset_hour,
-            )
-            return
-
-        # For daily scale, use caching. For real-time scales, always fetch fresh data.
-        if not is_realtime and self._energy_cache.get("_date") == today_iso:
-            # Use cached data
-            for room_id, room in data_by_room.items():
-                room.energy = self._energy_cache.get(room_id, 0.0)
-            return
-
-        # Build list of rooms with bridge_ids for the API call
+        logical_day = self._get_logical_day(now_local, reset_hour)
         rooms_for_api: list[dict[str, str]] = []
         for room_id, room in data_by_room.items():
+            cached = self._energy_cache.get(room_id)
+            room.energy = cached.kwh if cached else None
+            room.energy_day = cached.day if cached else None
+            room.energy_updated_at = cached.updated_at if cached else None
+            room.energy_stale = cached is None or cached.day != logical_day or cached.scale != scale
+            if not is_realtime and cached and cached.day == logical_day and cached.scale == scale:
+                continue
+            # The existing daily cadence waits until reset_hour. Keep last valid
+            # data visible before that boundary without fabricating a new value;
+            # a room without any value (e.g. after a restart) reads its logical day.
+            if not is_realtime and now_local.hour < reset_hour and cached is not None:
+                continue
+            room.energy_stale = True
             if room.bridge_id:
                 rooms_for_api.append({"id": room_id, "bridge": room.bridge_id})
-            else:
-                _LOGGER.debug("Room %s has no bridge_id, skipping energy fetch", room_id)
 
         if not rooms_for_api:
-            _LOGGER.debug("No rooms with bridge_id found, skipping energy fetch")
             return
 
-        today_start = datetime.combine(now_local.date(), datetime.min.time(), tzinfo=home_tz)
-        today_end = datetime.combine(now_local.date(), datetime.max.time(), tzinfo=home_tz)
-
-        if is_realtime:
-            date_end = int(now_local.timestamp())
-            end_display = now_local.isoformat()
-        else:
-            date_end = int(today_end.timestamp())
-            end_display = today_end.isoformat()
+        # Daily values belong to the logical day: before reset_hour that is the
+        # previous calendar day, never the few minutes since midnight.
+        query_day = now_local.date() if is_realtime else date.fromisoformat(logical_day)
+        today_start = datetime.combine(query_day, datetime.min.time(), tzinfo=home_tz)
+        today_end = datetime.combine(query_day, datetime.max.time(), tzinfo=home_tz)
         date_begin = int(today_start.timestamp())
-
-        _LOGGER.debug(
-            "Fetching energy data for %d rooms (scale=%s, tz=%s, range=%s to %s)",
-            len(rooms_for_api),
-            scale,
-            home_tz,
-            today_start.isoformat(),
-            end_display,
-        )
-
+        date_end = int((now_local if is_realtime else today_end).timestamp())
         try:
             energy_data = await self._api.async_get_energy_measures(
                 rooms_for_api, date_begin, date_end, scale=scale
             )
-        except RateLimitError:
-            _LOGGER.warning(
-                "Rate limited while fetching energy data, will retry on next update"
-            )
-            return
-        except (APIError, CannotConnect) as err:
-            _LOGGER.warning(
-                "Failed to fetch energy data: %s, will retry on next update", err
-            )
+        except (RateLimitError, APIError, CannotConnect) as err:
+            _LOGGER.warning("Energy unavailable, retrying next update: %s", err)
             return
 
-        # Cache the results (for daily mode) and populate room.energy
-        # API returns Wh, convert to kWh for display
-        if not is_realtime:
-            self._energy_cache.clear()
-            self._energy_cache["_date"] = today_iso
-
-        for room_id, room in data_by_room.items():
-            wh = energy_data.get(room_id, 0.0)
-            kwh = wh / 1000.0  # Convert Wh to kWh
-            if not is_realtime:
-                self._energy_cache[room_id] = kwh
+        for requested_room in rooms_for_api:
+            room_id = requested_room["id"]
+            # Missing means no valid reading, never a measured zero. Successful
+            # rooms remain cached while failed rooms are retried next cycle.
+            if room_id not in energy_data:
+                continue
+            kwh = energy_data[room_id] / 1000.0
+            cached = EnergyCacheEntry(logical_day, scale, kwh, now_local)
+            self._energy_cache[room_id] = cached
+            room = data_by_room[room_id]
             room.energy = kwh
-
-        _LOGGER.debug("Energy data fetched (scale=%s): %s", scale, {k: f"{v:.3f} kWh" for k, v in energy_data.items()})
+            room.energy_day = logical_day
+            room.energy_updated_at = now_local
+            room.energy_stale = False

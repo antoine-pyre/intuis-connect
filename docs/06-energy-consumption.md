@@ -1,5 +1,54 @@
 # Energy Consumption - FIXED
 
+## Availability, retries and caching
+
+A cloud/API error is not a measured consumption of zero. The individual energy
+and daily-history methods raise `APIError` (or its `EnergyDataUnavailable`
+subclass when the response contains no measurements). The multi-room method
+returns **only successful room IDs**, including measured zeroes; an omitted ID
+must be retried rather than filled with zero. All-null tariff rows are absent;
+malformed, non-finite or negative readings are rejected.
+
+`IntuisData` caches successful daily results per room and retries failed rooms
+on the next eligible coordinator update. One room's failure does not invalidate
+another room's successful daily cache. Real-time scales query every update.
+Daily requests still wait until the configured reset hour, using the domicile's
+timezone, and read the logical day: before the reset hour that is the previous
+calendar day. A room without any reading (e.g. after a restart before the reset
+hour) is read right away instead of staying unavailable until then. The last
+valid reading is retained across failures and day boundaries, but only a new
+successful reading can advance its measurement day or timestamp.
+
+A valid answer without any value (an empty body, or null tariff columns for a
+room that has not heated yet) means nothing was consumed so far: it reads 0 kWh.
+Only a failed request (HTTP error, malformed data) is treated as missing and
+retried. History imports differ: there an unmeasured past day is a gap whose
+recorded statistics are kept, never replaced by a zero.
+
+Room energy sensors are unavailable before their first valid measurement. After
+that, a failed refresh retains the previous reading with `energy_stale: true`,
+`last_successful_update` and `measurement_day` attributes. Coordinator failures
+still make the entity unavailable. The daily maximum follows the day of the
+measurement, so an old value cannot block a legitimate lower value on a new day.
+
+The home total is unavailable until all rooms have measurements for the same
+day. Rooms without equipment (no bridge, hence no energy data) are not part of
+it, nor of its attributes. During a partial recovery it retains the last
+complete total, marked stale; `room_breakdown` uses null for unknown rooms and
+`incomplete_rooms` identifies missing/stale rooms. Partial data is not silently
+presented as a fresh total. History imports skip rooms without modules too.
+
+The energy methods are consumed by `IntuisData` (room/current-home sensors) and
+`history_import.async_import_energy_history` (daily values). Historical callers
+receive typed errors rather than an empty list on API failure. The importer validates
+complete closed-day coverage before an acknowledged, transactional recorder replacement.
+See [Safe energy history import](08-safe-energy-history-import.md) for prerequisites,
+error recovery, cumulative-baseline guarantees and cancellation behavior.
+
+A request retried after HTTP 401 retains its complete destination, query, body,
+custom headers and timeout. Only its Authorization token changes. One token
+refresh is permitted per operation; another 401 is an explicit auth failure.
+
 ## Summary
 
 **Energy consumption now works!** The solution is to use `/api/getroommeasure` instead of `/api/gethomemeasure`.

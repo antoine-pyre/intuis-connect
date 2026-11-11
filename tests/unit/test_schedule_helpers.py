@@ -1,7 +1,6 @@
 """Tests for schedule timetable helper functions."""
 from __future__ import annotations
 
-import pytest
 
 # Import the functions under test
 from custom_components.intuis_connect.timetable import (

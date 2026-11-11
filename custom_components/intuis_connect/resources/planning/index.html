@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<!--
+  Intuis planning editor, adapted from TheFab21's intuis_planning.html
+  (antoine-pyre/intuis-connect PRs #17, #22 and #24). This static shell holds
+  no home data or credentials; everything is read through Home Assistant's
+  authenticated APIs.
+-->
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Intuis Planning</title>
+  <link rel="stylesheet" href="planning/planning.css">
+  <script src="planning/planning-core.js" defer></script>
+  <script src="planning/planning-app.js" defer></script>
+</head>
+<body>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <section id="loading" class="panel loading">
+    <div class="spinner" aria-hidden="true"></div>
+    <p id="loading-text">Connexion à Home Assistant…</p>
+  </section>
+
+  <section id="failure" class="panel narrow" hidden>
+    <h2>Connexion impossible</h2>
+    <p id="failure-text"></p>
+    <div class="actions">
+      <button type="button" id="failure-retry" class="primary">Réessayer</button>
+      <button type="button" id="failure-standalone">Se connecter avec un token</button>
+    </div>
+  </section>
+
+  <section id="setup" class="panel narrow" hidden>
+    <h2>Connexion à Home Assistant</h2>
+    <p>Cette page n'est pas affichée dans Home Assistant. Indiquez son adresse et un
+      token d'accès longue durée (Profil → Sécurité → Tokens d'accès longue durée).</p>
+    <form id="setup-form" novalidate>
+      <label>Adresse de Home Assistant
+        <input type="url" id="setup-url" autocomplete="url" required>
+      </label>
+      <label>Token d'accès longue durée
+        <input type="password" id="setup-token" autocomplete="off" spellcheck="false" required>
+      </label>
+      <label class="inline">
+        <input type="checkbox" id="setup-remember">
+        Mémoriser le token dans ce navigateur (déconseillé sur un ordinateur partagé)
+      </label>
+      <p class="hint">Sans cette option, le token est oublié à la fermeture de l'onglet.
+        Une autre adresse que celle de cette page doit être autorisée dans
+        <code>http: cors_allowed_origins</code>.</p>
+      <p id="setup-error" class="error" role="alert" hidden></p>
+      <button type="submit" class="primary">Connecter</button>
+    </form>
+  </section>
+
+  <main id="app" hidden>
+    <header class="title-row">
+      <h1>Intuis Planning</h1>
+      <span id="connection-status" class="status"></span>
+      <button type="button" id="logout" hidden>Déconnexion</button>
+    </header>
+
+    <div id="banner" class="banner" role="alert" hidden>
+      <span id="banner-text"></span>
+      <button type="button" id="banner-reload" hidden>Recharger depuis Home Assistant</button>
+    </div>
+
+    <div id="empty" class="panel" hidden>
+      <p>Aucun planning Intuis n'est disponible. Vérifiez que l'intégration est chargée
+        et que les capteurs de planning sont activés.</p>
+    </div>
+
+    <div id="editor" hidden>
+      <div class="toolbar">
+        <label id="home-field">Domicile <select id="home"></select></label>
+        <label>Planning <select id="schedule"></select></label>
+        <label>Absence <input id="away" type="number" min="5" max="25" step="0.5" inputmode="decimal"> °C</label>
+        <label>Hors-gel <input id="hg" type="number" min="5" max="15" step="0.5" inputmode="decimal"> °C</label>
+        <button type="button" id="refresh" title="Relire les plannings depuis le cloud">Rafraîchir</button>
+      </div>
+
+      <div id="week" class="week"></div>
+      <div id="legend" class="legend"></div>
+
+      <h2>Températures par zone</h2>
+      <div id="zones" class="zones"></div>
+
+      <ul id="errors" class="errors" hidden></ul>
+      <div class="actions">
+        <button type="button" id="save" class="primary" disabled>Enregistrer</button>
+        <button type="button" id="discard" disabled>Annuler les modifications</button>
+        <span id="dirty-state" class="status"></span>
+      </div>
+      <section id="results" class="results" aria-live="polite" hidden>
+        <h3 id="results-title"></h3>
+        <ul id="results-list"></ul>
+      </section>
+    </div>
+
+    <details class="about">
+      <summary>À propos</summary>
+      <p>Éditeur adapté de l'interface de planning créée par
+        <a href="https://github.com/TheFab21" target="_blank" rel="noopener noreferrer">TheFab21</a>
+        (propositions
+        <a href="https://github.com/antoine-pyre/intuis-connect/pull/17" target="_blank" rel="noopener noreferrer">#17</a>,
+        <a href="https://github.com/antoine-pyre/intuis-connect/pull/22" target="_blank" rel="noopener noreferrer">#22</a> et
+        <a href="https://github.com/antoine-pyre/intuis-connect/pull/24" target="_blank" rel="noopener noreferrer">#24</a>)
+        pour l'intégration
+        <a href="https://github.com/antoine-pyre/intuis-connect" target="_blank" rel="noopener noreferrer">Intuis Connect</a>
+        d'Antoine Pyré. Licence MIT.</p>
+      <p>Les horaires et températures absence/hors-gel sont enregistrés en une seule
+        commande par planning ; chaque température de pièce est une commande distincte,
+        dont le résultat est affiché séparément.</p>
+    </details>
+  </main>
+
+  <dialog id="slot-dialog">
+    <form id="slot-form" method="dialog" novalidate>
+      <h3 id="slot-title">Modifier le créneau</h3>
+      <label>Début
+        <span class="pair"><select id="slot-start-day"></select><input type="time" id="slot-start" step="60" required></span>
+      </label>
+      <label>Fin
+        <span class="pair"><select id="slot-end-day"></select><input type="time" id="slot-end" step="60" required></span>
+      </label>
+      <p class="hint">Le même jour, une fin à 00:00 signifie minuit suivant.</p>
+      <label>Zone <select id="slot-zone"></select></label>
+      <p id="slot-error" class="error" role="alert" hidden></p>
+      <div class="actions end">
+        <button type="button" id="slot-cancel">Annuler</button>
+        <button type="submit" class="primary">Appliquer</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

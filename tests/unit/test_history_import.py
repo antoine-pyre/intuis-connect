@@ -1,520 +1,747 @@
-"""Tests for historical energy import functionality."""
+"""History imports exercise the importer and HA's actual recorder worker."""
+
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from zoneinfo import ZoneInfo
+
 import pytest
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
-
-from custom_components.intuis_connect.history_import import (
-    _get_existing_statistics,
-    _get_baseline_sum,
-    _clear_statistics_in_range,
-    _fix_post_import_discontinuity,
-    DISCONTINUITY_THRESHOLD,
+from homeassistant.components.recorder.core import Recorder
+from homeassistant.components.recorder.db_schema import (
+    Statistics,
+    StatisticsMeta,
+    StatisticsShortTerm,
 )
+from homeassistant.components.recorder import statistics
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.recorder import async_initialize_recorder
+from sqlalchemy import event, select
+
+from custom_components.intuis_connect import async_unload_entry, update_listener
+from custom_components.intuis_connect.history_import import (
+    HistoryImportManager,
+    _closed_day_range,
+    _validate_daily_values,
+    async_import_energy_history,
+)
+from custom_components.intuis_connect.intuis_api.api import (
+    CannotConnect,
+    RateLimitError,
+)
+from custom_components.intuis_connect.recorder_import import (
+    HistoryReplacementError,
+    async_replace_energy_history,
+)
+from custom_components.intuis_connect.utils.const import DOMAIN, CONF_IMPORT_HISTORY
 
 
-class TestGetExistingStatistics:
-    """Tests for _get_existing_statistics helper."""
+@pytest.fixture
+async def live_recorder(ha_hass, tmp_path):
+    """Start HA's real recorder thread/queue and SQLite schema, without cloud setup."""
+    async_initialize_recorder(ha_hass)
+    instance = Recorder(
+        hass=ha_hass,
+        auto_purge=False,
+        auto_repack=False,
+        keep_days=730,
+        commit_interval=1,
+        uri=f"sqlite:///{tmp_path / 'history-recorder.db'}",
+        db_max_retries=1,
+        db_retry_wait=1,
+        entity_filter=lambda _: True,
+        exclude_event_types=set(),
+    )
+    ha_hass.data["recorder_instance"] = instance
+    instance.async_initialize()
+    instance.async_register()
+    instance.start()
+    assert await asyncio.wait_for(instance.async_db_ready, 15)
+    instance._async_hass_started(ha_hass)
+    await asyncio.wait_for(instance.async_recorder_ready.wait(), 15)
+    yield instance
+    if instance.is_alive():
+        await instance.async_block_till_done()
+    # HA fixture shutdown invokes recorder's registered FINAL_WRITE/CLOSE hooks.
 
-    @pytest.mark.asyncio
-    async def test_returns_statistics_for_entity(self):
-        """Should return statistics from statistics_during_period."""
-        mock_hass = MagicMock()
-        mock_stats = [
-            {"start": 1704067200, "state": 5.0, "sum": 100.0},
-            {"start": 1704153600, "state": 6.0, "sum": 106.0},
-        ]
 
-        mock_instance = MagicMock()
-        mock_instance.async_add_executor_job = AsyncMock(
-            return_value={"sensor.energy": mock_stats}
+def instant(day, hour=0):
+    return datetime(2026, 10, day, hour, tzinfo=timezone.utc)
+
+
+async def seed(instance, *, unit="kWh", anchor=True, anchor_state=1.0, anchor_sum=23.0):
+    """Populate real rows outside, inside and after a two-day replacement."""
+
+    def insert():
+        with instance.get_session() as session, session.begin():
+            meta = StatisticsMeta(
+                statistic_id="sensor.room_energy",
+                source="recorder",
+                unit_of_measurement=unit,
+                has_sum=True,
+                has_mean=False,
+            )
+            session.add(meta)
+            session.flush()
+            for day, hour, state, total in [
+                (22, 23, 7, 10),
+                (23, 0, 4, 14),
+                (24, 0, 8, 22),
+                (25, 0, 1, 23),
+                (25, 2, 2, 24),
+            ]:
+                session.add(
+                    Statistics(
+                        metadata_id=meta.id,
+                        start_ts=instant(day, hour).timestamp(),
+                        state=state,
+                        sum=total,
+                    )
+                )
+            session.add(
+                StatisticsShortTerm(
+                    metadata_id=meta.id,
+                    start_ts=instant(24, 23).timestamp(),
+                    state=8,
+                    sum=22,
+                )
+            )
+            if anchor:
+                session.add(
+                    StatisticsShortTerm(
+                        metadata_id=meta.id,
+                        start_ts=instant(25).timestamp(),
+                        state=anchor_state,
+                        sum=anchor_sum,
+                    )
+                )
+            return meta.id
+
+    return await instance.async_add_executor_job(insert)
+
+
+async def rows(instance, table=Statistics):
+    def read():
+        with instance.get_session() as session:
+            return [
+                (r.start_ts, r.state, r.sum)
+                for r in session.scalars(select(table).order_by(table.start_ts))
+            ]
+
+    return await instance.async_add_executor_job(read)
+
+
+async def replace(ha_hass, values=(2.0, 0.0)):
+    return await async_replace_energy_history(
+        ha_hass,
+        "sensor.room_energy",
+        (
+            (
+                instant(23),
+                instant(25),
+                ((instant(23), values[0]), (instant(24), values[1])),
+            ),
+        ),
+    )
+
+
+async def test_real_worker_replaces_atomically_and_reimport_is_idempotent(
+    ha_hass, live_recorder
+):
+    await seed(live_recorder)
+    committed = await replace(ha_hass)
+    assert (
+        committed.days == 2 and committed.energy_kwh == 2 and committed.final_sum == 12
+    )
+    expected = [
+        (instant(22, 23).timestamp(), 7, 10),
+        (instant(23).timestamp(), 2, 12),
+        (instant(24).timestamp(), 0, 12),
+        (instant(25).timestamp(), 1, 13),
+        (instant(25, 2).timestamp(), 2, 14),
+    ]
+    assert await rows(live_recorder) == expected
+    assert await rows(live_recorder, StatisticsShortTerm) == [
+        (instant(25).timestamp(), 1, 13)
+    ]
+    again = await replace(ha_hass)
+    assert again.final_sum == 12 and again.adjusted == 0
+    assert await rows(live_recorder) == expected
+
+
+async def test_worker_rollback_preserves_long_and_short_statistics(
+    ha_hass, live_recorder
+):
+    await seed(live_recorder)
+    before, before_short = (
+        await rows(live_recorder),
+        await rows(live_recorder, StatisticsShortTerm),
+    )
+
+    def fail_insert(conn, cursor, statement, parameters, context, many):
+        if statement.startswith("INSERT INTO statistics "):
+            raise RuntimeError("injected insertion failure")
+
+    event.listen(live_recorder.engine, "before_cursor_execute", fail_insert)
+    try:
+        with pytest.raises(HistoryReplacementError, match="injected insertion failure"):
+            await replace(ha_hass)
+    finally:
+        event.remove(live_recorder.engine, "before_cursor_execute", fail_insert)
+    assert await rows(live_recorder) == before
+    assert await rows(live_recorder, StatisticsShortTerm) == before_short
+    # The worker survived the failed custom task and can process the next job.
+    assert (await replace(ha_hass)).final_sum == 12
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"anchor": False},
+        {"unit": "Wh"},
+        {"anchor_state": None},
+        {"anchor_sum": float("inf")},
+    ],
+)
+async def test_unsafe_live_baseline_refuses_without_mutation(
+    ha_hass, live_recorder, kwargs
+):
+    await seed(live_recorder, **kwargs)
+    before = await rows(live_recorder)
+    with pytest.raises(HistoryReplacementError, match="baseline|metadata"):
+        await replace(ha_hass)
+    assert await rows(live_recorder) == before
+
+
+async def test_latest_short_term_cache_and_live_increment_survive_import(
+    ha_hass, live_recorder
+):
+    await seed(live_recorder)
+
+    def latest():
+        with live_recorder.get_session() as session:
+            return statistics.get_latest_short_term_statistics_with_session(
+                ha_hass,
+                session,
+                {"sensor.room_energy"},
+                {"sum", "state"},
+            )["sensor.room_energy"][0]
+
+    before = await live_recorder.async_add_executor_job(latest)
+    assert before["sum"] == 23
+    await replace(ha_hass)
+    after = await live_recorder.async_add_executor_job(latest)
+    assert after["state"] == before["state"] == 1 and after["sum"] == 13
+    # Exercise HA's actual sensor statistics compiler, not copied arithmetic.
+    from homeassistant.components.sensor import recorder as sensor_recorder
+
+    ha_hass.states.async_set(
+        "sensor.room_energy",
+        1.5,
+        {
+            "state_class": "total_increasing",
+            "unit_of_measurement": "kWh",
+            "device_class": "energy",
+        },
+    )
+    await ha_hass.async_block_till_done()
+    await live_recorder.async_block_till_done()
+    now = datetime.now(timezone.utc)
+    period_start = now.replace(minute=now.minute // 5 * 5, second=0, microsecond=0)
+
+    def compile_live():
+        import inspect
+
+        kwargs = {}
+        if (
+            "custom_units_for_entities"
+            in inspect.signature(sensor_recorder.compile_statistics).parameters
+        ):
+            kwargs["custom_units_for_entities"] = {}
+        with live_recorder.get_session() as session:
+            return sensor_recorder.compile_statistics(
+                ha_hass,
+                session,
+                period_start,
+                period_start + timedelta(minutes=5),
+                **kwargs,
+            )
+
+    compiled = await live_recorder.async_add_executor_job(compile_live)
+    assert compiled.platform_stats[0]["stat"]["sum"] == 13.5
+
+
+# The documented getroommeasure 1day shape (docs/06-energy-consumption.md):
+# one block per run of days, no step_time when it holds a single value, each
+# day stamped at local noon, and a null total column beside the tariff ones.
+DOCUMENTED_DAY = {"beg_time": 1767265200, "value": [[None, None, 14245, 7694]]}
+
+
+def documented_daily(zone, days):
+    """{day: tariff columns} as the cloud returns it, stamped at local noon."""
+    return {
+        "body": [
+            {
+                "beg_time": int(datetime(2026, 10, day, 12, tzinfo=zone).timestamp()),
+                "value": [columns],
+            }
+            for day, columns in days.items()
+        ],
+        "status": "ok",
+    }
+
+
+def test_documented_sample_is_stamped_at_local_noon():
+    from custom_components.intuis_connect.intuis_api.api import IntuisAPI
+
+    zone = ZoneInfo("Europe/Paris")
+    stamped = datetime.fromtimestamp(DOCUMENTED_DAY["beg_time"], zone)
+    assert (stamped.hour, stamped.minute) == (12, 0)
+    samples = IntuisAPI._parse_energy_samples(
+        {"body": [DOCUMENTED_DAY], "status": "ok"}, require_timestamps=True
+    )
+    start, end = _closed_day_range(datetime(2026, 1, 2, 12, tzinfo=zone), 1, zone)
+    ((window_start, window_end, rows),) = _validate_daily_values(samples, start, end)
+    assert (window_start, window_end) == (start, end)
+    assert rows == ((datetime(2025, 12, 31, 23, tzinfo=timezone.utc), 21.939),)
+
+
+def test_closed_days_follow_local_midnight_and_dst():
+    zone = ZoneInfo("Europe/Paris")
+    start, end = _closed_day_range(
+        datetime(2026, 10, 26, 12, tzinfo=timezone.utc), 2, zone
+    )
+    values = [
+        (int(datetime(2026, 10, 24, 12, tzinfo=zone).timestamp()), 1000),
+        (int(datetime(2026, 10, 25, 12, tzinfo=zone).timestamp()), 0),
+    ]
+    ((window_start, window_end, samples),) = _validate_daily_values(values, start, end)
+    assert (window_start, window_end) == (start, end)
+    assert samples[0][1] == 1 and samples[1][1] == 0
+    assert samples[0][0] == datetime(2026, 10, 24, tzinfo=zone)
+    assert int(end.timestamp()) - int(samples[-1][0].timestamp()) == 25 * 3600
+    spring_start, spring_end = _closed_day_range(
+        datetime(2026, 3, 30, 12, tzinfo=timezone.utc), 1, zone
+    )
+    assert spring_end.timestamp() - spring_start.timestamp() == 23 * 3600
+
+
+def test_missing_days_become_gaps_between_windows():
+    zone = ZoneInfo("Europe/Paris")
+    start, end = _closed_day_range(
+        datetime(2026, 10, 27, 12, tzinfo=timezone.utc), 5, zone
+    )
+    payload = documented_daily(
+        zone,
+        {
+            21: [None, None, 1000, 0],  # before the period: not requested
+            23: [None, None, 2000, 500],
+            24: [None, None, 0, 0],  # a measured zero is kept
+            25: [None, None, None, None],  # null columns: no measurement
+            26: [None, None, 300, None],
+        },
+    )
+    from custom_components.intuis_connect.intuis_api.api import IntuisAPI
+
+    windows = _validate_daily_values(
+        IntuisAPI._parse_energy_samples(payload, require_timestamps=True), start, end
+    )
+    day = lambda n: datetime(2026, 10, n, tzinfo=zone)  # noqa: E731
+    assert [(w[0], w[1]) for w in windows] == [(day(23), day(25)), (day(26), day(27))]
+    assert [value for w in windows for _, value in w[2]] == [2.5, 0, 0.3]
+
+
+@pytest.mark.parametrize(
+    "zone,offset_minutes",
+    [("Asia/Kolkata", 30), ("Asia/Kathmandu", 45), ("America/St_Johns", 30)],
+)
+def test_fractional_hour_zones_store_days_on_whole_hours(zone, offset_minutes):
+    zone = ZoneInfo(zone)
+    start, end = _closed_day_range(
+        datetime(2026, 10, 27, 12, tzinfo=timezone.utc), 2, zone
+    )
+    assert start.timestamp() % 3600 == 0 and end.timestamp() % 3600 == 0
+    # The row starts at the first whole UTC hour of its local day.
+    assert (start.hour, start.minute) == (0, offset_minutes)
+    values = [
+        (int(datetime(2026, 10, day, 12, tzinfo=zone).timestamp()), 1000)
+        for day in (25, 26)
+    ]
+    ((window_start, window_end, samples),) = _validate_daily_values(values, start, end)
+    assert (window_start, window_end) == (start, end)
+    assert [
+        (sample.astimezone(zone).date().day, sample.timestamp() % 3600)
+        for sample, _ in samples
+    ] == [(25, 0), (26, 0)]
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        [],
+        [(instant(22, 12).timestamp(), 0)],
+        [(instant(23).timestamp(), 0), (instant(23, 12).timestamp(), 1)],
+        [(instant(23).timestamp(), -1), (instant(24).timestamp(), 0)],
+        [(instant(23).timestamp(), float("nan")), (instant(24).timestamp(), 0)],
+        [(instant(23).timestamp(), True)],
+    ],
+)
+def test_invalid_or_unmeasured_daily_values_are_rejected(values):
+    with pytest.raises(HistoryReplacementError):
+        _validate_daily_values(values, instant(23), instant(25))
+
+
+async def importer_setup(ha_hass, monkeypatch, values, *, second=False):
+    from homeassistant.helpers import device_registry as dr
+
+    if hasattr(dr, "async_setup"):
+        dr.async_setup(ha_hass)
+    await dr.async_load(ha_hass)
+    registry = er.async_get(ha_hass)
+    await registry.async_load()
+    registry.async_get_or_create(
+        "sensor", DOMAIN, "intuis_home_room_energy", suggested_object_id="room_energy"
+    )
+    rooms = {"room": SimpleNamespace(name="Room", module_ids=["m"])}
+    if second:
+        registry.async_get_or_create(
+            "sensor",
+            DOMAIN,
+            "intuis_home_other_energy",
+            suggested_object_id="other_energy",
         )
-
-        with patch(
-            "custom_components.intuis_connect.history_import.get_instance",
-            return_value=mock_instance,
-        ):
-            result = await _get_existing_statistics(
-                mock_hass,
-                "sensor.energy",
-                datetime(2024, 1, 1, tzinfo=timezone.utc),
-            )
-
-        assert result == mock_stats
-
-    @pytest.mark.asyncio
-    async def test_returns_empty_list_on_no_data(self):
-        """Should return empty list when no statistics found."""
-        mock_hass = MagicMock()
-        mock_instance = MagicMock()
-        mock_instance.async_add_executor_job = AsyncMock(return_value={})
-
-        with patch(
-            "custom_components.intuis_connect.history_import.get_instance",
-            return_value=mock_instance,
-        ):
-            result = await _get_existing_statistics(
-                mock_hass,
-                "sensor.energy",
-                datetime(2024, 1, 1, tzinfo=timezone.utc),
-            )
-
-        assert result == []
-
-    @pytest.mark.asyncio
-    async def test_returns_empty_list_on_exception(self):
-        """Should return empty list and log warning on exception."""
-        mock_hass = MagicMock()
-        mock_instance = MagicMock()
-        mock_instance.async_add_executor_job = AsyncMock(side_effect=Exception("DB error"))
-
-        with patch(
-            "custom_components.intuis_connect.history_import.get_instance",
-            return_value=mock_instance,
-        ):
-            result = await _get_existing_statistics(
-                mock_hass,
-                "sensor.energy",
-                datetime(2024, 1, 1, tzinfo=timezone.utc),
-            )
-
-        assert result == []
-
-    @pytest.mark.asyncio
-    async def test_passes_end_time_parameter(self):
-        """Should pass end_time to statistics_during_period."""
-        mock_hass = MagicMock()
-        mock_instance = MagicMock()
-        mock_instance.async_add_executor_job = AsyncMock(return_value={})
-
-        start = datetime(2024, 1, 1, tzinfo=timezone.utc)
-        end = datetime(2024, 6, 1, tzinfo=timezone.utc)
-
-        with patch(
-            "custom_components.intuis_connect.history_import.get_instance",
-            return_value=mock_instance,
-        ):
-            await _get_existing_statistics(mock_hass, "sensor.energy", start, end)
-
-        # Check that async_add_executor_job was called with the right args
-        call_args = mock_instance.async_add_executor_job.call_args
-        assert call_args is not None
-        # The end_time should be passed (3rd positional arg after hass and start)
-
-
-class TestGetBaselineSum:
-    """Tests for _get_baseline_sum helper."""
-
-    @pytest.mark.asyncio
-    async def test_returns_zero_when_no_prior_stats(self):
-        """Should return 0 when no statistics exist before import period."""
-        mock_hass = MagicMock()
-
-        with patch(
-            "custom_components.intuis_connect.history_import._get_existing_statistics",
-            new_callable=AsyncMock,
-            return_value=[],
-        ):
-            result = await _get_baseline_sum(
-                mock_hass,
-                "sensor.energy",
-                "Living Room",
-                datetime(2025, 11, 19, tzinfo=timezone.utc),
-            )
-
-        assert result == 0.0
-
-    @pytest.mark.asyncio
-    async def test_returns_last_sum_from_existing_stats(self):
-        """Should return the last sum value from existing statistics."""
-        mock_hass = MagicMock()
-
-        # Simulate existing stats from Oct-Nov 18 (before import on Nov 19)
-        existing_stats = [
-            {"start": 1729382400, "state": 8.0, "sum": 200.0},   # Oct 20
-            {"start": 1729468800, "state": 7.0, "sum": 207.0},   # Oct 21
-            {"start": 1731888000, "state": 9.0, "sum": 450.0},   # Nov 18
-        ]
-
-        with patch(
-            "custom_components.intuis_connect.history_import._get_existing_statistics",
-            new_callable=AsyncMock,
-            return_value=existing_stats,
-        ):
-            result = await _get_baseline_sum(
-                mock_hass,
-                "sensor.energy",
-                "Living Room",
-                datetime(2025, 11, 19, tzinfo=timezone.utc),
-            )
-
-        # Should return the last entry's sum
-        assert result == 450.0
-
-    @pytest.mark.asyncio
-    async def test_handles_none_sum_value(self):
-        """Should handle None sum values gracefully."""
-        mock_hass = MagicMock()
-
-        existing_stats = [
-            {"start": 1729382400, "state": 8.0, "sum": None},
-        ]
-
-        with patch(
-            "custom_components.intuis_connect.history_import._get_existing_statistics",
-            new_callable=AsyncMock,
-            return_value=existing_stats,
-        ):
-            result = await _get_baseline_sum(
-                mock_hass,
-                "sensor.energy",
-                "Living Room",
-                datetime(2025, 11, 19, tzinfo=timezone.utc),
-            )
-
-        assert result == 0
-
-    @pytest.mark.asyncio
-    async def test_queries_correct_time_range(self):
-        """Should query from 730 days before import start to import start."""
-        mock_hass = MagicMock()
-        import_start = datetime(2025, 11, 19, tzinfo=timezone.utc)
-
-        with patch(
-            "custom_components.intuis_connect.history_import._get_existing_statistics",
-            new_callable=AsyncMock,
-            return_value=[],
-        ) as mock_get_stats:
-            await _get_baseline_sum(
-                mock_hass,
-                "sensor.energy",
-                "Living Room",
-                import_start,
-            )
-
-            # Check that _get_existing_statistics was called with correct range
-            mock_get_stats.assert_called_once()
-            call_args = mock_get_stats.call_args
-            assert call_args[0][0] == mock_hass
-            assert call_args[0][1] == "sensor.energy"
-            # Start should be 730 days before import_start
-            expected_start = import_start - timedelta(days=730)
-            assert call_args[0][2] == expected_start
-            # End should be import_start
-            assert call_args[0][3] == import_start
-
-
-class TestBaselineIntegration:
-    """Integration tests for the baseline sum feature."""
-
-    @pytest.mark.asyncio
-    async def test_import_continues_from_baseline(self):
-        """Verify import starts cumulative sum from baseline."""
-        # This test verifies the fix for the -2092 kWh bug
-        #
-        # Scenario:
-        # - Live sensor tracked Oct-Nov 18 with sum reaching 450 kWh
-        # - Import starts Nov 19 for 45 days
-        # - Import should continue from 450, not start at 0
-        #
-        # Before fix:
-        #   Nov 18: sum = 450 (live data)
-        #   Nov 19: sum = 8   (import starts at 0)
-        #   November energy = sum(Nov 30) - sum(Oct 31) = negative!
-        #
-        # After fix:
-        #   Nov 18: sum = 450 (live data)
-        #   Nov 19: sum = 458 (import continues from 450)
-        #   November energy = sum(Nov 30) - sum(Oct 31) = correct!
-
-        mock_hass = MagicMock()
-
-        # Existing stats end Nov 18 with sum = 450
-        existing_stats = [
-            {"start": 1731888000, "state": 9.0, "sum": 450.0},  # Nov 18
-        ]
-
-        with patch(
-            "custom_components.intuis_connect.history_import._get_existing_statistics",
-            new_callable=AsyncMock,
-            return_value=existing_stats,
-        ):
-            baseline = await _get_baseline_sum(
-                mock_hass,
-                "sensor.energy",
-                "Living Room",
-                datetime(2025, 11, 19, tzinfo=timezone.utc),
-            )
-
-        assert baseline == 450.0
-
-        # Now if import adds 8 kWh on Nov 19:
-        # cumulative_sum = baseline + 8 = 458
-        # This is correct and continues smoothly from Nov 18's 450
-        first_import_sum = baseline + 8.0
-        assert first_import_sum == 458.0
-
-    @pytest.mark.asyncio
-    async def test_fresh_install_starts_at_zero(self):
-        """Verify fresh install with no prior data starts at 0."""
-        mock_hass = MagicMock()
-
-        with patch(
-            "custom_components.intuis_connect.history_import._get_existing_statistics",
-            new_callable=AsyncMock,
-            return_value=[],
-        ):
-            baseline = await _get_baseline_sum(
-                mock_hass,
-                "sensor.energy",
-                "Living Room",
-                datetime(2025, 11, 19, tzinfo=timezone.utc),
-            )
-
-        assert baseline == 0.0
-
-
-class TestFixPostImportDiscontinuity:
-    """Tests for _fix_post_import_discontinuity function."""
-
-    @pytest.fixture
-    def mock_metadata(self):
-        """Create mock StatisticMetaData."""
-        return MagicMock()
-
-    @pytest.mark.asyncio
-    async def test_no_post_import_stats_returns_zero(self, mock_metadata):
-        """Should return 0 when no statistics exist after import period."""
-        mock_hass = MagicMock()
-
-        with patch(
-            "custom_components.intuis_connect.history_import._get_existing_statistics",
-            new_callable=AsyncMock,
-            return_value=[],
-        ):
-            result = await _fix_post_import_discontinuity(
-                hass=mock_hass,
-                entity_id="sensor.energy",
-                room_name="Living Room",
-                import_end_time=datetime(2025, 1, 2, tzinfo=timezone.utc),
-                import_end_sum=500.0,
-                metadata=mock_metadata,
-            )
-
-        assert result == 0
-
-    @pytest.mark.asyncio
-    async def test_no_discontinuity_returns_zero(self, mock_metadata):
-        """Should return 0 when post-import stats are already aligned."""
-        mock_hass = MagicMock()
-
-        # Post-import stats that continue properly from import
-        # import_end_sum = 500, first_post_state = 8, first_post_sum = 508
-        # expected = 500 + 8 = 508, discontinuity = 508 - 508 = 0
-        post_import_stats = [
-            {"start": 1735862400, "state": 8.0, "sum": 508.0},  # Jan 3
-        ]
-
-        with patch(
-            "custom_components.intuis_connect.history_import._get_existing_statistics",
-            new_callable=AsyncMock,
-            return_value=post_import_stats,
-        ):
-            result = await _fix_post_import_discontinuity(
-                hass=mock_hass,
-                entity_id="sensor.energy",
-                room_name="Living Room",
-                import_end_time=datetime(2025, 1, 2, tzinfo=timezone.utc),
-                import_end_sum=500.0,
-                metadata=mock_metadata,
-            )
-
-        assert result == 0
-
-    @pytest.mark.asyncio
-    async def test_detects_and_fixes_post_import_discontinuity(self, mock_metadata):
-        """Should detect discontinuity and adjust post-import statistics."""
-        mock_hass = MagicMock()
-
-        # Scenario: Import ends Jan 2 with sum = 500
-        # Live sensor recorded Jan 3 with its own baseline (sum = 8)
-        # Expected: 500 + 8 = 508
-        # Actual: 8
-        # Discontinuity: 508 - 8 = 500
-        post_import_stats = [
-            {"start": 1735862400, "state": 8.0, "sum": 8.0},   # Jan 3 - wrong sum
-            {"start": 1735948800, "state": 7.0, "sum": 15.0},  # Jan 4 - wrong sum
-        ]
-
-        import_calls = []
-
-        def capture_import(hass, metadata, statistics):
-            import_calls.append(statistics)
-
-        with patch(
-            "custom_components.intuis_connect.history_import._get_existing_statistics",
-            new_callable=AsyncMock,
-            return_value=post_import_stats,
-        ), patch(
-            "custom_components.intuis_connect.history_import.async_import_statistics",
-            side_effect=capture_import,
-        ):
-            result = await _fix_post_import_discontinuity(
-                hass=mock_hass,
-                entity_id="sensor.energy",
-                room_name="Living Room",
-                import_end_time=datetime(2025, 1, 2, tzinfo=timezone.utc),
-                import_end_sum=500.0,
-                metadata=mock_metadata,
-            )
-
-        assert result == 2  # Adjusted 2 entries
-        assert len(import_calls) == 1
-
-        adjusted = import_calls[0]
-        assert len(adjusted) == 2
-
-        # Check that sums were adjusted by the discontinuity amount (500)
-        assert adjusted[0]["sum"] == 8.0 + 500.0   # 508
-        assert adjusted[1]["sum"] == 15.0 + 500.0  # 515
-
-        # States should remain unchanged
-        assert adjusted[0]["state"] == 8.0
-        assert adjusted[1]["state"] == 7.0
-
-    @pytest.mark.asyncio
-    async def test_threshold_prevents_tiny_adjustments(self, mock_metadata):
-        """Should not adjust if discontinuity is below threshold."""
-        mock_hass = MagicMock()
-
-        # Small discontinuity of 0.5 kWh (below DISCONTINUITY_THRESHOLD of 1.0)
-        post_import_stats = [
-            {"start": 1735862400, "state": 8.0, "sum": 507.5},  # 0.5 kWh off
-        ]
-
-        with patch(
-            "custom_components.intuis_connect.history_import._get_existing_statistics",
-            new_callable=AsyncMock,
-            return_value=post_import_stats,
-        ):
-            result = await _fix_post_import_discontinuity(
-                hass=mock_hass,
-                entity_id="sensor.energy",
-                room_name="Living Room",
-                import_end_time=datetime(2025, 1, 2, tzinfo=timezone.utc),
-                import_end_sum=500.0,
-                metadata=mock_metadata,
-            )
-
-        assert result == 0  # No adjustment made
-
-    @pytest.mark.asyncio
-    async def test_handles_december_discontinuity_scenario(self, mock_metadata):
-        """Test the specific December -2172 kWh scenario."""
-        mock_hass = MagicMock()
-
-        # Scenario from user:
-        # - Import covers Nov 19 - Jan 2, ends with sum = 400
-        # - Live sensor had recorded some Dec/Jan data with its own baseline
-        # - December shows -2172 because of discontinuity
-
-        # Post-import stats (recorded by live sensor before import ran)
-        post_import_stats = [
-            {"start": 1735776000, "state": 10.0, "sum": 10.0},  # Jan 2 (live)
-            {"start": 1735862400, "state": 8.0, "sum": 18.0},   # Jan 3 (live)
-        ]
-
-        import_calls = []
-
-        def capture_import(hass, metadata, statistics):
-            import_calls.append(statistics)
-
-        with patch(
-            "custom_components.intuis_connect.history_import._get_existing_statistics",
-            new_callable=AsyncMock,
-            return_value=post_import_stats,
-        ), patch(
-            "custom_components.intuis_connect.history_import.async_import_statistics",
-            side_effect=capture_import,
-        ):
-            result = await _fix_post_import_discontinuity(
-                hass=mock_hass,
-                entity_id="sensor.energy",
-                room_name="Living Room",
-                import_end_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
-                import_end_sum=400.0,  # Import ended with 400 kWh
-                metadata=mock_metadata,
-            )
-
-        assert result == 2
-
-        adjusted = import_calls[0]
-        # First post-import entry should continue from 400
-        # expected = 400 + 10 = 410, actual = 10, discontinuity = 400
-        assert adjusted[0]["sum"] == 10.0 + 400.0  # 410
-        assert adjusted[1]["sum"] == 18.0 + 400.0  # 418
-
-
-class TestClearStatisticsInRange:
-    """Tests for _clear_statistics_in_range function."""
-
-    @pytest.mark.asyncio
-    async def test_returns_zero_when_no_metadata(self):
-        """Should return 0 when entity has no statistics metadata."""
-        mock_hass = MagicMock()
-        mock_instance = MagicMock()
-        mock_session = MagicMock()
-        mock_session.execute.return_value.scalar.return_value = None
-
-        # Mock the context manager
-        mock_session.__enter__ = MagicMock(return_value=mock_session)
-        mock_session.__exit__ = MagicMock(return_value=False)
-        mock_instance.get_session.return_value = mock_session
-
-        with patch(
-            "custom_components.intuis_connect.history_import.get_instance",
-            return_value=mock_instance,
-        ), patch(
-            "custom_components.intuis_connect.history_import.session_scope",
-        ) as mock_scope:
-            # Configure the context manager mock
-            mock_scope.return_value.__enter__ = MagicMock(return_value=mock_session)
-            mock_scope.return_value.__exit__ = MagicMock(return_value=False)
-
-            # Mock async_add_executor_job to run the function synchronously
-            async def run_sync(func):
-                return func()
-
-            mock_hass.async_add_executor_job = run_sync
-
-            result = await _clear_statistics_in_range(
-                mock_hass,
-                "sensor.energy",
-                datetime(2025, 11, 19, tzinfo=timezone.utc),
-                datetime(2026, 1, 3, tzinfo=timezone.utc),
-            )
-
-        # When no metadata found, should return 0
-        assert result == 0
-
-    @pytest.mark.asyncio
-    async def test_handles_exception_gracefully(self):
-        """Should return 0 and log warning on exception."""
-        mock_hass = MagicMock()
-        mock_hass.async_add_executor_job = AsyncMock(
-            side_effect=Exception("DB connection failed")
+        rooms["other"] = SimpleNamespace(name="Other", module_ids=["m"])
+    api = SimpleNamespace(
+        home_timezone="UTC", async_get_room_energy_daily=AsyncMock(side_effect=values)
+    )
+    home = SimpleNamespace(id="home", name="Test home", rooms=rooms)
+    manager = HistoryImportManager(ha_hass, "entry")
+    await manager.async_load()
+    monkeypatch.setattr(
+        "custom_components.intuis_connect.history_import.API_DELAY_SECONDS", 0
+    )
+    return api, home, manager
+
+
+@pytest.mark.parametrize("error", [CannotConnect("offline"), RateLimitError("429"), []])
+async def test_actual_importer_fetch_failures_preserve_existing_statistics(
+    ha_hass, live_recorder, monkeypatch, frozen_clock, error
+):
+    frozen_clock.move_to("2026-10-25 12:00:00")
+    await seed(live_recorder)
+    before = await rows(live_recorder)
+    api, home, manager = await importer_setup(ha_hass, monkeypatch, [error])
+    result = await async_import_energy_history(ha_hass, api, home, manager, days=2)
+    assert result["rooms_imported"] == 0 and result["errors"]
+    assert result["status"] == (
+        "rate_limited" if isinstance(error, RateLimitError) else "failed"
+    )
+    assert await rows(live_recorder) == before
+
+
+async def test_importer_confirms_commit_and_reports_partial_failure(
+    ha_hass, live_recorder, monkeypatch, frozen_clock
+):
+    frozen_clock.move_to("2026-10-25 12:00:00")
+    await seed(live_recorder)
+    api, home, manager = await importer_setup(
+        ha_hass,
+        monkeypatch,
+        [
+            [(instant(23).timestamp(), 2000), (instant(24).timestamp(), 0)],
+            CannotConnect("offline"),
+        ],
+        second=True,
+    )
+    result = await async_import_energy_history(ha_hass, api, home, manager, days=2)
+    assert result["status"] == "partial" and result["rooms_imported"] == 1
+    assert manager.get_room_progress("room")["cumulative_sum"] == 12
+    assert (await rows(live_recorder))[1][2] == 12
+
+
+async def test_documented_response_imports_measured_days_and_keeps_gaps(
+    ha_hass, live_recorder, monkeypatch, frozen_clock
+):
+    from custom_components.intuis_connect.intuis_api.api import IntuisAPI
+
+    frozen_clock.move_to("2026-10-25 12:00:00")
+    await seed(live_recorder)
+    # Day 23 is measured (stamped at noon); day 24 has no measurement at all.
+    payload = documented_daily(timezone.utc, {23: [None, None, 1500, 500]})
+    api, home, manager = await importer_setup(
+        ha_hass,
+        monkeypatch,
+        [IntuisAPI._parse_energy_samples(payload, require_timestamps=True)],
+    )
+    result = await async_import_energy_history(ha_hass, api, home, manager, days=2)
+    assert result["status"] == "completed" and result["rooms_imported"] == 1
+    assert result["days_without_data"] == 1
+    # Day 23 is replaced; day 24 keeps its own value and only follows the sum.
+    assert [(state, total) for _, state, total in await rows(live_recorder)] == [
+        (7, 10),
+        (2, 12),
+        (8, 20),
+        (1, 21),
+        (2, 22),
+    ]
+    assert [r[0] for r in await rows(live_recorder)][1:3] == [
+        instant(23).timestamp(),
+        instant(24).timestamp(),
+    ]
+
+
+async def test_unload_cancels_fetch_and_disallows_restart(
+    ha_hass, ha_entry_factory, live_recorder, monkeypatch
+):
+    await seed(live_recorder)
+    entered = asyncio.Event()
+
+    async def blocked(*args):
+        entered.set()
+        await asyncio.Event().wait()
+
+    api, home, manager = await importer_setup(ha_hass, monkeypatch, [])
+    api.async_get_room_energy_daily = blocked
+    entry = ha_entry_factory()
+    ha_hass.data[DOMAIN] = {
+        entry.entry_id: {},
+        "import_managers": {entry.entry_id: manager},
+    }
+    monkeypatch.setattr(
+        ha_hass.config_entries, "async_unload_platforms", AsyncMock(return_value=True)
+    )
+    assert manager.start(api, home, days=2)
+    assert not manager.start(api, home, days=2)
+    await entered.wait()
+    before = await rows(live_recorder)
+    assert await async_unload_entry(ha_hass, entry)
+    assert manager.status == "cancelled" and not manager.is_running
+    assert not manager.start(api, home, days=2)
+    assert await rows(live_recorder) == before
+
+
+async def test_consuming_import_flag_does_not_reload_its_own_task(
+    ha_hass, ha_entry_factory, monkeypatch
+):
+    entry = ha_entry_factory(options={CONF_IMPORT_HISTORY: False, "manual_duration": 5})
+    ha_hass.data[DOMAIN] = {
+        entry.entry_id: {"options": {CONF_IMPORT_HISTORY: True, "manual_duration": 5}}
+    }
+    reload = AsyncMock()
+    monkeypatch.setattr(ha_hass.config_entries, "async_reload", reload)
+    await update_listener(ha_hass, entry)
+    reload.assert_not_awaited()
+    ha_hass.data[DOMAIN][entry.entry_id]["options"] = {
+        CONF_IMPORT_HISTORY: False,
+        "manual_duration": 10,
+    }
+    await update_listener(ha_hass, entry)
+    reload.assert_awaited_once_with(entry.entry_id)
+
+
+async def test_direct_imports_release_manager_task_ownership(
+    ha_hass, live_recorder, monkeypatch, frozen_clock
+):
+    frozen_clock.move_to("2026-10-25 12:00:00")
+    await seed(live_recorder)
+    values = [(instant(23).timestamp(), 2000), (instant(24).timestamp(), 0)]
+    api, home, manager = await importer_setup(ha_hass, monkeypatch, [values, values])
+    for _ in range(2):
+        result = await async_import_energy_history(ha_hass, api, home, manager, days=2)
+        assert result["status"] == "completed" and not manager.is_running
+    assert manager._task is None
+    await manager.async_close()  # Must never cancel the awaiting test/caller.
+
+
+async def test_cancel_before_scheduled_import_starts_has_terminal_status(
+    ha_hass, monkeypatch
+):
+    # Cover the non-eager scheduler case; current HA may start tasks eagerly.
+    monkeypatch.setattr(
+        ha_hass, "async_create_task", lambda coroutine: asyncio.create_task(coroutine)
+    )
+    api, home, manager = await importer_setup(ha_hass, monkeypatch, [])
+    assert manager.start(api, home, days=2)
+    await manager.async_close()
+    assert not manager.is_running and manager.status == "cancelled"
+    api.async_get_room_energy_daily.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "samples",
+    [
+        ((instant(22), 1),),
+        ((instant(25), 1),),
+        ((instant(23).replace(tzinfo=None), 1),),
+        ((instant(24), 1), (instant(23), 1)),
+        ((instant(23), 1), (instant(23), 1)),
+        ((instant(23), -1),),
+        ((instant(23), float("inf")),),
+    ],
+)
+async def test_adapter_rejects_bad_staging_before_queue(
+    ha_hass, live_recorder, monkeypatch, samples
+):
+    queued = AsyncMock()
+    monkeypatch.setattr(live_recorder, "queue_task", queued)
+    with pytest.raises(HistoryReplacementError):
+        await async_replace_energy_history(
+            ha_hass, "sensor.room_energy", ((instant(23), instant(25), samples),)
         )
+    queued.assert_not_called()
 
-        with patch(
-            "custom_components.intuis_connect.history_import.get_instance",
-            return_value=MagicMock(),
-        ):
-            result = await _clear_statistics_in_range(
-                mock_hass,
-                "sensor.energy",
-                datetime(2025, 11, 19, tzinfo=timezone.utc),
-                datetime(2026, 1, 3, tzinfo=timezone.utc),
+
+async def test_unload_drains_inflight_transaction_and_rolls_back(
+    ha_hass, ha_entry_factory, live_recorder, monkeypatch, frozen_clock
+):
+    import threading
+
+    frozen_clock.move_to("2026-10-25 12:00:00")
+    await seed(live_recorder)
+    before = await rows(live_recorder)
+    before_short = await rows(live_recorder, StatisticsShortTerm)
+    values = [(instant(23).timestamp(), 2000), (instant(24).timestamp(), 0)]
+    api, home, manager = await importer_setup(ha_hass, monkeypatch, [values])
+    entry = ha_entry_factory()
+    ha_hass.data[DOMAIN] = {
+        entry.entry_id: {},
+        "import_managers": {entry.entry_id: manager},
+    }
+    monkeypatch.setattr(
+        ha_hass.config_entries, "async_unload_platforms", AsyncMock(return_value=True)
+    )
+    entered, release = threading.Event(), threading.Event()
+
+    def pause_insert(conn, cursor, statement, parameters, context, many):
+        if statement.startswith("INSERT INTO statistics "):
+            entered.set()
+            if not release.wait(5):
+                raise RuntimeError("test did not release recorder")
+
+    event.listen(live_recorder.engine, "before_cursor_execute", pause_insert)
+    try:
+        assert manager.start(api, home, days=2)
+        assert await asyncio.to_thread(entered.wait, 5)
+        unload = asyncio.create_task(async_unload_entry(ha_hass, entry))
+        await asyncio.sleep(0.01)
+        assert not unload.done()  # Transaction has not acknowledged rollback yet.
+        release.set()
+        assert await asyncio.wait_for(unload, 5)
+    finally:
+        release.set()
+        event.remove(live_recorder.engine, "before_cursor_execute", pause_insert)
+    assert manager.status == "cancelled" and not manager.is_running
+    assert await rows(live_recorder) == before
+    assert await rows(live_recorder, StatisticsShortTerm) == before_short
+    await live_recorder.async_block_till_done()
+    assert await rows(live_recorder) == before
+
+
+async def test_stopped_worker_refuses_without_queuing(
+    ha_hass, live_recorder, monkeypatch
+):
+    await seed(live_recorder)
+    await live_recorder._async_shutdown(None)
+    assert not live_recorder.is_alive()
+    queued = AsyncMock()
+    with monkeypatch.context() as patch:
+        patch.setattr(live_recorder, "queue_task", queued)
+        with pytest.raises(HistoryReplacementError, match="not running"):
+            await replace(ha_hass)
+        queued.assert_not_called()
+
+
+async def test_concurrent_import_services_share_one_manager_and_task(
+    ha_hass, ha_entry_factory, monkeypatch
+):
+    from custom_components.intuis_connect.services import async_register_services
+
+    api, home, _ = await importer_setup(ha_hass, monkeypatch, [])
+    entered = asyncio.Event()
+
+    async def blocked(*args):
+        entered.set()
+        await asyncio.Event().wait()
+
+    api.async_get_room_energy_daily = AsyncMock(side_effect=blocked)
+    entry = ha_entry_factory()
+    home.schedules = []
+    ha_hass.data[DOMAIN] = {entry.entry_id: {"api": api, "intuis_home": home}}
+    await async_register_services(ha_hass, entry)
+    await asyncio.gather(
+        *(
+            ha_hass.services.async_call(
+                DOMAIN, "import_energy_history", {"days": 2}, blocking=True
             )
+            for _ in range(2)
+        )
+    )
+    await entered.wait()
+    assert api.async_get_room_energy_daily.await_count == 1
+    manager = ha_hass.data[DOMAIN]["import_managers"][entry.entry_id]
+    await manager.async_close()
+    assert manager.status == "cancelled" and not manager.is_running
 
-        assert result == 0
+
+async def test_failed_unload_leaves_manager_reusable(
+    ha_hass, ha_entry_factory, monkeypatch
+):
+    api, home, manager = await importer_setup(ha_hass, monkeypatch, [])
+    entry = ha_entry_factory()
+    ha_hass.data[DOMAIN] = {
+        entry.entry_id: {},
+        "import_managers": {entry.entry_id: manager},
+    }
+    monkeypatch.setattr(
+        ha_hass.config_entries, "async_unload_platforms", AsyncMock(return_value=False)
+    )
+    assert not await async_unload_entry(ha_hass, entry)
+    assert ha_hass.data[DOMAIN]["import_managers"][entry.entry_id] is manager
+    assert not manager._closing
+
+    # A refused unload must not permanently disable future service imports.
+    async def blocked(*args):
+        await asyncio.Event().wait()
+
+    api.async_get_room_energy_daily = blocked
+    assert manager.start(api, home, days=2)
+    await manager.async_close()
+
+
+async def test_close_drains_progress_store_write(
+    ha_hass, live_recorder, monkeypatch, frozen_clock
+):
+    frozen_clock.move_to("2026-10-25 12:00:00")
+    await seed(live_recorder)
+    values = [(instant(23).timestamp(), 2000), (instant(24).timestamp(), 0)]
+    api, home, manager = await importer_setup(ha_hass, monkeypatch, [values])
+    entered, release = asyncio.Event(), asyncio.Event()
+    writes = []
+    original_save = manager.store.async_save
+
+    async def paused_save(payload):
+        entered.set()
+        await release.wait()
+        await original_save(payload)
+        writes.append("persisted")
+
+    monkeypatch.setattr(manager.store, "async_save", paused_save)
+    assert manager.start(api, home, days=2)
+    await entered.wait()
+    close = asyncio.create_task(manager.async_close())
+    await asyncio.sleep(0)
+    assert not close.done()
+    release.set()
+    await asyncio.wait_for(close, 5)
+    assert writes == ["persisted"] and not manager.is_running
+    assert manager.status == "cancelled"
+    assert await manager.store.async_load() == {
+        "rooms": {
+            "room": {
+                "last_imported_day": int(instant(25).timestamp()),
+                "cumulative_sum": 12,
+            }
+        }
+    }

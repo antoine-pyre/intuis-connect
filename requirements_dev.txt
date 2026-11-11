@@ -1,11 +1,13 @@
+# Select one versioned constraints file; see docs/development.md.
 colorlog
 homeassistant
 ruff
-
-# Testing
-pytest>=7.0.0
-pytest-asyncio>=0.21.0
-pytest-cov>=4.0.0
-pytest-mock>=3.10.0
-aioresponses>=0.7.4
-freezegun>=1.2.0
+pytest
+pytest-asyncio
+pytest-cov
+pytest-mock
+pytest-socket
+aioresponses
+freezegun
+# Home Assistant recorder is optional at runtime, required by the test harness.
+SQLAlchemy

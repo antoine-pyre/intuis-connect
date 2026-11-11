@@ -54,7 +54,7 @@ class IntuisScheduleRoom:
 class IntuisRoomTemperature:
     """Class to represent a room temperature in the Intuis Connect system."""
 
-    def __init__(self, room_id: str, temp: int) -> None:
+    def __init__(self, room_id: str, temp: float) -> None:
         """Initialize the room temperature."""
         self.room_id = room_id
         self.temp = temp

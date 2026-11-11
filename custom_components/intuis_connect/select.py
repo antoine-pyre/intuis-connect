@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
@@ -12,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .entity.intuis_entity import IntuisDataUpdateCoordinator
-from .entity.intuis_schedule import IntuisSchedule, IntuisThermSchedule
+from .entity.intuis_schedule import IntuisThermSchedule
 from .intuis_api.api import IntuisAPI, APIError, CannotConnect, RateLimitError
 from .utils.const import DOMAIN
 

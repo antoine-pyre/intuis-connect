@@ -1,58 +1,176 @@
 {
   "services": {
     "switch_schedule": {
-      "name": "Changer de programme",
-      "description": "Passe a un autre programme de chauffage. Le programme s'applique a toutes les pieces de la maison.",
+      "name": "Changer de planning",
+      "description": "Activer un planning dans le domicile ciblé. Les noms sont validés sur les données actuelles.",
       "fields": {
+        "home_id": {
+          "name": "Identifiant du domicile",
+          "description": "Identifiant Intuis d’un domicile chargé. Sans cible, le premier domicile chargé est utilisé, avec avertissement si plusieurs sont chargés."
+        },
         "schedule_name": {
-          "name": "Nom du programme",
-          "description": "Le nom du programme a activer."
+          "name": "Nom du planning",
+          "description": "Nom exact du planning dans le domicile ciblé."
         }
       }
     },
     "refresh_schedules": {
-      "name": "Rafraichir les programmes",
-      "description": "Force la mise a jour de toutes les donnees de programme et de la maison depuis l'API Intuis.",
+      "name": "Actualiser les plannings",
+      "description": "Actualiser les plannings du domicile ciblé, ou de tous les domiciles si aucune cible n’est fournie.",
       "fields": {
         "home_id": {
-          "name": "ID de la maison",
-          "description": "Cible une maison specifique (optionnel). Si non fourni, rafraichit toutes les maisons configurees."
+          "name": "Identifiant du domicile",
+          "description": "Identifiant Intuis d’un domicile chargé. Sans cible, tous les domiciles chargés sont ciblés."
         }
       }
     },
     "set_schedule_slot": {
-      "name": "Definir un creneau horaire",
-      "description": "Definit une zone pour une plage horaire dans le programme de chauffage actif. Cree un creneau de l'heure de debut a l'heure de fin avec la zone specifiee.",
+      "name": "Modifier une plage horaire",
+      "description": "Remplacer toute une plage du planning actif. Fournir start_day et end_day, ou day pour les deux jours.",
       "fields": {
+        "home_id": {
+          "name": "Identifiant du domicile",
+          "description": "Identifiant Intuis d’un domicile chargé. Sans cible, le premier domicile chargé est utilisé, avec avertissement si plusieurs sont chargés."
+        },
+        "start_day": {
+          "name": "Jour de début",
+          "description": "Jour de début : 0=lundi, 6=dimanche. Requis si day est absent."
+        },
+        "end_day": {
+          "name": "Jour de fin",
+          "description": "Jour de fin : 0=lundi, 6=dimanche. Requis si day est absent."
+        },
         "day": {
-          "name": "Jour de la semaine",
-          "description": "Jour de la semaine pour le creneau horaire (0=Lundi, 6=Dimanche)."
+          "name": "Jour (ancien format)",
+          "description": "Alias de compatibilité pour les deux jours lorsque start_day/end_day sont absents."
         },
         "start_time": {
-          "name": "Heure de debut",
-          "description": "Quand la zone doit commencer (format HH:MM, 24 heures)."
+          "name": "Heure de début",
+          "description": "Heure HH:MM ; les secondes doivent être nulles."
         },
         "end_time": {
           "name": "Heure de fin",
-          "description": "Quand la zone doit se terminer et revenir a la zone precedente (format HH:MM, 24 heures)."
+          "description": "Heure HH:MM. Pour le même jour, 00:00 signifie le minuit suivant."
         },
         "zone_name": {
           "name": "Nom de la zone",
-          "description": "Le nom de la zone (ex: Nuit, Jour, Eco)."
+          "description": "Nom de la zone dans le planning ciblé."
+        },
+        "schedule_name": {
+          "name": "Schedule Name",
+          "description": "Optional current name; defaults to active schedule."
+        },
+        "schedule_id": {
+          "name": "Schedule ID",
+          "description": "Optional stable ID; must match schedule_name if both are supplied."
+        }
+      }
+    },
+    "set_zone_temperature": {
+      "name": "Modifier la température d’une zone",
+      "description": "Définir la température d’une pièce dans une zone de planning, par pas de 0,5 °C.",
+      "fields": {
+        "home_id": {
+          "name": "Identifiant du domicile",
+          "description": "Identifiant Intuis d’un domicile chargé. Sans cible, le premier domicile chargé est utilisé, avec avertissement si plusieurs sont chargés."
+        },
+        "schedule_id": {
+          "name": "Identifiant du planning",
+          "description": "Identifiant stable du planning. Indiquer l’identifiant, le nom, ou les deux (ils doivent concorder)."
+        },
+        "schedule_name": {
+          "name": "Nom du planning",
+          "description": "Nom exact du planning dans le domicile ciblé, à défaut d’identifiant. Doit être unique."
+        },
+        "zone_id": {
+          "name": "Identifiant de la zone",
+          "description": "Identifiant de la zone dans ce planning. Indiquer l’identifiant, le nom, ou les deux."
+        },
+        "zone_name": {
+          "name": "Nom de la zone",
+          "description": "Nom de la zone dans ce planning, à défaut d’identifiant. Doit être unique."
+        },
+        "room_id": {
+          "name": "Identifiant de la pièce",
+          "description": "Identifiant de la pièce dans le domicile ciblé. Indiquer l’identifiant, le nom, ou les deux."
+        },
+        "room_name": {
+          "name": "Nom de la pièce",
+          "description": "Nom de la pièce dans ce domicile, à défaut d’identifiant. Doit être unique."
+        },
+        "temperature": {
+          "name": "Température",
+          "description": "Température de 5 à 30 °C par pas de 0,5 °C."
         }
       }
     },
     "import_energy_history": {
-      "name": "Importer l'historique energetique",
-      "description": "Importe les donnees historiques de consommation d'energie depuis le cloud Intuis vers les entites capteurs existantes. Les donnees apparaissent sur les memes capteurs d'energie utilises dans le tableau de bord Energie.",
+      "name": "Importer l’historique énergétique",
+      "description": "Importer des jours locaux terminés après validation (statistiques recorder en direct nécessaires), ou des heures closes dans des statistiques horaires externes distinctes. Un échec préserve l’historique.",
       "fields": {
+        "home_id": {
+          "name": "Identifiant du domicile",
+          "description": "Identifiant Intuis d’un domicile chargé. Sans cible, tous les domiciles chargés sont ciblés."
+        },
         "days": {
-          "name": "Jours a importer",
-          "description": "Nombre de jours d'historique a importer (1-730). Par defaut 365 jours."
+          "name": "Jours à importer",
+          "description": "Nombre entier de jours locaux terminés à importer (1–730)."
         },
         "room_name": {
-          "name": "Piece",
-          "description": "Importer uniquement cette piece. Laisser vide pour toutes les pieces."
+          "name": "Pièce (facultative)",
+          "description": "Laisser vide pour toutes les pièces. Sans home_id, seuls les domiciles contenant cette pièce sont importés."
+        },
+        "granularity": {
+          "name": "Granularité",
+          "description": "daily (par défaut, ou 1day) remplace l’historique du capteur journalier ; hourly (ou 1hour) importe les heures closes dans les statistiques horaires externes distinctes."
+        }
+      }
+    },
+    "sync_schedule": {
+      "name": "Synchroniser le planning",
+      "description": "Remplacer le planning complet et/ou ses températures absence et hors-gel après validation.",
+      "fields": {
+        "home_id": {
+          "name": "Home Id",
+          "description": "Target Intuis home ID."
+        },
+        "schedule_id": {
+          "name": "Schedule Id",
+          "description": "Stable schedule ID."
+        },
+        "schedule_name": {
+          "name": "Schedule Name",
+          "description": "Current schedule name; must match ID if supplied."
+        },
+        "timetable": {
+          "name": "Timetable",
+          "description": "List or JSON of unique m_offset/zone_id transitions (maximum 512)."
+        },
+        "away_temp": {
+          "name": "Away Temp",
+          "description": "Away temperature, 5–25 °C in half degrees."
+        },
+        "hg_temp": {
+          "name": "Hg Temp",
+          "description": "Frost temperature, 5–15 °C in half degrees."
+        }
+      }
+    },
+    "recalculate_cost_history": {
+      "name": "Recalculer l’historique des coûts",
+      "description": "Réécrit les statistiques de coût depuis l’énergie horaire confirmée et le prix configuré pour les dernières heures closes. L’énergie n’est jamais modifiée ; une pièce en échec conserve ses coûts précédents.",
+      "fields": {
+        "home_id": {
+          "name": "ID du domicile",
+          "description": "Cible un domicile chargé par son ID Intuis. Sans cible, s’applique à tous les domiciles chargés dont les coûts sont activés."
+        },
+        "days": {
+          "name": "Jours",
+          "description": "Nombre entier de jours d’heures closes à recalculer (1–730)."
+        },
+        "room_name": {
+          "name": "Pièce (facultatif)",
+          "description": "Laisser vide pour toutes les pièces et le total du domicile."
         }
       }
     }
@@ -177,11 +295,31 @@
         "description": "Configurez le suivi de la consommation d'énergie.",
         "data": {
           "energy_scale": "Fréquence de mise à jour",
-          "energy_reset_hour": "Heure de réinitialisation"
+          "energy_reset_hour": "Heure de réinitialisation",
+          "hourly_statistics": "Statistiques horaires",
+          "hourly_statistics_interval": "Intervalle de mise à jour horaire"
         },
         "data_description": {
           "energy_scale": "Fréquence de mise à jour des données de consommation.",
-          "energy_reset_hour": "Heure de réinitialisation des compteurs journaliers (0-23). Par défaut 2h pour s'assurer que les données de la veille sont finalisées."
+          "energy_reset_hour": "Heure de réinitialisation des compteurs journaliers (0-23). Par défaut 2h pour s'assurer que les données de la veille sont finalisées.",
+          "hourly_statistics": "Facultatif : importe les heures closes dans des statistiques externes distinctes par pièce et pour le domicile. Les capteurs d’énergie journaliers ne changent pas.",
+          "hourly_statistics_interval": "Fréquence de relecture des 48 dernières heures closes (rattrapage jusqu’à 7 jours après une interruption)."
+        }
+      },
+      "cost": {
+        "title": "Coûts énergétiques",
+        "description": "Facultatif : statistiques horaires de coût en {currency}, calculées depuis l’énergie horaire confirmée. Nécessite les statistiques horaires. Un prix manquant n’est jamais deviné.",
+        "data": {
+          "cost_statistics": "Statistiques de coût",
+          "cost_price_mode": "Source du prix",
+          "cost_fixed_price": "Prix fixe",
+          "cost_price_entity": "Entité de prix"
+        },
+        "data_description": {
+          "cost_statistics": "Active les statistiques de coût par pièce et pour le domicile. La désactivation conserve les statistiques existantes.",
+          "cost_price_mode": "Prix fixe, ou capteur dont l’historique enregistré donne le prix au début de chaque heure.",
+          "cost_fixed_price": "Prix par kWh en {currency} ; les valeurs négatives sont acceptées. S’applique uniquement aux heures pour lesquelles il est utilisé.",
+          "cost_price_entity": "Capteur exprimé en {currency}/kWh. Les heures sans prix enregistré valide sont refusées."
         }
       },
       "rate_limit": {
@@ -197,6 +335,21 @@
           "circuit_breaker_threshold": "Nombre d'erreurs de limitation consécutives avant de suspendre toutes les requêtes.",
           "max_update_interval": "Intervalle maximum entre les mises à jour quand l'API est limitée. Normalement interroge toutes les 2 minutes."
         }
+      }
+    },
+    "error": {
+      "cost_requires_hourly": "Activez d’abord les statistiques horaires : les coûts sont calculés depuis l’énergie horaire confirmée.",
+      "fixed_price_required": "Saisissez un prix fixe.",
+      "price_entity_not_found": "Sélectionnez un capteur de prix existant.",
+      "price_entity_unit": "Le capteur doit indiquer le prix par kWh dans la devise de Home Assistant.",
+      "price_mode_required": "Sélectionnez une source de prix."
+    }
+  },
+  "selector": {
+    "cost_price_mode": {
+      "options": {
+        "fixed": "Prix fixe",
+        "entity": "Entité de prix"
       }
     }
   }
