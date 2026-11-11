@@ -26,7 +26,6 @@ from ..utils.const import (
     APP_TYPE,
     APP_VERSION,
     DEFAULT_MANUAL_DURATION,
-    ENERGY_BASE,
     GET_SCHEDULE_PATH,
     SET_SCHEDULE_PATH,
     DELETE_SCHEDULE_PATH,
@@ -506,6 +505,7 @@ class IntuisAPI:
             "client_id": CLIENT_ID,
             "client_secret": CLIENT_SECRET,
             "user_prefix": USER_PREFIX,
+            "app_version": APP_VERSION,
         }
         async with self._session.post(
                 f"{self._base_url}{AUTH_PATH}", data=payload, timeout=10
@@ -659,12 +659,15 @@ class IntuisAPI:
                 "timezone": self.home_timezone,
             },
         }
-        await self._async_request(
+        async with await self._async_request(
             "post",
             SETSTATE_PATH,
             json=payload,
             headers={"Content-Type": "application/json"},
-        )
+        ) as resp:
+            result = await resp.json()
+        if isinstance(result, dict) and result.get("error"):
+            raise APIError(f"setstate failed: {result['error']}")
         if self._debug:
             _LOGGER.debug("Room %s state set to mode=%s, temp=%s", room_id, mode, temp)
 
@@ -880,9 +883,9 @@ class IntuisAPI:
 
         Returns a dict { room_id: [ { id, start, end, temp }, … ], … }.
         """
-        url = f"{ENERGY_BASE}{GET_SCHEDULE_PATH}?home_id={home_id}&schedule_id={schedule_id}"
         async with await self._async_request(
-            "get", GET_SCHEDULE_PATH, full_url=url, timeout=10
+            "get", f"/api{GET_SCHEDULE_PATH}",
+            params={"home_id": home_id, "schedule_id": schedule_id}, timeout=10
         ) as resp:
             body = await resp.json()
 
@@ -912,28 +915,28 @@ class IntuisAPI:
                 }
             ],
         }
-        url = f"{ENERGY_BASE}{SET_SCHEDULE_PATH}"
         async with await self._async_request(
-            "post", SET_SCHEDULE_PATH, full_url=url, json=payload, timeout=10
+            "post", f"/api{SET_SCHEDULE_PATH}", json=payload, timeout=10
         ):
             pass  # Success if no exception raised
 
     async def async_delete_schedule_slot(self, home_id: str, slot_id: str) -> None:
         """Delete a specific schedule slot by its ID."""
-        url = f"{ENERGY_BASE}{DELETE_SCHEDULE_PATH}?home_id={home_id}&slot_id={slot_id}"
         async with await self._async_request(
-            "delete", DELETE_SCHEDULE_PATH, full_url=url, timeout=10
+            "delete", f"/api{DELETE_SCHEDULE_PATH}",
+            params={"home_id": home_id, "slot_id": slot_id}, timeout=10
         ):
             pass  # Success if no exception raised
 
-    async def async_switch_schedule(self, home_id: str, schedule_id: int) -> None:
+    async def async_switch_schedule(self, home_id: str, schedule_id: str | int) -> None:
         """Switch the active weekly schedule."""
         payload = {"home_id": home_id, "schedule_id": schedule_id}
-        url = f"{ENERGY_BASE}{SWITCH_SCHEDULE_PATH}"
         async with await self._async_request(
-            "post", SWITCH_SCHEDULE_PATH, full_url=url, json=payload, timeout=10
-        ):
-            pass  # Success if no exception raised
+            "post", f"/api{SWITCH_SCHEDULE_PATH}", json=payload, timeout=10
+        ) as resp:
+            result = await resp.json()
+        if isinstance(result, dict) and result.get("error"):
+            raise APIError(f"switchhomeschedule failed: {result['error']}")
 
     async def async_sync_schedule(
         self,
