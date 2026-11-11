@@ -194,6 +194,31 @@ def number(h, zone_index=2):
     return entity
 
 
+async def test_removed_number_refuses_a_queued_write(schedule_services):
+    """A disabled/unloaded number cannot send after its pending lock releases."""
+    h = schedule_services
+    entity = number(h)
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def delayed(**payload):
+        entered.set()
+        await release.wait()
+
+    h.api.async_sync_schedule.side_effect = delayed
+    first = asyncio.create_task(entity.async_set_native_value(18.5))
+    await entered.wait()
+    queued = asyncio.create_task(entity.async_set_native_value(19.5))
+    await asyncio.sleep(0)
+    await entity.async_will_remove_from_hass()
+    release.set()
+    await first
+    with pytest.raises(ServiceValidationError, match='unloaded or reloaded'):
+        await queued
+    assert h.api.async_sync_schedule.await_count == 1
+    entity.async_write_ha_state.assert_not_called()
+    h.coordinator.async_request_refresh.assert_not_awaited()
+
+
 def snapshot(schedule):
     return {
         "timetable": [vars(t).copy() for t in schedule.timetables],

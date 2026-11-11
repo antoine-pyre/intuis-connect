@@ -344,6 +344,7 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
                 call.data[ATTR_ZONE_NAME],
                 start,
                 end,
+                is_current=lambda: is_loaded(hass, entry_id, data),
             )
         except ValueError as err:
             raise ServiceValidationError(str(err)) from err
@@ -368,6 +369,7 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
                 call.data[ATTR_TEMPERATURE],
                 zone_id=call.data.get(ATTR_ZONE_ID),
                 zone_name=call.data.get(ATTR_ZONE_NAME),
+                is_current=lambda: is_loaded(hass, entry_id, data),
             )
         except ValueError as err:
             raise ServiceValidationError(str(err)) from err
@@ -380,6 +382,7 @@ async def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> No
                                     call.data.get(ATTR_SCHEDULE_NAME))
         try:
             await async_sync_schedule(data["api"], lambda: data["intuis_home"], schedule.id,
+                                      is_current=lambda: is_loaded(hass, entry_id, data),
                                       **{key: call.data[key] for key in
                                          ("timetable", "away_temp", "hg_temp") if key in call.data})
         except ValueError as err:

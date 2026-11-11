@@ -195,6 +195,9 @@ class IntuisZoneTemperatureNumber(CoordinatorEntity[IntuisDataUpdateCoordinator]
         self._room_id = room_temp.room_id
         self._room_name = room_name
         self._cached_temp = float(room_temp.temp)
+        self._removed = False
+        self._home_device_id: str | None = None
+        self._home_device_link_resolved = False
 
         # Unique ID
         self._attr_unique_id = f"intuis_{home_id}_{schedule.id}_{zone.id}_{room_temp.room_id}_zone_temp"
@@ -210,13 +213,29 @@ class IntuisZoneTemperatureNumber(CoordinatorEntity[IntuisDataUpdateCoordinator]
     @property
     def device_info(self) -> DeviceInfo:
         """Return device info - grouped by schedule."""
-        return DeviceInfo(
+        info = DeviceInfo(
             identifiers={(DOMAIN, f"{self._home_id}_schedule_{self._schedule_id}")},
             name=f"Schedule {self._schedule_name}",
             manufacturer="Muller Intuitiv (Netatmo)",
             model="Heating Schedule",
-            via_device=(DOMAIN, f"{self._home_id}_home"),
         )
+        home_identifiers = {(DOMAIN, f"{self._home_id}_home")}
+        if "via_device_id" in DeviceInfo.__annotations__:
+            # Recent HA takes a registry ID instead of the deprecated pair.
+            # The home device is registered by the home entities before the
+            # disabled-by-default schedule numbers are enabled.
+            if self.hass is not None and not self._home_device_link_resolved:
+                registry = dr.async_get(self.hass)
+                devices = registry.async_get_devices(identifiers=home_identifiers)
+                self._home_device_link_resolved = True
+                if len(devices) == 1:
+                    self._home_device_id = devices[0].id
+            if self._home_device_id is not None:
+                info["via_device_id"] = self._home_device_id
+        else:
+            # HA 2024.6 only supports the identifier-pair API.
+            info["via_device"] = next(iter(home_identifiers))
+        return info
 
     @property
     def native_value(self) -> float | None:
@@ -249,12 +268,20 @@ class IntuisZoneTemperatureNumber(CoordinatorEntity[IntuisDataUpdateCoordinator]
             await async_set_zone_temperature(
                 self._api, lambda: self.coordinator.data["intuis_home"],
                 self._schedule_id, self._room_id, value, zone_id=self._zone_id,
+                is_current=lambda: not self._removed,
             )
         except ValueError as err:
             raise ServiceValidationError(str(err)) from err
+        if self._removed:
+            return
         self._cached_temp = float(value)
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Discard queued writes and late acknowledgements after removal."""
+        self._removed = True
+        await super().async_will_remove_from_hass()
 
     @callback
     def _handle_coordinator_update(self) -> None:

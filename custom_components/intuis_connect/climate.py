@@ -65,6 +65,13 @@ _LOGGER = logging.getLogger(__name__)
 # A pending command is a short-lived display hint, never a persisted state.
 OPTIMISTIC_TIMEOUT = 120
 
+# Keep the HA 2024.6 API while allowing newer cores to convert native values.
+_NATIVE_TEMPERATURES = hasattr(ClimateEntity, "native_current_temperature")
+_TARGET_ATTRIBUTE = (
+    "_attr_native_target_temperature" if _NATIVE_TEMPERATURES
+    else "_attr_target_temperature"
+)
+
 
 @dataclass(frozen=True)
 class PendingCommand:
@@ -91,7 +98,10 @@ class IntuisConnectClimate(
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
     )
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    if _NATIVE_TEMPERATURES:
+        _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
+    else:
+        _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_has_entity_name = True
 
     def __init__(
@@ -114,7 +124,7 @@ class IntuisConnectClimate(
         self._attr_assumed_state = False
         self._attr_hvac_mode = None
         self._attr_preset_mode = None
-        self._attr_target_temperature = None
+        setattr(self, _TARGET_ATTRIBUTE, None)
         self._pending: PendingCommand | None = None
         self._cancel_pending: Callable[[], None] | None = None
         self._cancel_end: Callable[[], None] | None = None
@@ -152,9 +162,8 @@ class IntuisConnectClimate(
     def _clear_pending(self) -> None:
         self._cancel_timer("_cancel_pending")
         self._pending = None
-        self._attr_hvac_mode = self._attr_preset_mode = (
-            self._attr_target_temperature
-        ) = None
+        self._attr_hvac_mode = self._attr_preset_mode = None
+        setattr(self, _TARGET_ATTRIBUTE, None)
         self._attr_assumed_state = False
 
     def _active_pending(self) -> PendingCommand | None:
@@ -202,7 +211,7 @@ class IntuisConnectClimate(
             intent["end"] if intent is not None else None,
         )
         self._attr_hvac_mode, self._attr_preset_mode = hvac, preset
-        self._attr_target_temperature = temperature
+        setattr(self, _TARGET_ATTRIBUTE, temperature)
         self._attr_assumed_state = True
 
         @callback
@@ -316,17 +325,21 @@ class IntuisConnectClimate(
         return self._attr_device_info
 
     @property
-    def current_temperature(self) -> StateType:
+    def native_current_temperature(self) -> StateType:
         room = self._get_room()
         return room.temperature if room is not None else None
 
     @property
-    def target_temperature(self) -> StateType:
+    def native_target_temperature(self) -> StateType:
         pending = self._active_pending()
         if pending is not None and pending.temperature is not None:
             return pending.temperature
         room = self._get_room()
         return room.target_temperature if room is not None else None
+
+    if not _NATIVE_TEMPERATURES:
+        current_temperature = native_current_temperature
+        target_temperature = native_target_temperature
 
     @property
     def hvac_mode(self) -> HVACMode | None:
@@ -433,7 +446,7 @@ class IntuisConnectClimate(
                 API_MODE_MANUAL,
                 HVACMode.HEAT,
                 None,
-                float(self.target_temperature or 20.0),
+                float(self.native_target_temperature or 20.0),
                 self._get_option(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION),
             )
         else:
