@@ -22,7 +22,8 @@ initialement préparé sur une branche 2.2.0 séparée.
 - Rapport du dernier import quotidien par pièce : période demandée, échantillons
   reçus, jours mesurés/importés/manquants, statut et stade/type d'erreur.
 - Diagnostics téléchargeables depuis Home Assistant, sans identifiants cloud,
-  noms de pièces, compte, tokens ou messages d'exception.
+  compte, tokens ou messages d'exception. L'export de migration conserve désormais
+  les noms des pièces, plannings et zones.
 - Validation des imports partiels : les pièces en erreur conservent leur
   historique, et un réimport ciblé ne modifie pas les autres pièces.
 - Ce travail facilite le diagnostic du signalement #23 ; il ne prouve pas que
@@ -30,6 +31,24 @@ initialement préparé sur une branche 2.2.0 séparée.
 
 Le rapport détaillé concerne l'import quotidien et reste en mémoire jusqu'au
 rechargement, ou jusqu'au prochain import quotidien.
+
+## Sauvegarde de tous les plannings avant migration locale
+
+- Le diagnostic contient désormais `data.planning_export` : tous les plannings
+  chargés, actifs **et inactifs**, sans avoir à les sélectionner successivement.
+- Conservation des noms, du fuseau horaire, des créneaux hebdomadaires, de toutes
+  les zones et des températures de chaque pièce, y compris les demi-degrés.
+- Conservation des ordres fil pilote, des températures absence/hors-gel et des
+  plannings tarifaires/événements pris en charge par le modèle.
+- Références locales cohérentes pour les pièces, plannings et modules : aucun
+  identifiant cloud ni secret de connexion n'est ajouté au fichier.
+- La lecture utilise le modèle courant, sans commande aux radiateurs ni appel
+  cloud. Il s'agit d'un export pour préparer une migration, pas d'un import HA
+  automatique ni d'une sauvegarde complète du compte.
+
+Après installation et redémarrage de HA, télécharger les diagnostics de
+l'intégration. Le fichier contient maintenant les noms et les habitudes de chauffe :
+le conserver pour la migration et le relire avant partage public.
 
 ## Support fil pilote — #27
 
@@ -61,7 +80,7 @@ statut incomplète ne supprime pas les intentions des pièces encore définies.
 
 ## Validation et crédits
 
-570 tests réussis sur HA 2024.6.4 / Python 3.12 et HA 2026.10.4 / Python 3.14,
+572 tests réussis sur HA 2024.6.4 / Python 3.12 et HA 2026.10.4 / Python 3.14,
 14 tests JavaScript, Ruff et cohérence des dépendances. Les régressions utilisent
 les vrais services, registries, Store et recorder SQLite, avec transport cloud
 simulé. Les hooks de conversion climate récents sont aussi exercés avec une base
@@ -79,4 +98,5 @@ démarrage ; l’acceptation des ordres FP4 sur matériel réel reste à confirm
 Les détails et sources sont dans docs/15-pilot-wire.md et CONTRIBUTORS.md.
 
 Si une copie précédente de cette même 2.1.0 bêta est déjà installée,
-retélécharger la version puis redémarrer Home Assistant pour obtenir le lot FP4.
+retélécharger la version puis redémarrer Home Assistant pour obtenir le lot FP4
+et l'export complet des plannings chargés.
