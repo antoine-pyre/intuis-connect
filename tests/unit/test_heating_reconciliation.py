@@ -344,3 +344,20 @@ async def test_expired_snapshot_does_not_remove_a_newer_intent(heating):
     h.manager.record("room", "manual", 22.5, 5)
     assert not h.manager.discard("room", first)
     assert h.shared["room"]["temp"] == 22.5
+
+
+async def test_partial_status_preserves_known_room_intention(heating):
+    h = heating
+    await h.entity.async_set_temperature(temperature=19.5)
+    before = deepcopy(h.shared)
+    h.api.async_get_home_status.side_effect = None
+    h.api.async_get_home_status.return_value = {"rooms": [], "modules": []}
+    await publish(h)
+    assert h.shared == before
+    assert (await h.store.async_load())["overrides"] == before
+    assert not h.entity.available
+    # A later complete response recovers without discarding the saved intent.
+    h.api.async_get_home_status.return_value = {"rooms": [dict(h.raw)], "modules": []}
+    await publish(h)
+    assert h.entity.available
+    assert h.shared == before
