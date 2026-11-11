@@ -48,6 +48,10 @@ model parser, unknown cloud fields, physical module associations, historical
 energy series and HA automation definitions are not part of this planning export.
 It is not a full account backup and does not automatically install HA schedules.
 
+For the planned deprecation and the local migration workflow, see the
+[Zigbee2MQTT migration guide (FR)](16-zigbee-migration.md). Export and check every
+schedule before removing the first radiator from Intuis.
+
 The output uses allowlisted model fields, not raw API replies or object internals.
 Missing room definitions retain their alias with a null name. Original cloud
 IDs cannot be reconstructed from this file; the room names let you map schedules

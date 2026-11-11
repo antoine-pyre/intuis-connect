@@ -1,5 +1,20 @@
 # Intuis Connect – Home Assistant Integration
 
+> [!WARNING]
+> **Planned deprecation / Dépréciation prévue**
+>
+> This cloud integration is planned for deprecation. For compatible **nativ / Intuis
+> 3.0 radiators**, the recommended migration path is direct local control through
+> **Zigbee2MQTT and Home Assistant**. Four radiators have been migrated using
+> firmware **3.0.8**; this does not establish compatibility for all equipment
+> supported by this integration, especially older plug-in modules and pilot-wire
+> installations.
+>
+> **Export every schedule before disconnecting the first radiator.** Follow the
+> [migration guide / procédure de bascule vers Zigbee (FR)](docs/16-zigbee-migration.md).
+> No end-of-support date is set by this notice; existing installations are not
+> automatically disabled or migrated.
+
 > **Full control of your Muller / Campa / Intuis electric radiators** with Netatmo "Intuitiv" modules – climate control, energy tracking, schedule management, and more.
 
 [![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
