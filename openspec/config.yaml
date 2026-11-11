@@ -1,0 +1,29 @@
+schema: spec-driven
+
+context: |
+  Intuis Connect est une intégration custom Home Assistant en Python, version 2.0.0.
+  Architecture : client aiohttp, IntuisData, DataUpdateCoordinator, entités et services.
+  Les documents de planification sont rédigés en français. Conserver les titres
+  structurels OpenSpec et SHALL/MUST dans les exigences normatives.
+  La review du 26 octobre 2026 est tracée dans openspec/README.md.
+  Il n'existait pas de spécifications OpenSpec avant cette planification.
+  Les capabilities nouvelles documentent des contrats du produit existant à fiabiliser.
+  Préserver les unique_id, entity_id, données de configuration et statistiques existants.
+  Les tests automatisés ne doivent appeler aucun compte ni équipement Intuis réel.
+  Le README annonce HA 2024.6+ ; la compatibilité réelle doit être vérifiée,
+  documentée et reflétée dans les environnements de test.
+
+rules:
+  proposal:
+    - Décrire le problème concret, le périmètre et les fichiers affectés.
+    - Relier le changement aux identifiants de review et à ses dépendances.
+  specs:
+    - Décrire des comportements observables avec scénarios vérifiables.
+    - Utiliser ADDED Requirements pour la première spécification d'une capability.
+  design:
+    - Expliciter la cohérence des états, la gestion des erreurs et les migrations.
+    - Ne jamais programmer de suppression de statistiques avant validation des données.
+  tasks:
+    - Utiliser des cases numérotées ; laisser toute implémentation non réalisée décochée.
+    - Tester le code de production et les points d'entrée réellement enregistrés.
+    - Inclure des tests de régression, les vérifications et la mise à jour documentaire.

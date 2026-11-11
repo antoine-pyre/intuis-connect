@@ -2,21 +2,30 @@
 from __future__ import annotations
 
 import logging
-import time
 from datetime import datetime, timedelta, timezone
 
 import homeassistant.util.dt as dt_util
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfTemperature, UnitOfEnergy, EntityCategory
+from homeassistant.core import callback
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from .cost_stats import async_last_cost, cost_signal
 
 from .entity.intuis_entity import IntuisEntity
 from .entity.intuis_home_entity import provide_home_sensors
-from .entity.intuis_module import NMHIntuisModule, NMRIntuisModule, IntuisModule
+from .entity.intuis_module import NMHIntuisModule
 from .entity.intuis_room import IntuisRoom
 from .entity.intuis_schedule import IntuisThermSchedule, IntuisThermZone
 from .timetable import MINUTES_PER_DAY
-from .utils.const import DOMAIN, CONF_ENERGY_RESET_HOUR, DEFAULT_ENERGY_RESET_HOUR
+from .utils.const import (
+    CONF_COST_STATISTICS,
+    CONF_ENERGY_RESET_HOUR,
+    DEFAULT_ENERGY_RESET_HOUR,
+    DOMAIN,
+)
 from .utils.helper import get_basic_utils
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,6 +54,77 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     entities += provide_home_sensors(coordinator, home_id, intuis_home)
     async_add_entities(entities, update_before_add=True)
+    if entry.options.get(CONF_COST_STATISTICS):
+        currency = hass.config.currency
+        async_add_entities(
+            [
+                IntuisCostSensor(entry.entry_id, home_id, room.id, room.name, currency)
+                for room in rooms.values()
+            ]
+            + [IntuisCostSensor(entry.entry_id, home_id, None, "Intuis Home", currency)]
+        )
+
+
+class IntuisCostSensor(SensorEntity):
+    """Display of the last confirmed cumulative cost of one external series.
+
+    No state_class: the external cost series is the only statistics writer.
+    """
+
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_suggested_display_precision = 2
+    _attr_icon = "mdi:cash"
+
+    def __init__(
+        self,
+        entry_id: str,
+        home_id: str,
+        room_id: str | None,
+        label: str,
+        currency: str,
+    ) -> None:
+        self._entry_id = entry_id
+        self._home_id = home_id
+        self._room_id = room_id
+        self._attr_native_unit_of_measurement = currency
+        self._attr_name = f"{label} Hourly Cost"
+        if room_id is None:
+            self._attr_unique_id = f"intuis_{home_id}_home_hourly_cost"
+            self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, f"{home_id}_home")})
+        else:
+            self._attr_unique_id = f"intuis_{home_id}_{room_id}_hourly_cost"
+            self._attr_device_info = IntuisEntity._build_device_info(
+                home_id, room_id, label
+            )
+        self._attr_native_value = None
+        self._attr_extra_state_attributes = {"last_hour_end": None}
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, cost_signal(self._entry_id), self._schedule_refresh
+            )
+        )
+        await self.async_refresh_from_recorder()
+
+    @callback
+    def _schedule_refresh(self) -> None:
+        # Must run in the event loop: a plain function would go to the executor.
+        self.hass.async_create_task(self.async_refresh_from_recorder())
+
+    async def async_refresh_from_recorder(self) -> None:
+        """Read the acknowledged cumulative cost; keep the last value on errors."""
+        try:
+            last = await async_last_cost(self.hass, self._home_id, self._room_id)
+        except Exception:  # noqa: BLE001 - recorder unavailable: keep display
+            _LOGGER.debug("Cost display refresh failed", exc_info=True)
+            return
+        if last is not None:
+            self._attr_native_value = last[0]
+            self._attr_extra_state_attributes = {"last_hour_end": last[1].isoformat()}
+        if self.hass is not None and self.entity_id:
+            self.async_write_ha_state()
 
 
 class IntuisSensor(CoordinatorEntity, SensorEntity, IntuisEntity):
@@ -233,24 +313,33 @@ class IntuisEnergySensor(IntuisSensor):
         return logical_date.isoformat()
 
     @property
-    def native_value(self) -> float:
-        """Return the cumulative daily energy value (max seen today)."""
-        room = self._get_room() or self._room
-        if room is None:
-            return self._daily_max_energy
+    def available(self) -> bool:
+        """No first measurement is unavailable, not a fabricated zero."""
+        room = self._get_room()
+        return super().available and room is not None and room.energy is not None
 
-        #current_energy = room.energy.energy or 0.0
-        # room.energy is expected to be a float (kWh) in this integration.
-        # Some variants / refactors could potentially wrap it in an object;
-        # be defensive.
-        energy_val = room.energy
-        if hasattr(energy_val, "energy"):
-            energy_val = energy_val.energy
+    @property
+    def extra_state_attributes(self) -> dict:
+        room = self._get_room()
+        return {
+            "energy_stale": room.energy_stale if room else True,
+            "last_successful_update": room.energy_updated_at if room else None,
+            "measurement_day": room.energy_day if room else None,
+        }
 
-        current_energy = float(energy_val or 0.0)
-        now = dt_util.now()
+    @property
+    def native_value(self) -> float | None:
+        """Return a valid daily maximum, retaining its original measurement day."""
+        room = self._get_room()
+        if room is None or room.energy is None:
+            return None
+        current_energy = room.energy
+        # A stale value belongs to its last successful day, so it must not set
+        # the new day's maximum and prevent a legitimate lower daily reading.
+        current_logical_day = room.energy_day or self._get_logical_day(
+            dt_util.now(), self._get_reset_hour()
+        )
         reset_hour = self._get_reset_hour()
-        current_logical_day = self._get_logical_day(now, reset_hour)
 
         # Reset daily max on new logical day
         if self._last_logical_day is None:
