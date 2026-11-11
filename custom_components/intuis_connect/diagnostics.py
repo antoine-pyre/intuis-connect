@@ -3,7 +3,8 @@
 Adapted-from: https://github.com/adrienvsj/intuis-connect/commit/acc734719c7e0484c949f89fc6d9a1a910c67252
 Original-author: @adrienvsj
 Only explicitly selected fields are exported; no raw entry, API response,
-exception message, registry ID, room/schedule name or location is returned.
+exception message, registry ID or location is returned. The planning export
+intentionally retains room, schedule and zone names for migration.
 """
 
 from __future__ import annotations
@@ -14,7 +15,9 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
+from .planning_export import export_plannings
 from .utils.const import DOMAIN
 
 
@@ -25,12 +28,13 @@ def _number(value):
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
-    """Return anonymous aliases shared across room state and last daily import."""
+    """Return support diagnostics and named plannings with local ID aliases."""
     domain = hass.data.get(DOMAIN, {})
     data = domain.get(entry.entry_id, {})
-    home = data.get("intuis_home")
     coordinator = data.get("coordinator")
-    rooms = ((coordinator.data if coordinator else None) or {}).get("rooms", {})
+    coordinator_data = (coordinator.data if coordinator else None) or {}
+    home = coordinator_data.get("intuis_home") or data.get("intuis_home")
+    rooms = coordinator_data.get("rooms", {})
     manager = domain.get("import_managers", {}).get(entry.entry_id)
     reports = deepcopy(manager.daily_diagnostics) if manager else {}
     aliases = {
@@ -49,6 +53,10 @@ async def async_get_config_entry_diagnostics(
         }
     return {
         "entry": {"version": entry.version},
+        "planning_export": {
+            "captured_at": dt_util.utcnow().isoformat(),
+            **export_plannings(home, aliases),
+        },
         "home": {
             "room_count": len(getattr(home, "rooms", None) or {}),
             "schedules": [

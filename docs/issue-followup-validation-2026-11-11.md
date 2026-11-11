@@ -68,3 +68,20 @@ persistance et la réapplication, ainsi que la récupération après statut part
 
 Voir [diagnostics](14-diagnostics.md), [développement](development.md),
 [revue du fork](fork-review-2026-11-11.md) et [CONTRIBUTORS](../CONTRIBUTORS.md).
+
+## Ajout de l'export de migration des plannings
+
+Les diagnostics incluent désormais tous les plannings du modèle chargé, actifs
+ou inactifs, avec noms, fuseau, créneaux, zones inutilisées, températures, ordres
+fil pilote, tarifs et états DHW pris en charge. Les références cloud sont
+remplacées par des alias locaux ; les noms de pièces/plannings/zones sont
+intentionnellement conservés pour la migration. Le modèle du coordinateur est
+prioritaire sur celui du démarrage. Aucun appel cloud ni commande n'est ajouté.
+
+Validation locale de cette révision : 572 tests passent sur HA 2024.6.4 et
+HA 2026.10.4 ; les deux tests de parité JS du Core courant, initialement ignorés
+car Node était absent du PATH, ont été exécutés séparément avec Node disponible.
+Les 14 tests JavaScript, Ruff sur les deux environnements, pip check et
+git diff --check passent. Les tests d'export vérifient aussi la sérialisation
+JSON, les références inter-plannings et l'absence de mutation du modèle chargé.
+Le téléchargement sur l'installation réelle reste à vérifier après mise à jour.
