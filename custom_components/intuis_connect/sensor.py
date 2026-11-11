@@ -216,13 +216,11 @@ class IntuisTemperatureSensor(IntuisSensor):
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
-    def native_value(self) -> float:
+    def native_value(self) -> float | None:
         """Return the current temperature value."""
         # Ensure we handle None values gracefully
         room = self._get_room() or self._room
         temperature = room.temperature
-        if temperature is None:
-            return 0.0
         return temperature
 
 

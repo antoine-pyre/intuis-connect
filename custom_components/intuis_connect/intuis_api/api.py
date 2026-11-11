@@ -625,6 +625,8 @@ class IntuisAPI:
             mode: str,
             temp: float | None = None,
             duration: int | None = None,
+            *,
+            fp: str | None = None,
     ) -> None:
         """Send setstate command for one room."""
         if self._debug:
@@ -635,14 +637,21 @@ class IntuisAPI:
                 temp,
                 duration,
             )
+        if fp is not None and (
+            fp not in {"comfort", "away", "frost_guard"}
+            or mode != "manual" or temp is not None
+        ):
+            raise APIError("Pilot-wire order requires manual mode and no temperature")
         room_payload: dict[str, Any] = {"id": room_id, "therm_setpoint_mode": mode}
         if mode == "manual":
-            if temp is None:
-                raise APIError("Manual mode requires temperature")
+            if temp is None and fp is None:
+                raise APIError("Manual mode requires temperature or pilot-wire order")
             end = int(time.time()) + (duration or DEFAULT_MANUAL_DURATION) * 60
-            room_payload.update(
-                {"therm_setpoint_temperature": float(temp), "therm_setpoint_end_time": end}
-            )
+            room_payload["therm_setpoint_end_time"] = end
+            if fp is not None:
+                room_payload["therm_setpoint_fp"] = fp
+            else:
+                room_payload["therm_setpoint_temperature"] = float(temp)
         elif mode in ("away", "boost", "hg"):
             # These modes may also accept temperature and duration
             if temp is not None:

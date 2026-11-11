@@ -158,11 +158,11 @@ class IntuisData:
         overrides_changed = False
         rooms_to_clear = []
 
-        # First, clean up orphaned overrides (rooms that no longer exist in API)
+        # Only definitions establish removal: a partial status response does not.
         for room_id in list(self._overrides.keys()):
-            if room_id not in data_by_room:
+            if room_id not in data_by_room and room_id not in self._intuis_home.rooms:
                 _LOGGER.warning(
-                    "Removing orphaned override for room %s (room no longer in API response)",
+                    "Removing orphaned override for room %s (room no longer in home definition)",
                     room_id,
                 )
                 rooms_to_clear.append((room_id, self._overrides[room_id]))
