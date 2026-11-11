@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main, develop]
   push:
-    branches: [main, develop, 'codex/**']
+    branches: [main, develop, 'codex/**', fix/api-client]
 
 jobs:
   tests:
