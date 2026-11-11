@@ -1,14 +1,16 @@
 # Validation 2.1.0 bêta — 11 novembre 2026
 
 Branche : codex/2.1.0-beta, construite sur fix/api-client à 02795b7.
-Le périmètre publié est limité aux correctifs du client 2.0.2 et aux issues #31
-et #23. Les travaux FP4/#27, déjà testés ensemble lors de la passe initiale,
-sont retirés de cette branche et conservés pour codex/2.2.0-beta.
+La première publication isolait les correctifs client 2.0.2 et les issues #31
+et #23 (546 tests par Core). À la demande du mainteneur, la mise à jour de cette
+même bêta fusionne aussi le lot FP4/#27 de codex/2.2.0-beta (570 tests par Core).
+Aucune release 2.2.0 séparée n’est créée.
 
 ## Revue et couverture
 
 Deux sous-agents ont revu indépendamment le lot planning et le lot diagnostics.
-Aucun problème actionnable restant ni fuite du code FP4 n'a été identifié.
+Aucun problème actionnable restant n'a été identifié. Le FP4, initialement
+séparé, a aussi fait l'objet d'une revue croisée et est maintenant inclus.
 La revue croisée initiale avait trouvé une course dans l'enregistrement du parent
 avant les plateformes : son correctif et son test sont inclus ici.
 
@@ -24,12 +26,12 @@ avant les plateformes : son correctif et son test sont inclus ici.
   Deux succès/quatre erreurs préservent les statistiques des pièces en échec ;
   le réimport ciblé n'altère que la pièce choisie.
 
-## Résultats exécutés sur la branche séparée
+## Résultats de la branche regroupée
 
 | Validation | Résultat |
 |---|---|
-| HA 2024.6.4 / Python 3.12.15 | 546 tests pytest réussis, aucun ignoré |
-| HA 2026.10.4 / Python 3.14.4 | 546 tests pytest réussis, aucun ignoré |
+| HA 2024.6.4 / Python 3.12.15 | 570 tests pytest réussis, aucun ignoré |
+| HA 2026.10.4 / Python 3.14.4 | 570 tests pytest réussis, aucun ignoré |
 | Logique JavaScript Node 24.22.1, passe commune précédente | 14 tests réussis |
 | Ruff et cohérence des dépendances | Réussis sur les deux environnements |
 | git diff --check | Réussi |
@@ -47,8 +49,13 @@ le cloud et le cadre du dashboard. L'attente longue de 45 secondes n'a pas été
 rejouée. La fermeture Firefox passe désormais par BiDi pour éviter l'erreur
 SIGTERM du lanceur snap.
 
+Le lot #27 vérifie la sélection FP4 sans supprimer le thermostat des FP avec
+températures, les ordres sans température, leurs refus/acquittements, la
+persistance et la réapplication, ainsi que la récupération après statut partiel.
+
 ## Limites
 
+- L’acceptation des ordres FP4 sur matériel réel reste à confirmer.
 - Le scénario cloud exact de #31 et la disponibilité de l'historique du compte
   de #23 nécessitent encore un retour utilisateur.
 - Les deux cores installés utilisent l'API climate héritée. La régression sur

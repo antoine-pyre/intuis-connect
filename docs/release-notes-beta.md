@@ -1,8 +1,9 @@
 # Intuis Connect 2.1.0 bêta
 
 Cette préversion cumule les correctifs du client API préparés pour la 2.0.2 et
-les corrections/diagnostics des issues #31 et #23. La stable reste la 2.0.1.
-Le support fil pilote FP4 de #27 est réservé à une future 2.2.0 bêta.
+les corrections/diagnostics des issues #31 et #23 et le support fil pilote FP4
+de #27. La stable reste la 2.0.1. Cette mise à jour regroupe le lot FP4
+initialement préparé sur une branche 2.2.0 séparée.
 
 ## Planning et compatibilité Home Assistant — #31
 
@@ -30,6 +31,25 @@ Le support fil pilote FP4 de #27 est réservé à une future 2.2.0 bêta.
 Le rapport détaillé concerne l'import quotidien et reste en mémoire jusqu'au
 rechargement, ou jusqu'au prochain import quotidien.
 
+## Support fil pilote — #27
+
+- Détection des pièces de type FP sans température mesurée ni consigne, avec un
+  ordre therm_setpoint_fp reconnu. Les FP avec températures gardent le thermostat.
+- Presets Comfort, Eco et Hors-gel, sans cadran de température. Heat sélectionne
+  Comfort manuel ; Auto reprend le planning ; Off conserve la commande existante.
+- Commandes manual avec ordre comfort/away/frost_guard, échéance et aucune
+  température numérique. Boost et consignes de température sont refusés pour
+  les seules pièces fil pilote.
+- Verrou partagé, affichage optimiste borné, acquittement vérifiant l'ordre et
+  l'échéance, stockage/rechargement et réapplication des intentions fil pilote.
+- Conservation des identifiants d'entités et des anciennes intentions thermiques.
+
+## Robustesse des données partielles
+
+Pièces sans définition ignorées sans crash, températures nulles conservées comme
+inconnues, disponibilité climate liée à la présence de la pièce. Une réponse de
+statut incomplète ne supprime pas les intentions des pièces encore définies.
+
 ## Correctifs client API hérités de la 2.0.2 bêta
 
 - Les opérations de planning utilisent le serveur authentifié, y compris après
@@ -41,7 +61,7 @@ rechargement, ou jusqu'au prochain import quotidien.
 
 ## Validation et crédits
 
-546 tests réussis sur HA 2024.6.4 / Python 3.12 et HA 2026.10.4 / Python 3.14,
+570 tests réussis sur HA 2024.6.4 / Python 3.12 et HA 2026.10.4 / Python 3.14,
 14 tests JavaScript, Ruff et cohérence des dépendances. Les régressions utilisent
 les vrais services, registries, Store et recorder SQLite, avec transport cloud
 simulé. Les hooks de conversion climate récents sont aussi exercés avec une base
@@ -52,3 +72,11 @@ disponible ; une configuration isolée est fournie pour une validation ultérieu
 Les diagnostics et la création anticipée de l'appareil parent adaptent les apports
 de **adrienvsj**, avec sources dans CONTRIBUTORS.md et docs/14-diagnostics.md.
 Les limites de contrat API sont détaillées dans docs/13-apk-api-audit.md.
+
+Le FP4 adapte la proposition **apeyrat #27** et les corrections de détection et
+de données partielles d’**adrienvsj**. La détection reste une heuristique au
+démarrage ; l’acceptation des ordres FP4 sur matériel réel reste à confirmer.
+Les détails et sources sont dans docs/15-pilot-wire.md et CONTRIBUTORS.md.
+
+Si une copie précédente de cette même 2.1.0 bêta est déjà installée,
+retélécharger la version puis redémarrer Home Assistant pour obtenir le lot FP4.

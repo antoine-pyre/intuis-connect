@@ -27,7 +27,7 @@ from homeassistant.helpers.event import async_call_later
 
 from .intuis_api.api import IntuisAPI
 from .overrides import OverrideIntent, OverrideManager, OverrideState
-from .entity.intuis_room import IntuisRoom
+from .entity.intuis_room import IntuisRoom, is_pilot_wire
 from .utils.const import (
     PRESET_AWAY,
     PRESET_BOOST,
@@ -81,6 +81,7 @@ class PendingCommand:
     preset_mode: str | None
     deadline: float
     end_ts: int | None = None
+    fp: str | None = None
 
 
 class IntuisConnectClimate(
@@ -197,6 +198,7 @@ class IntuisConnectClimate(
         hvac: HVACMode,
         preset: str | None,
         intent: OverrideIntent | None,
+        fp: str | None = None,
     ) -> None:
         if self._removed:
             return
@@ -209,6 +211,7 @@ class IntuisConnectClimate(
             preset,
             time.monotonic() + OPTIMISTIC_TIMEOUT,
             intent["end"] if intent is not None else None,
+            fp,
         )
         self._attr_hvac_mode, self._attr_preset_mode = hvac, preset
         setattr(self, _TARGET_ATTRIBUTE, temperature)
@@ -236,6 +239,7 @@ class IntuisConnectClimate(
         mode: str,
         temperature: float | None,
         end_ts: int | None = None,
+        fp: str | None = None,
     ) -> bool:
         observed_end = getattr(room, "therm_setpoint_end_time", None)
         if (
@@ -245,6 +249,8 @@ class IntuisConnectClimate(
             and abs(observed_end - end_ts) > 60
         ):
             return False
+        if fp is not None:
+            return room.mode == mode and room.therm_setpoint_fp == fp
         if mode == API_MODE_HOME:
             return (
                 room.mode in (API_MODE_AUTO, API_MODE_HOME)
@@ -281,7 +287,7 @@ class IntuisConnectClimate(
         except (ValueError, TypeError):
             return None
         if active and self._observes_command(
-            room, intent.get("mode"), intent.get("temp"), intent.get("end")
+            room, intent.get("mode"), intent.get("temp"), intent.get("end"), intent.get("fp")
         ):
             return intent
         return None
@@ -295,7 +301,7 @@ class IntuisConnectClimate(
             and room is not None
             and pending is not None
             and self._observes_command(
-                room, pending.api_mode, pending.temperature, pending.end_ts
+                room, pending.api_mode, pending.temperature, pending.end_ts, pending.fp
             )
         ):
             self._clear_pending()
@@ -318,6 +324,10 @@ class IntuisConnectClimate(
         self._cancel_timer("_cancel_end")
         self._scheduled_end_ts = None
         await super().async_will_remove_from_hass()
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._get_room() is not None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -408,6 +418,8 @@ class IntuisConnectClimate(
         preset: str | None,
         temperature: float | None = None,
         duration: int | None = None,
+        *,
+        fp: str | None = None,
     ) -> None:
         room = self._get_room()
         if self._removed or room is None:
@@ -419,8 +431,9 @@ class IntuisConnectClimate(
             temperature,
             duration,
             on_success=lambda intent: self._publish_pending(
-                mode, temperature, hvac, preset, intent
+                mode, temperature, hvac, preset, intent, fp
             ),
+            **({"fp": fp} if fp is not None else {}),
         )
         if not self._removed:
             await self.coordinator.async_request_refresh()
@@ -496,6 +509,88 @@ class IntuisConnectClimate(
         )
 
 
+class IntuisPilotWireClimate(IntuisConnectClimate):
+    """Pilot-wire rooms take orders, not temperature setpoints.
+
+    Adapted from apeyrat's proposal (#27), with adrienvsj's detection correction;
+    commands use this integration's shared, persisted intention manager.
+    """
+
+    _attr_preset_modes = ["comfort", "eco", "frost_protect", PRESET_SCHEDULE]
+    _attr_supported_features = ClimateEntityFeature.PRESET_MODE
+    _orders = {"comfort": "comfort", "eco": "away", "frost_protect": "frost_guard"}
+
+    @property
+    def native_current_temperature(self) -> None:
+        return None
+
+    @property
+    def native_target_temperature(self) -> None:
+        return None
+
+    if not _NATIVE_TEMPERATURES:
+        current_temperature = native_current_temperature
+        target_temperature = native_target_temperature
+
+    @property
+    def hvac_mode(self) -> HVACMode | None:
+        pending = self._active_pending()
+        if pending is not None:
+            return pending.hvac_mode
+        room = self._get_room()
+        if room is None:
+            return None
+        if room.mode == API_MODE_OFF:
+            return HVACMode.OFF
+        if room.mode in (API_MODE_HOME, API_MODE_AUTO, API_MODE_AWAY):
+            return HVACMode.AUTO
+        return HVACMode.HEAT
+
+    @property
+    def preset_mode(self) -> str | None:
+        pending = self._active_pending()
+        if pending is not None:
+            return pending.preset_mode
+        room = self._get_room()
+        if room is None or room.mode == API_MODE_OFF:
+            return None
+        if room.mode == API_MODE_HG:
+            return "frost_protect"
+        return next((preset for preset, order in self._orders.items()
+                     if order == room.therm_setpoint_fp), None)
+
+    @property
+    def hvac_action(self) -> HVACAction | None:
+        # An order does not prove that an unmetered radiator is drawing power.
+        return HVACAction.OFF if self.hvac_mode == HVACMode.OFF else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        room = self._get_room()
+        return {"pilot_wire_order": room.therm_setpoint_fp if room else None}
+
+    async def async_set_temperature(self, **kwargs: Any) -> None:
+        raise ValueError("Pilot-wire rooms do not support temperature setpoints")
+
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        if hvac_mode == HVACMode.HEAT:
+            await self.async_set_preset_mode("comfort")
+        else:
+            await super().async_set_hvac_mode(hvac_mode)
+
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        if preset_mode == PRESET_SCHEDULE:
+            await self._async_command(API_MODE_HOME, HVACMode.AUTO, PRESET_SCHEDULE)
+            return
+        if preset_mode not in self._orders:
+            raise ValueError(f"Unsupported pilot-wire preset: {preset_mode}")
+        await self._async_command(
+            API_MODE_MANUAL, HVACMode.HEAT, preset_mode,
+            duration=self._get_option(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION),
+            fp=self._orders[preset_mode],
+        )
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -504,8 +599,10 @@ async def async_setup_entry(
 
     entities = []
     for room_id in rooms:
+        room = rooms[room_id]
+        climate_class = IntuisPilotWireClimate if is_pilot_wire(room) else IntuisConnectClimate
         entities.append(
-            IntuisConnectClimate(
+            climate_class(
                 coordinator, home_id, rooms.get(room_id), api, entry.entry_id
             )
         )
