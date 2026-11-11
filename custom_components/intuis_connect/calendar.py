@@ -64,7 +64,6 @@ class IntuisScheduleCalendar(
         self._schedule_id = schedule.id
         self._schedule_name = schedule.name or f"Schedule {schedule.id}"
 
-        self._attr_name = f"Schedule {self._schedule_name}"
         self._attr_unique_id = f"intuis_{home_id}_schedule_{schedule.id}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{home_id}_home")},
@@ -72,6 +71,11 @@ class IntuisScheduleCalendar(
             manufacturer="Muller Intuitiv (Netatmo)",
             model="Home Controller",
         )
+
+    @property
+    def name(self) -> str:
+        schedule = self._get_schedule()
+        return f"Schedule {schedule.name if schedule else self._schedule_name}"
 
     def _get_home(self) -> IntuisHome:
         """Get the home data from coordinator."""

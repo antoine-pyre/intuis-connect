@@ -4,14 +4,8 @@ from __future__ import annotations
 import pytest
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
-from freezegun import freeze_time
 
 # Import the module under test
-from custom_components.intuis_connect.intuis_data import (
-    IntuisData,
-    INDEFINITE_REAPPLY_BUFFER,
-    MIN_REAPPLY_INTERVAL,
-)
 from custom_components.intuis_connect.utils.const import (
     API_MODE_MANUAL,
     API_MODE_AWAY,
