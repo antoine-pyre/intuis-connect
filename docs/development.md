@@ -1,5 +1,37 @@
 # Développement et validation
 
+## Instance Docker isolée et matrice de tests
+
+`docker-compose-test.yml` prépare une instance HA 2026.10.4 distincte du compose
+de développement, sur le port local 18123, avec un volume de configuration propre.
+Elle démarre vierge : aucune configuration ni connexion Intuis n'est préchargée.
+
+```sh
+docker compose -f docker-compose-test.yml up -d --wait homeassistant
+docker compose -f docker-compose-test.yml --profile tests build tests-current tests-minimum
+docker compose -f docker-compose-test.yml --profile tests run --rm tests-current
+docker compose -f docker-compose-test.yml --profile tests run --rm tests-minimum
+docker compose -f docker-compose-test.yml down
+```
+
+La construction nécessite le réseau pour les images et dépendances. Les conteneurs
+de tests s'exécutent ensuite sans réseau externe ; les sockets Unix nécessaires au
+recorder restent utilisables. Chaque runner lance pytest, les tests JavaScript et
+Ruff. Le contexte de construction contient seulement le code, les tests et leurs
+dépendances. Le volume HA est conservé par `down` pour les inspections suivantes.
+
+Les runners créent leurs propres objets HA, registries, Store et workers recorder ;
+ils ne pilotent pas l'instance HTTP vierge du service `homeassistant`. Le cloud
+Intuis est simulé. Cette séparation permet de lancer aussi la matrice sans serveur
+HTTP, et ne remplace pas une validation matérielle.
+
+Au 11 novembre 2026, Docker n'est pas disponible dans l'environnement de travail :
+ces builds, le démarrage et le healthcheck restent à exécuter. Les validations
+natives réellement exécutées sont détaillées dans le
+[rapport de suivi des issues](issue-followup-validation-2026-11-11.md).
+
+## Environnements Python natifs
+
 La matrice de validation conserve le minimum annoncé **HA 2024.6** et vérifie
 également **HA 2026.10.4**, version courante constatée dans les métadonnées PyPI
 le 26 octobre 2026. Les fichiers de contraintes sont des instantanés complets des

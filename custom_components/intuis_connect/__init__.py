@@ -13,6 +13,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -225,6 +226,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("Stored data for entry %s", entry.entry_id)
 
     # ---------- setup platforms ----------------------------------------------------
+    # Register the parent before concurrently forwarded platforms can register
+    # schedule children (including numbers enabled before this restart).
+    # Adapted from adrienvsj's parent-registration fix, commit a7d7ed4800.
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{intuis_home.id}_home")},
+        name="Intuis Home",
+        manufacturer="Muller Intuitiv (Netatmo)",
+        model="Home Controller",
+        suggested_area="Home",
+    )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # ---------- register services -------------------------------------------------

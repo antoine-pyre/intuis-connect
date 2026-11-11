@@ -1,0 +1,12 @@
+**
+!requirements_dev.txt
+!requirements/
+!requirements/**
+!custom_components/
+!custom_components/**
+!tests/
+!tests/**
+!pytest.ini
+!ruff.toml
+**/__pycache__
+**/*.py[cod]

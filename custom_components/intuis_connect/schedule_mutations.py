@@ -51,11 +51,14 @@ async def _async_mutate(
     get_home: Callable[[], IntuisHome],
     schedule_id: str,
     mutation: Callable[[IntuisThermSchedule], None],
+    is_current: Callable[[], bool] | None = None,
 ) -> None:
     # The API client is shared by service and number entry points. Its lock map
     # survives fresh model objects obtained by refresh_schedules.
     locks = api._schedule_mutation_locks
     async with locks.setdefault(schedule_id, asyncio.Lock()):
+        if is_current is not None and not is_current():
+            raise ValueError("Home entry was unloaded or reloaded before schedule write")
         proposed = deepcopy(_schedule(get_home(), schedule_id))
         mutation(proposed)
         await api.async_sync_schedule(
@@ -82,6 +85,10 @@ async def _async_mutate(
             away_temp=proposed.away_temp,
             hg_temp=proposed.hg_temp,
         )
+        if is_current is not None and not is_current():
+            # The cloud accepted the write, but this entry no longer owns the
+            # local model. Do not publish into either the old or new entry.
+            return
         # Resolve again: a coordinator refresh may have replaced the models
         # while the network request was in flight. Never publish a stale object.
         # The cloud accepted the change; if that refresh no longer lists the
@@ -103,6 +110,8 @@ async def async_set_schedule_slot(
     zone_name: str,
     start: int,
     end: int,
+    *,
+    is_current: Callable[[], bool] | None = None,
 ) -> None:
     def mutate(schedule):
         zone = next(
@@ -127,7 +136,7 @@ async def async_set_schedule_slot(
         )
         schedule.timetables = [IntuisTimetable(**entry) for entry in timetable]
 
-    await _async_mutate(api, get_home, schedule_id, mutate)
+    await _async_mutate(api, get_home, schedule_id, mutate, is_current)
 
 
 async def async_set_zone_temperature(
@@ -139,6 +148,7 @@ async def async_set_zone_temperature(
     *,
     zone_id: int | None = None,
     zone_name: str | None = None,
+    is_current: Callable[[], bool] | None = None,
 ) -> None:
     temperature = validate_temperature(value)
 
@@ -163,11 +173,11 @@ async def async_set_zone_temperature(
             raise ValueError("Room not found in the selected zone")
         room.temp = temperature
 
-    await _async_mutate(api, get_home, schedule_id, mutate)
+    await _async_mutate(api, get_home, schedule_id, mutate, is_current)
 
 
 async def async_sync_schedule(api, get_home, schedule_id, *, timetable=None,
-                              away_temp=None, hg_temp=None):
+                              away_temp=None, hg_temp=None, is_current=None):
     """Adapt TheFab21 #22/#24 full saves to the shared confirmed mutation path."""
     def mutate(schedule):
         if timetable is not None:
@@ -194,4 +204,4 @@ async def async_sync_schedule(api, get_home, schedule_id, *, timetable=None,
                 setattr(schedule, key, temp)
     if timetable is None and away_temp is None and hg_temp is None:
         raise ValueError("No schedule changes supplied")
-    await _async_mutate(api, get_home, schedule_id, mutate)
+    await _async_mutate(api, get_home, schedule_id, mutate, is_current)

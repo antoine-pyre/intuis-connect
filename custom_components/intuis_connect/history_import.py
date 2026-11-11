@@ -144,6 +144,9 @@ class HistoryImportManager:
         self.last_error: str | None = None
         self.hourly_home_total: str | None = None
         self.cost_status: str | None = None
+        # Last daily run only; keep structured categories, never exception text,
+        # so diagnostics can be downloaded without leaking cloud identifiers.
+        self.daily_diagnostics: dict[str, dict] = {}
 
     async def async_load(self) -> None:
         if self._loaded:
@@ -279,6 +282,7 @@ async def async_import_energy_history(
     manager._cancelled = False
     manager.status = "importing"
     manager.last_error = None
+    manager.daily_diagnostics = {}
     manager.rooms_completed = manager.days_imported = manager.total_rooms = (
         manager.total_days
     ) = 0
@@ -294,6 +298,16 @@ async def async_import_energy_history(
             entity_id = registry.async_get_entity_id(
                 "sensor", DOMAIN, f"intuis_{home_id}_{room_id}_energy"
             )
+            manager.daily_diagnostics[room_id] = {
+                "status": "pending" if entity_id else "sensor_not_registered",
+                "sensor_registered": entity_id is not None,
+                "requested_start": start.isoformat(),
+                "requested_end_exclusive": end.isoformat(),
+                "requested_days": days,
+                "received_samples": 0,
+                "measured_days": 0,
+                "imported_days": 0,
+            }
             if entity_id:
                 rooms.append((room_id, room_name, entity_id))
             else:
@@ -308,14 +322,26 @@ async def async_import_energy_history(
             if manager._cancelled:
                 raise asyncio.CancelledError
             manager.current_room = room_name
+            report = manager.daily_diagnostics[room_id]
+            stage = "fetch"
             try:
                 daily_values = await api.async_get_room_energy_daily(
                     room_id, int(start.timestamp()), int(end.timestamp()) - 1
                 )
+                report["received_samples"] = len(daily_values)
+                stage = "validation"
                 windows = _validate_daily_values(daily_values, start, end)
+                report["measured_days"] = sum(len(rows) for _, _, rows in windows)
+                report["first_measured_day"] = windows[0][0].date().isoformat()
+                report["last_measured_day"] = windows[-1][2][-1][0].astimezone(zone).date().isoformat()
+                stage = "recorder"
                 if manager._cancelled:
                     raise asyncio.CancelledError
                 committed = await async_replace_energy_history(hass, entity_id, windows)
+                report.update(
+                    status="completed", imported_days=committed.days,
+                    days_without_data=days - committed.days,
+                )
                 if committed.days < days:
                     _LOGGER.info(
                         "%s: %d of %d days had no measurement; kept their statistics",
@@ -339,6 +365,8 @@ async def async_import_energy_history(
                     room_id, int(end.timestamp()), committed.final_sum
                 )
             except RateLimitError as err:
+                report.update(status="rate_limited", failed_stage=stage,
+                              error_type=type(err).__name__)
                 manager.status = "rate_limited"
                 manager.last_error = str(err)
                 results["errors"].append(f"{room_name}: {err}")
@@ -352,6 +380,8 @@ async def async_import_energy_history(
                 TypeError,
                 OSError,
             ) as err:
+                report.update(status="failed", failed_stage=stage,
+                              error_type=type(err).__name__)
                 manager.last_error = str(err)
                 results["errors"].append(f"{room_name}: {err}")
                 _LOGGER.warning("History import failed for %s: %s", room_name, err)
@@ -368,6 +398,9 @@ async def async_import_energy_history(
                 else "completed"
             )
     except asyncio.CancelledError:
+        for report in manager.daily_diagnostics.values():
+            if report["status"] == "pending":
+                report["status"] = "cancelled"
         manager.status = "cancelled"
         raise
     except Exception as err:
@@ -376,6 +409,9 @@ async def async_import_energy_history(
         results["errors"].append(str(err))
         _LOGGER.exception("History import failed")
     finally:
+        for report in manager.daily_diagnostics.values():
+            if report["status"] == "pending":
+                report["status"] = "not_attempted"
         manager._running = False
         manager.current_room = None
         if manager._task is asyncio.current_task():
