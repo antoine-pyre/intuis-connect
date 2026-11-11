@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - develop
-      - 'codex/*-beta'
+      - fix/api-client
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
@@ -14,7 +14,7 @@ permissions:
 jobs:
   # Develop and dedicated beta branches auto-create beta tags.
   release-beta:
-    if: github.ref == 'refs/heads/develop' || (startsWith(github.ref, 'refs/heads/codex/') && endsWith(github.ref, '-beta'))
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/fix/api-client'
     runs-on: ubuntu-latest
 
     steps:
