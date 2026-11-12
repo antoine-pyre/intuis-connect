@@ -6,8 +6,10 @@ No account or physical radiator is used.
 from __future__ import annotations
 
 import inspect
+import json
 import logging
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -18,6 +20,7 @@ from homeassistant.components.climate import ClimateEntityFeature, HVACMode
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from custom_components.intuis_connect import climate as climate_module
 from custom_components.intuis_connect.climate import (
     IntuisConnectClimate, IntuisPilotWireClimate, async_setup_entry,
 )
@@ -162,6 +165,23 @@ async def test_setup_chooses_wire_class_without_changing_identity(wire, monkeypa
     assert type(entities[0]) is IntuisPilotWireClimate
     assert type(entities[1]) is IntuisConnectClimate
     assert entities[0].unique_id == "intuis_home_wire_climate"
+    # The name, which the entity_id is built from, still comes from _attr_name.
+    assert entities[0].translation_key == "pilot_wire"
+    assert entities[0].name == "Wire Climate"
+    assert entities[1].translation_key is None
+
+
+def test_every_wire_preset_has_an_icon_and_labels(wire):
+    component = Path(climate_module.__file__).parent
+    icons = json.loads((component / "icons.json").read_text())
+    preset_icons = icons["entity"]["climate"]["pilot_wire"]["state_attributes"]["preset_mode"]
+    presets = set(wire.entity.preset_modes)
+    assert set(preset_icons["state"]) == presets
+    assert preset_icons["state"]["frost_protect"] == "mdi:snowflake"
+    for language in ("en", "fr"):
+        strings = json.loads((component / "translations" / f"{language}.json").read_text())
+        labels = strings["entity"]["climate"]["pilot_wire"]["state_attributes"]["preset_mode"]["state"]
+        assert set(labels) == presets
 
 
 @pytest.mark.parametrize("order", ["comfort", "away", "frost_guard"])
