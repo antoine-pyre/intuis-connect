@@ -518,6 +518,9 @@ class IntuisPilotWireClimate(IntuisConnectClimate):
 
     _attr_preset_modes = ["comfort", "eco", "frost_protect", PRESET_SCHEDULE]
     _attr_supported_features = ClimateEntityFeature.PRESET_MODE
+    # Gives frost_protect and home a label and an icon (icons.json, translations).
+    # The name still comes from _attr_name, so names and entity_ids do not change.
+    _attr_translation_key = "pilot_wire"
     _orders = {"comfort": "comfort", "eco": "away", "frost_protect": "frost_guard"}
 
     @property
