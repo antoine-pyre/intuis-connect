@@ -35,7 +35,13 @@ from .hourly_series import (
     stage_hourly,
     sum_hourly,
 )
-from .intuis_api.api import APIError, CannotConnect, InvalidAuth, RateLimitError
+from .intuis_api.api import (
+    APIError,
+    CannotConnect,
+    InvalidAuth,
+    NoRoomMeasureDevice,
+    RateLimitError,
+)
 from .recorder_import import HistoryReplacementError, async_replace_external_history
 from .utils.const import CONF_COST_STATISTICS
 
@@ -136,6 +142,8 @@ async def async_import_hourly_history(
         if not rooms:
             results["errors"].append("No matching rooms")
         confirmed: dict[str, tuple[tuple[datetime, float], ...]] = {}
+        # Rooms the cloud cannot measure: skipped, and not missing from totals.
+        unmeasured: set[str] = set()
         currency = hass.config.currency
         prices = None
         if cost_options and rooms:
@@ -167,6 +175,9 @@ async def async_import_hourly_history(
                 results["rooms_imported"] += 1
                 results["total_energy_kwh"] += committed.total
                 manager.days_imported = committed.hours // 24
+            except NoRoomMeasureDevice:
+                unmeasured.add(room_id)
+                _LOGGER.debug("%s has no energy measuring device, skipped", room_name)
             except RateLimitError as err:
                 manager.status = "rate_limited"
                 manager.last_error = str(err)
@@ -202,7 +213,10 @@ async def async_import_hourly_history(
             if manager.rooms_completed < len(rooms):
                 await asyncio.sleep(API_DELAY_SECONDS)
         if room_filter is None and rooms:
-            missing = [name for rid, name in rooms if rid not in confirmed]
+            missing = [
+                name for rid, name in rooms
+                if rid not in confirmed and rid not in unmeasured
+            ]
             if missing:
                 results["home_total"] = "incomplete"
                 results["errors"].append(
@@ -227,7 +241,9 @@ async def async_import_hourly_history(
                     results["home_total"] = "incomplete"
                     results["errors"].append(f"Home hourly total: {err}")
         if prices is not None and room_filter is None and rooms:
-            missing = [name for rid, name in rooms if rid not in costed]
+            missing = [
+                name for rid, name in rooms if rid not in costed and rid not in unmeasured
+            ]
             if missing:
                 cost_errors.append(
                     "Home hourly cost kept at its last complete value; missing: "
