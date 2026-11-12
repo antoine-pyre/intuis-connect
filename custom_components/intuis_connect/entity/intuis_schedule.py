@@ -64,7 +64,12 @@ class IntuisRoomTemperature:
         """Create a room temperature from a dictionary.
 
         Returns None if the data is malformed (missing required fields).
+        Also returns None for a pilot-wire room entry, which has
+        therm_setpoint_fp and no temp.
         """
+        if isinstance(data, dict) and "temp" not in data and "therm_setpoint_fp" in data:
+            _LOGGER.debug("Skipping pilot-wire room order entry: %s", data)
+            return None
         try:
             return IntuisRoomTemperature(
                 room_id=data["room_id"],
