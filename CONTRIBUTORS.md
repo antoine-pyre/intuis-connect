@@ -87,3 +87,11 @@ and partial-data protections
 These ideas are adapted to the current shared intention manager rather than
 merging the fork's climate/override implementation wholesale. See
 [the pilot-wire behaviour and validation limits](docs/15-pilot-wire.md).
+
+## Pilot-wire preset labels and hardware feedback — November 2026
+
+[jneuveglise](https://github.com/jneuveglise) contributed the preset labels,
+icons and expected schedule-entry logging fix in
+[#32](https://github.com/antoine-pyre/intuis-connect/pull/32)
+(`84dc754fd2337120ed695ad9cfff2d011d05dc63`, merged unchanged), and reported
+[real-hardware FP4 testing](https://github.com/antoine-pyre/intuis-connect/issues/27#issuecomment-6829268162).

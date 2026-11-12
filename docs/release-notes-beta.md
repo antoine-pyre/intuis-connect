@@ -62,6 +62,18 @@ le conserver pour la migration et le relire avant partage public.
 - Verrou partagé, affichage optimiste borné, acquittement vérifiant l'ordre et
   l'échéance, stockage/rechargement et réapplication des intentions fil pilote.
 - Conservation des identifiants d'entités et des anciennes intentions thermiques.
+- Libellés français/anglais et icônes des presets fil pilote, dont « Hors-gel »
+  et « Programme », grâce à la [PR #32 de jneuveglise](https://github.com/antoine-pyre/intuis-connect/pull/32).
+- Les entrées de planning fil pilote sans température ne produisent plus
+  d'avertissements : elles sont ignorées avec un message de niveau debug.
+
+## Dépréciation prévue et migration Zigbee
+
+Le README annonce la dépréciation prévue de cette intégration cloud, sans date
+de fin de support fixée. Le [guide de migration](https://github.com/antoine-pyre/intuis-connect/blob/v2.1.0-beta/docs/16-zigbee-migration.md)
+décrit la bascule des radiateurs nativ / Intuis 3.0 compatibles vers Zigbee2MQTT.
+Cette compatibilité n'est pas établie pour tous les anciens modules ou les
+installations fil pilote. Exporter tous les plannings avant la première déconnexion.
 
 ## Robustesse des données partielles
 
@@ -80,12 +92,12 @@ statut incomplète ne supprime pas les intentions des pièces encore définies.
 
 ## Validation et crédits
 
-572 tests réussis sur HA 2024.6.4 / Python 3.12 et HA 2026.10.4 / Python 3.14,
+575 tests réussis sur HA 2024.6.4 / Python 3.12 et HA 2026.10.4 / Python 3.14,
 14 tests JavaScript, Ruff et cohérence des dépendances. Les régressions utilisent
 les vrais services, registries, Store et recorder SQLite, avec transport cloud
 simulé. Les hooks de conversion climate récents sont aussi exercés avec une base
 simulée ; la validation sur un Core exposant réellement la nouvelle API reste à
-faire. Aucun compte cloud ni radiateur réel n'a été sollicité. Docker n'était pas
+faire. Ces tests automatisés ne sollicitent aucun compte cloud ni radiateur réel. Docker n'était pas
 disponible ; une configuration isolée est fournie pour une validation ultérieure.
 
 Les diagnostics et la création anticipée de l'appareil parent adaptent les apports
@@ -94,9 +106,12 @@ Les limites de contrat API sont détaillées dans docs/13-apk-api-audit.md.
 
 Le FP4 adapte la proposition **apeyrat #27** et les corrections de détection et
 de données partielles d’**adrienvsj**. La détection reste une heuristique au
-démarrage ; l’acceptation des ordres FP4 sur matériel réel reste à confirmer.
+démarrage. [jneuveglise a confirmé sur matériel réel](https://github.com/antoine-pyre/intuis-connect/issues/27#issuecomment-6829268162)
+la détection de deux pièces FP4, l'état initial et les commandes Éco puis Confort,
+sans régression observée sur trois pièces FPN à température. Le hors-gel, le
+retour au programme, l'arrêt et la persistance après redémarrage restent à confirmer.
 Les détails et sources sont dans docs/15-pilot-wire.md et CONTRIBUTORS.md.
 
 Si une copie précédente de cette même 2.1.0 bêta est déjà installée,
 retélécharger la version puis redémarrer Home Assistant pour obtenir le lot FP4
-et l'export complet des plannings chargés.
+et l'export complet des plannings chargés, ainsi que les correctifs de la PR #32.

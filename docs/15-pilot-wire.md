@@ -1,6 +1,6 @@
 # Pilot-wire rooms (FP4)
 
-Local implementation, not yet released. Adapted from
+Included in the 2.1.0 beta. Adapted from
 [apeyrat's proposal #27](https://github.com/antoine-pyre/intuis-connect/issues/27),
 [the original implementation](https://github.com/adrienvsj/intuis-connect/commit/6eb642b73539cee2c642b80e7bbb2dbbcd35695d)
 and [adrienvsj's detection correction](https://github.com/adrienvsj/intuis-connect/commit/04b79ef755ae794240c6fa1507a1a5fce1e5b139).
@@ -48,8 +48,12 @@ core still uses the legacy climate API, preserving the HA 2024.6 minimum.
 refusals, acknowledgements, persistence/reload and reapplication with the native
 HA Store. `test_heating_reconciliation.py` also checks an empty status followed
 by recovery. Transport responses are simulated; no cloud account or physical
-radiator is controlled. Actual order acceptance and behaviour on FP4 hardware
-remain to be confirmed by users.
+radiator is controlled. In a [12 November hardware report](https://github.com/antoine-pyre/intuis-connect/issues/27#issuecomment-6829268162),
+jneuveglise confirmed detection, startup state and Eco-to-Comfort commands on
+two FP4 rooms, with no regression observed on three temperature-based FPN rooms.
+Frost protection, schedule resumption, Off and persistence after restart remain
+to be confirmed on hardware. Their PR #32 supplies preset labels/icons and
+quieter logging of expected pilot-wire schedule entries.
 
 ## Included in the updated 2.1.0 beta
 
@@ -58,7 +62,7 @@ maintainer's request, that branch is merged into the updated 2.1.0 beta. There
 is no separate 2.2.0 release. Existing installations of the earlier 2.1.0 beta
 need to redownload that beta and restart Home Assistant to obtain these changes.
 
-The combined branch passes **570 tests on HA 2024.6.4 / Python 3.12 and 570 on
+The combined branch passes **575 tests on HA 2024.6.4 / Python 3.12 and 575 on
 HA 2026.10.4 / Python 3.14**, including temperature API compatibility tests.
-Ruff passes on both environments. The cloud transport is simulated and physical
-FP4 acceptance remains to be confirmed; no comment is sent to the reporter.
+Ruff passes on both environments. The automated tests simulate cloud transport;
+the scope of user hardware validation is described above.
