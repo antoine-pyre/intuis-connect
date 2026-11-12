@@ -438,6 +438,9 @@ async def test_actual_importer_fetch_failures_preserve_existing_statistics(
     assert result["status"] == (
         "rate_limited" if isinstance(error, RateLimitError) else "failed"
     )
+    report = manager.daily_diagnostics["room"]
+    assert report["imported_days"] == 0 and report["sensor_registered"]
+    assert report["failed_stage"] == ("validation" if error == [] else "fetch")
     assert await rows(live_recorder) == before
 
 
@@ -461,6 +464,78 @@ async def test_importer_confirms_commit_and_reports_partial_failure(
     assert (await rows(live_recorder))[1][2] == 12
 
 
+async def test_six_room_partial_import_preserves_failures_and_targeted_retry(
+    ha_hass, live_recorder, monkeypatch, frozen_clock
+):
+    """Issue #23: two imported rooms must not hide four failed rooms."""
+    frozen_clock.move_to("2026-10-25 12:00:00")
+    await seed(live_recorder)
+    values = [(instant(23).timestamp(), 2000), (instant(24).timestamp(), 0)]
+    api, home, manager = await importer_setup(
+        ha_hass, monkeypatch,
+        [values, values, *[CannotConnect("private cloud endpoint") for _ in range(4)]],
+    )
+    registry = er.async_get(ha_hass)
+    entity_ids = ["sensor.room_energy"]
+    for index in range(1, 6):
+        room_id = f"private_room_{index}"
+        home.rooms[room_id] = SimpleNamespace(name=f"Private room {index}", module_ids=["m"])
+        entity_ids.append(registry.async_get_or_create(
+            "sensor", DOMAIN, f"intuis_home_{room_id}_energy",
+            suggested_object_id=f"private_room_{index}_energy",
+        ).entity_id)
+
+    def seed_others():
+        with live_recorder.get_session() as session, session.begin():
+            for entity_id in entity_ids[1:]:
+                meta = StatisticsMeta(
+                    statistic_id=entity_id, source="recorder", unit_of_measurement="kWh",
+                    has_sum=True, has_mean=False,
+                )
+                session.add(meta)
+                session.flush()
+                for day, state, total in [(22, 7, 10), (23, 4, 14), (24, 8, 22), (25, 1, 23)]:
+                    session.add(Statistics(metadata_id=meta.id, start_ts=instant(day).timestamp(),
+                                           state=state, sum=total))
+                session.add(StatisticsShortTerm(metadata_id=meta.id,
+                    start_ts=instant(25).timestamp(), state=1, sum=23))
+
+    def snapshots():
+        with live_recorder.get_session() as session:
+            return {entity_id: [tuple(row) for row in session.execute(
+                select(Statistics.start_ts, Statistics.state, Statistics.sum)
+                .join(StatisticsMeta, Statistics.metadata_id == StatisticsMeta.id)
+                .where(StatisticsMeta.statistic_id == entity_id).order_by(Statistics.start_ts)
+            )] for entity_id in entity_ids}
+
+    await live_recorder.async_add_executor_job(seed_others)
+    before = await live_recorder.async_add_executor_job(snapshots)
+    result = await async_import_energy_history(ha_hass, api, home, manager, days=2)
+    after = await live_recorder.async_add_executor_job(snapshots)
+    assert result["status"] == "partial" and result["rooms_imported"] == 2
+    assert len(result["errors"]) == 4
+    assert manager.rooms_completed == 6 and not manager.is_running
+    assert all(after[key] != before[key] for key in entity_ids[:2])
+    assert all(after[key] == before[key] for key in entity_ids[2:])
+    reports = list(manager.daily_diagnostics.values())
+    assert [r["status"] for r in reports] == ["completed"] * 2 + ["failed"] * 4
+    assert all(r["failed_stage"] == "fetch" and r["error_type"] == "CannotConnect"
+               for r in reports[2:])
+    assert "private cloud endpoint" not in str(reports)
+
+    api.async_get_room_energy_daily = AsyncMock(return_value=values)
+    result = await async_import_energy_history(
+        ha_hass, api, home, manager, days=2, room_filter="Private room 2"
+    )
+    retried = await live_recorder.async_add_executor_job(snapshots)
+    assert result["status"] == "completed" and result["rooms_imported"] == 1
+    api.async_get_room_energy_daily.assert_awaited_once()
+    assert api.async_get_room_energy_daily.call_args.args[0] == "private_room_2"
+    assert retried[entity_ids[2]] != after[entity_ids[2]]
+    assert all(retried[key] == after[key] for key in entity_ids if key != entity_ids[2])
+    assert list(manager.daily_diagnostics) == ["private_room_2"]
+
+
 async def test_documented_response_imports_measured_days_and_keeps_gaps(
     ha_hass, live_recorder, monkeypatch, frozen_clock
 ):
@@ -478,6 +553,9 @@ async def test_documented_response_imports_measured_days_and_keeps_gaps(
     result = await async_import_energy_history(ha_hass, api, home, manager, days=2)
     assert result["status"] == "completed" and result["rooms_imported"] == 1
     assert result["days_without_data"] == 1
+    assert manager.daily_diagnostics["room"]["measured_days"] == 1
+    assert manager.daily_diagnostics["room"]["days_without_data"] == 1
+    assert manager.daily_diagnostics["room"]["first_measured_day"] == "2026-10-23"
     # Day 23 is replaced; day 24 keeps its own value and only follows the sum.
     assert [(state, total) for _, state, total in await rows(live_recorder)] == [
         (7, 10),

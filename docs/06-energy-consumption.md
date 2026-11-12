@@ -69,6 +69,13 @@ According to Netatmo's API documentation and developer forums:
 
 ## APK Decompilation Findings
 
+**Historical findings below are not a current validation of the client.** The
+[11 November 2026 audit of the supplied APK](13-apk-api-audit.md) confirms that
+the official room-measure flow calls `/api/gethomemeasure` with JSON. It also
+identifies the APK's OAuth client as the one previously labelled "Node-RED flow"
+below. The APK alone does not establish server-side token access levels or prove
+that either client's identity is denied energy access today.
+
 Decompiling the Intuis Connect APK revealed:
 
 ### API Endpoints

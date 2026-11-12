@@ -101,6 +101,10 @@
 
 Manual, Away and Boost durations and the Away/Boost temperatures are configurable in the integration options. Frost protection uses the current defaults of 7°C and 365 days. Climate commands are shown as assumed state for at most 120 seconds while awaiting confirmation; subsequent cloud updates determine the displayed mode. See [heating state and persistence](docs/09-heating-overrides.md).
 
+Detected pilot-wire rooms expose Comfort, Eco and Frost protection orders instead
+of a temperature dial. Auto resumes the schedule; Heat selects manual Comfort.
+See [pilot-wire detection, behaviour and validation limits](docs/15-pilot-wire.md).
+
 ---
 
 ## Services

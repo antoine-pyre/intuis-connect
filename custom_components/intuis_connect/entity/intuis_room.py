@@ -13,6 +13,21 @@ from ..utils.const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def is_pilot_wire(room: IntuisRoom) -> bool:
+    """Require a reported wire order as well as missing thermostat temperatures.
+
+    Adapted from apeyrat's FP4 proposal and adrienvsj's FP detection correction.
+    A transient missing temperature alone must not remove a thermostat dial.
+    """
+    return (
+        isinstance(room.muller_type, str)
+        and room.muller_type.startswith("FP")
+        and room.temperature is None
+        and room.target_temperature is None
+        and room.therm_setpoint_fp in {"comfort", "away", "frost_guard"}
+    )
+
+
 class IntuisRoomDefinition:
     """Class to define a room in the Intuis Connect system."""
 
@@ -46,10 +61,11 @@ class IntuisRoomDefinition:
 class IntuisRoom:
     """Class to represent a room in the Intuis Connect system."""
 
-    def __init__(self, definition: IntuisRoomDefinition, id: str, name: str, mode: str, target_temperature: float,
-                 temperature: float, presence: bool, open_window: bool, anticipation: bool,
+    def __init__(self, definition: IntuisRoomDefinition, id: str, name: str, mode: str, target_temperature: float | None,
+                 temperature: float | None, presence: bool, open_window: bool, anticipation: bool,
                  muller_type: str, boost_status: str, modules: list[IntuisModule], therm_setpoint_end_time: int,
-                 bridge_id: str | None = None, heating: bool = False) -> None:
+                 bridge_id: str | None = None, heating: bool = False,
+                 therm_setpoint_fp: str | None = None) -> None:
         """Initialize the room with its definition."""
         self.definition = definition
         self.id = id
@@ -66,6 +82,7 @@ class IntuisRoom:
         self.therm_setpoint_end_time = therm_setpoint_end_time
         self.bridge_id = bridge_id
         self.heating = heating
+        self.therm_setpoint_fp = therm_setpoint_fp
         # Accumulated counters (updated by mapper, not from API)
         self.minutes: float = 0.0
         self.energy: float | None = None
@@ -91,8 +108,10 @@ class IntuisRoom:
         # A room is heating if any of its NMH modules has radiator_state == "heating"
         # Also check if temperature is below target (heating should be active)
         heating = False
-        target_temp = data.get("therm_setpoint_temperature", 0.0)
-        current_temp = data.get("therm_measured_temperature", 0.0)
+        target_temp = data.get("therm_setpoint_temperature")
+        current_temp = data.get("therm_measured_temperature")
+        temps_known = target_temp is not None and current_temp is not None
+        mode = data.get("therm_setpoint_mode", "unknown")
         
         # Log all NMH modules' radiator_state for debugging
         nmh_modules_found = []
@@ -112,6 +131,7 @@ class IntuisRoom:
                     )
                 # Also check for "auto" state - if temp is below target, heating is likely active
                 elif (module.radiator_state and module.radiator_state.lower() == "auto" 
+                      and mode != "off" and temps_known
                       and target_temp > 0 and current_temp < target_temp - HEATING_THRESHOLD_DELTA):
                     heating = True
                     _LOGGER.debug(
@@ -132,7 +152,8 @@ class IntuisRoom:
         
         # Fallback: if no NMH modules or radiator_state doesn't indicate heating,
         # check if temperature is below target (heating should be active)
-        if not heating and target_temp > 0 and current_temp < target_temp - HEATING_THRESHOLD_DELTA:
+        if (not heating and mode != "off" and temps_known
+                and target_temp > 0 and current_temp < target_temp - HEATING_THRESHOLD_DELTA):
             # Temperature is significantly below target, likely heating
             _LOGGER.debug(
                 "Room %s: No heating detected from radiator_state, but temp (%.1f) < target (%.1f) - assuming heating",
@@ -145,8 +166,8 @@ class IntuisRoom:
             id=data["id"],
             name=definition.name,
             mode=data.get("therm_setpoint_mode", "unknown"),
-            temperature=data.get("therm_measured_temperature", 0.0),
-            target_temperature=data.get("therm_setpoint_temperature", 0.0),
+            temperature=data.get("therm_measured_temperature"),
+            target_temperature=data.get("therm_setpoint_temperature"),
             presence=data.get("presence", False),
             open_window=data.get("open_window", False),
             anticipation=data.get("anticipation", False),
@@ -156,6 +177,7 @@ class IntuisRoom:
             modules=filtered_modules,
             bridge_id=bridge_id,
             heating=heating,
+            therm_setpoint_fp=data.get("therm_setpoint_fp"),
         )
 
     def __repr__(self) -> str:

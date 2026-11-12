@@ -18,6 +18,7 @@ class OverrideIntent(TypedDict, total=False):
 
     mode: str
     temp: float | None
+    fp: str
     end: int
     sticky: bool
     last_reapply: int
@@ -57,16 +58,19 @@ class OverrideManager:
         return True
 
     def record(
-        self, room_id: str, mode: str, temp: float, duration: int
+        self, room_id: str, mode: str, temp: float | None, duration: int,
+        fp: str | None = None
     ) -> OverrideIntent:
         now = int(time.time())
         intent: OverrideIntent = {
             "mode": mode,
-            "temp": float(temp),
+            "temp": float(temp) if temp is not None else None,
             "end": now + duration * 60,
             "sticky": True,
             "last_reapply": now,
         }
+        if fp is not None:
+            intent["fp"] = fp
         self.overrides[room_id] = intent
         return intent
 
@@ -78,14 +82,21 @@ class OverrideManager:
         temp: float | None = None,
         duration: int | None = None,
         on_success: Callable[[OverrideIntent | None], None] | None = None,
+        *,
+        fp: str | None = None,
     ) -> None:
         """Record only accepted commands; retain them if disk persistence fails.
 
         on_success publishes the bounded pending state before awaiting disk I/O,
         because a storage failure does not mean the equipment command was refused.
         """
+        if fp is not None and (
+            fp not in {"comfort", "away", "frost_guard"}
+            or mode != "manual" or temp is not None
+        ):
+            raise ValueError("Invalid pilot-wire command")
         if mode not in (API_MODE_HOME, API_MODE_OFF) and (
-            temp is None or duration is None
+            (temp is None and fp is None) or duration is None
         ):
             raise ValueError(
                 "A timed heating command requires temperature and duration"
@@ -96,8 +107,11 @@ class OverrideManager:
                 changed = self.discard(room_id)
                 intent = None
             else:
-                await api.async_set_room_state(room_id, mode, temp, duration)
-                intent = self.record(room_id, mode, temp, duration)
+                if fp is None:
+                    await api.async_set_room_state(room_id, mode, temp, duration)
+                else:
+                    await api.async_set_room_state(room_id, mode, temp, duration, fp=fp)
+                intent = self.record(room_id, mode, temp, duration, fp)
                 changed = True
             if on_success is not None:
                 on_success(intent)
@@ -115,11 +129,13 @@ class OverrideManager:
         async with self.room_lock(room_id):
             if self.overrides.get(room_id) is not expected:
                 return False
+            order = {"fp": expected["fp"]} if expected.get("fp") is not None else {}
             await api.async_set_room_state(
                 room_id,
                 expected["mode"],
                 float(expected["temp"]) if expected.get("temp") is not None else None,
                 duration,
+                **order,
             )
             now = int(time.time())
             expected.update(end=now + duration * 60, last_reapply=now)

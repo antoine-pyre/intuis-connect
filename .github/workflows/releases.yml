@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - develop
+      - fix/api-client
+      - codex/2.1.0-beta
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
@@ -11,9 +13,14 @@ permissions:
   contents: write
 
 jobs:
-  # Release for develop branch (auto-creates beta tags)
+  validate-beta:
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/fix/api-client' || github.ref == 'refs/heads/codex/2.1.0-beta'
+    uses: ./.github/workflows/tests.yml
+
+  # Develop and dedicated beta branches auto-create beta tags.
   release-beta:
-    if: github.ref == 'refs/heads/develop'
+    needs: validate-beta
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/fix/api-client' || github.ref == 'refs/heads/codex/2.1.0-beta'
     runs-on: ubuntu-latest
 
     steps:
@@ -48,6 +55,7 @@ jobs:
           name: Intuis Connect ${{ steps.vars.outputs.tag }}
           draft: false
           prerelease: true
+          body_path: docs/release-notes-beta.md
           files: intuis_connect_${{ steps.vars.outputs.tag }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

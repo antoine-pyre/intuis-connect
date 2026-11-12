@@ -1,0 +1,19 @@
+{
+  "entity": {
+    "climate": {
+      "pilot_wire": {
+        "state_attributes": {
+          "preset_mode": {
+            "default": "mdi:circle-medium",
+            "state": {
+              "comfort": "mdi:sofa",
+              "eco": "mdi:leaf",
+              "frost_protect": "mdi:snowflake",
+              "home": "mdi:home"
+            }
+          }
+        }
+      }
+    }
+  }
+}

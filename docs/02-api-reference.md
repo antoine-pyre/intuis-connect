@@ -1,12 +1,17 @@
 # Intuis Connect API Reference
 
+This page describes the integration's current requests. It is not a fully
+validated specification of the official app. See the [APK comparison of
+11 November 2026](13-apk-api-audit.md) for confirmed differences, particularly
+OAuth identity, energy retrieval and schedule serialization.
+
 ## Base URLs
 
 | Purpose | URL |
 |---------|-----|
 | Primary API | `https://app.muller-intuitiv.net` |
 | Fallback API | `https://app-prod.intuis-sas.com` |
-| Energy/Schedule API | `https://connect.intuis.net/api` |
+| Energy/Schedule API | `/api` on the authenticated cluster |
 
 ## Authentication
 
@@ -37,7 +42,8 @@
   "refresh_token": "<refresh_token>",
   "client_id": "59e604638fe283fd4dc7e353",
   "client_secret": "ZW2vL8czEkn87zemtR1h1ZB0ZVwoeR",
-  "user_prefix": "muller"
+  "user_prefix": "muller",
+  "app_version": "1108100"
 }
 ```
 
@@ -297,22 +303,24 @@ Creates or updates a schedule. This is the primary endpoint for schedule modific
 
 **Important**:
 - `m_offset` is minutes from Monday 00:00 (0-10079)
-- Zones must use `rooms_temp` array (not `rooms`)
+- The integration uses `rooms_temp` and avoids mixing it with `rooms`.
+  The supplied official APK uses `rooms`; see the [audit](13-apk-api-audit.md)
+  before treating either format as the only server-supported representation.
 - Consecutive timetable entries cannot have the same `zone_id`
 
 See [Schedule Management](07-schedule-management.md) for detailed documentation.
 
 ### Update Schedule
 
-**POST** `https://connect.intuis.net/api/updatenewhomeschedule`
+**POST** `/api/updatenewhomeschedule` (legacy route; not confirmed by the APK)
 
 ### Delete Schedule Slot
 
-**DELETE** `https://connect.intuis.net/api/deletenewhomeschedule`
+**DELETE** `/api/deletenewhomeschedule` (legacy route; not confirmed by the APK)
 
 ### Switch Active Schedule
 
-**POST** `https://connect.intuis.net/api/switchhomeschedule`
+**POST** `/api/switchhomeschedule`
 
 ## Error Handling
 
@@ -320,7 +328,7 @@ See [Schedule Management](07-schedule-management.md) for detailed documentation.
 
 | Code | Handling |
 |------|----------|
-| 200 | Success |
+| 200 | Transport success; command JSON may still contain an `error` |
 | 401 | Token expired - refresh and retry |
 | 429 | Rate limited - exponential backoff |
 | 5xx | Server error - retry with backoff |
