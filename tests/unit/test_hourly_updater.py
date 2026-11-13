@@ -246,6 +246,31 @@ async def test_updater_defers_to_running_import_and_stops_on_close(
     assert not await updater.async_update() and manager.start.call_count == 2
 
 
+async def test_timer_starts_the_update_in_the_event_loop(
+    ha_hass, ha_entry_factory, monkeypatch
+):
+    # Home Assistant runs a timer listener that is not a callback in an executor
+    # thread, where hass.async_create_task is refused: the update never started.
+    monkeypatch.setattr(
+        "custom_components.intuis_connect.hourly_stats.FIRST_UPDATE_DELAY", 0
+    )
+    entry = ha_entry_factory(home_id="home")
+    home = SimpleNamespace(id="home", name="House", rooms={})
+    updater = HourlyStatisticsUpdater(ha_hass, entry, "api", home, 120)
+    started = asyncio.Event()
+
+    async def update():
+        started.set()
+        return True
+
+    monkeypatch.setattr(updater, "async_update", update)
+    updater.async_start()
+    try:
+        await asyncio.wait_for(started.wait(), 5)
+    finally:
+        await updater.async_close()
+
+
 async def test_two_entries_update_independently(ha_hass, ha_entry_factory, monkeypatch):
     managers = {}
 
