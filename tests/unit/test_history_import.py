@@ -29,6 +29,7 @@ from custom_components.intuis_connect.history_import import (
 )
 from custom_components.intuis_connect.intuis_api.api import (
     CannotConnect,
+    NoRoomMeasureDevice,
     RateLimitError,
 )
 from custom_components.intuis_connect.recorder_import import (
@@ -441,6 +442,21 @@ async def test_actual_importer_fetch_failures_preserve_existing_statistics(
     report = manager.daily_diagnostics["room"]
     assert report["imported_days"] == 0 and report["sensor_registered"]
     assert report["failed_stage"] == ("validation" if error == [] else "fetch")
+    assert await rows(live_recorder) == before
+
+
+async def test_room_without_measure_device_is_skipped_not_failed(
+    ha_hass, live_recorder, monkeypatch, frozen_clock
+):
+    frozen_clock.move_to("2026-10-25 12:00:00")
+    await seed(live_recorder)
+    before = await rows(live_recorder)
+    api, home, manager = await importer_setup(
+        ha_hass, monkeypatch, [NoRoomMeasureDevice("no relay")]
+    )
+    result = await async_import_energy_history(ha_hass, api, home, manager, days=2)
+    assert result["errors"] == [] and result["status"] == "completed"
+    assert manager.daily_diagnostics["room"]["status"] == "no_measure_device"
     assert await rows(live_recorder) == before
 
 
