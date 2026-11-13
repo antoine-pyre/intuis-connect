@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.recorder import get_instance, statistics
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 
 from .cost_stats import (
@@ -307,7 +307,13 @@ class HourlyStatisticsUpdater:
             async_track_time_interval(self.hass, self._schedule, self.interval),
         ]
 
+    @callback
     def _schedule(self, _now: datetime | None = None) -> None:
+        """Start one update, in the event loop.
+
+        Without @callback, Home Assistant runs a timer listener in an executor
+        thread, where creating a task is refused.
+        """
         if self._closed or (self._tick_task and not self._tick_task.done()):
             return
         self._tick_task = self.hass.async_create_task(self._async_tick())
