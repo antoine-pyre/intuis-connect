@@ -76,6 +76,8 @@ class IntuisData:
         # sticky overrides: { room_id: { mode, temp, end, sticky, last_reapply } }
         self._override_manager = override_manager or OverrideManager(overrides, save_overrides_callback)
         self._overrides = self._override_manager.overrides
+        # Last home config parsed successfully, reused when a config fetch fails
+        self._last_config: IntuisHomeConfig | None = None
         # Callback to get current options from config entry
         self._get_options = get_options or (lambda: {})
         # Callback to invoke on successful update (for rate limit recovery)
@@ -243,7 +245,17 @@ class IntuisData:
         if overrides_changed:
             await self._override_manager.async_save()
 
-        config = IntuisHomeConfig.from_dict(await self._api.async_get_config())
+        # The home config only feeds informational sensors: a failure here must
+        # not discard the room data fetched above (see issue #38).
+        try:
+            self._last_config = IntuisHomeConfig.from_dict(
+                await self._api.async_get_config()
+            )
+        except (ValueError, APIError, CannotConnect, RateLimitError) as err:
+            _LOGGER.warning(
+                "Could not fetch the home config, keeping the previous one: %s", err
+            )
+        config = self._last_config
 
         # Fetch energy data (daily kWh per room)
         await self._fetch_energy_data(data_by_room, now)
