@@ -174,3 +174,111 @@ async def test_complete_save_late_ack_does_not_refresh_unloaded_entry(homes):
     release.set()
     await task
     homes.second.coordinator.async_request_refresh.assert_not_awaited()
+
+
+async def test_temperature_edits_preserve_inactive_schedule_identity_with_trailing_space(homes):
+    """Regression for #31: never pair the active ID with another plan's data."""
+    active = homes.second.home.schedules[0]
+    inactive = deepcopy(active)
+    inactive.id, inactive.name, inactive.selected = 'holiday-id', 'Planning absence ', False
+    inactive.timetables[0].m_offset = 120
+    homes.second.home.schedules.append(inactive)
+    original_active = deepcopy(active)
+
+    for temperature in (18.0, 18.5, 19.0):
+        await call(homes, 'set_zone_temperature', home_id='second',
+                   schedule_name='Planning absence ', zone_name='Eco',
+                   room_name='Room', temperature=temperature)
+
+    for awaited in homes.second.api.async_sync_schedule.await_args_list:
+        payload = awaited.kwargs
+        assert (payload['schedule_id'], payload['schedule_name']) == ('holiday-id', 'Planning absence ')
+        assert payload['timetable'][0]['m_offset'] == 120
+    assert active.name == original_active.name
+    assert active.zones[1].rooms_temp[0].temp == original_active.zones[1].rooms_temp[0].temp
+    assert active.timetables[0].m_offset == original_active.timetables[0].m_offset
+    assert active.selected and not inactive.selected
+    assert inactive.zones[1].rooms_temp[0].temp == 19.0
+    homes.first.api.async_sync_schedule.assert_not_awaited()
+
+
+@pytest.mark.parametrize('target', [
+    {'schedule_name': 'Duplicate'},
+    {'schedule_id': 'schedule-second', 'schedule_name': 'Planning absence '},
+])
+async def test_temperature_target_ambiguity_or_mismatched_name_never_writes(homes, target):
+    active = homes.second.home.schedules[0]
+    active.name = 'Duplicate'
+    inactive = deepcopy(active)
+    inactive.id, inactive.selected = 'holiday-id', False
+    homes.second.home.schedules.append(inactive)
+    with pytest.raises(ServiceValidationError):
+        await call(homes, 'set_zone_temperature', home_id='second', **target,
+                   zone_name='Eco', room_name='Room', temperature=18.5)
+    homes.second.api.async_sync_schedule.assert_not_awaited()
+
+
+@pytest.mark.parametrize('service', ['set_zone_temperature', 'set_schedule_slot', 'sync_schedule'])
+async def test_queued_schedule_write_is_refused_after_entry_reload(homes, service):
+    """An old entry waiting for its schedule lock must never send after reload."""
+    import asyncio
+    from custom_components.intuis_connect.utils.const import DOMAIN
+
+    home = homes.second
+    original = deepcopy(home.home.schedules[0])
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def delayed(**payload):
+        entered.set()
+        await release.wait()
+
+    home.api.async_sync_schedule.side_effect = delayed
+    first = asyncio.create_task(call(homes, service, home_id='second', **args(service)))
+    await entered.wait()
+    queued = asyncio.create_task(call(homes, service, home_id='second', **args(service)))
+    await asyncio.sleep(0)
+    assert home.api.async_sync_schedule.await_count == 1
+    replacement = {**home.data, 'intuis_home': deepcopy(home.home)}
+    homes.hass.data[DOMAIN][home.entry.entry_id] = replacement
+    release.set()
+    await first
+    with pytest.raises(ServiceValidationError, match='unloaded or reloaded'):
+        await queued
+    assert home.api.async_sync_schedule.await_count == 1
+    home.coordinator.async_request_refresh.assert_not_awaited()
+    assert home.home.schedules[0].away_temp == original.away_temp
+    assert home.home.schedules[0].zones[1].rooms_temp[0].temp == original.zones[1].rooms_temp[0].temp
+    assert [(t.m_offset, t.zone_id) for t in home.home.schedules[0].timetables] == [
+        (t.m_offset, t.zone_id) for t in original.timetables
+    ]
+
+
+async def test_number_device_uses_supported_home_link(homes):
+    from types import SimpleNamespace
+    from homeassistant.helpers import device_registry as dr
+    from custom_components.intuis_connect.number import IntuisZoneTemperatureNumber
+    from custom_components.intuis_connect.utils.const import DOMAIN
+
+    if hasattr(dr, 'async_setup'):
+        dr.async_setup(homes.hass)
+    await dr.async_load(homes.hass)
+    registry = dr.async_get(homes.hass)
+    parent = registry.async_get_or_create(
+        config_entry_id=homes.second.entry.entry_id,
+        identifiers={(DOMAIN, 'second_home')}, name='Home',
+    )
+    schedule = homes.second.home.schedules[0]
+    zone = schedule.zones[0]
+    entity = IntuisZoneTemperatureNumber(
+        SimpleNamespace(data={'intuis_home': homes.second.home}), homes.second.api,
+        'second', schedule, zone, zone.rooms_temp[0], 'Room',
+    )
+    entity.hass = homes.hass
+    info = entity.device_info
+    if 'via_device_id' in dr.DeviceInfo.__annotations__:
+        assert info['via_device_id'] == parent.id
+        assert 'via_device' not in info
+    else:
+        assert info['via_device'] == (DOMAIN, 'second_home')
+    child = registry.async_get_or_create(config_entry_id=homes.second.entry.entry_id, **info)
+    assert child.via_device_id == parent.id

@@ -101,6 +101,21 @@ class IntuisHomeConfigEntity(IntuisHomeEntity):
         """Get the home data from coordinator."""
         return self.coordinator.data.get("home_config")
 
+    @property
+    def available(self) -> bool:
+        """Only configuration sensors are unavailable before a valid config."""
+        return super().available and self._get_home() is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Make cached gateway settings distinguishable from fresh readings."""
+        data = self.coordinator.data or {}
+        updated = data.get("home_config_updated_at")
+        return {
+            "stale": data.get("home_config_stale", True),
+            "last_updated": updated.isoformat() if updated else None,
+        }
+
 
 class IntuisHomeSensorDefinition:
     """Definition of a sensor entity for Intuis home-level data."""

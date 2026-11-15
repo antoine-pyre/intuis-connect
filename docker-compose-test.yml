@@ -1,0 +1,43 @@
+name: intuis-connect-tests
+
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:2026.10.4
+    restart: "no"
+    ports:
+      - "127.0.0.1:18123:8123"
+    environment:
+      TZ: Europe/Paris
+    volumes:
+      - ha_test_config:/config
+      - ./tests/docker/configuration.yaml:/config/configuration.yaml:ro
+      - ./custom_components:/config/custom_components:ro
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8123/api/onboarding', timeout=5)"]
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 30s
+
+  tests-current:
+    profiles: [tests]
+    build:
+      context: .
+      dockerfile: tests/docker/Dockerfile
+      args:
+        PYTHON_VERSION: "3.14.4"
+        CONSTRAINTS: requirements/constraints-ha-2026.10.txt
+    network_mode: none
+
+  tests-minimum:
+    profiles: [tests]
+    build:
+      context: .
+      dockerfile: tests/docker/Dockerfile
+      args:
+        PYTHON_VERSION: "3.12.15"
+        CONSTRAINTS: requirements/constraints-ha-2024.6.txt
+    network_mode: none
+
+volumes:
+  ha_test_config:

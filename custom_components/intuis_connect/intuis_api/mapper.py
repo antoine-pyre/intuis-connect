@@ -39,12 +39,12 @@ def extract_rooms(home: dict[str, Any],
     # --- process rooms ---
     data_by_room: dict[str, IntuisRoom] = {}
     for room in rooms_raw:
-        room_id = room["id"]
-        intuis_room: IntuisRoom = IntuisRoom.from_dict(
-            rooms_definitions.get(room_id),
-            room,
-            modules
-        )
+        room_id = room.get("id") if isinstance(room, dict) else None
+        definition = rooms_definitions.get(room_id) if room_id is not None else None
+        if definition is None:
+            _LOGGER.debug("Ignoring room %s without a loaded definition", room_id)
+            continue
+        intuis_room = IntuisRoom.from_dict(definition, room, modules)
 
         # ---- heating-minutes counter ---
         if room_id not in minutes_counter:

@@ -1,10 +1,11 @@
 name: Tests
 
 on:
+  workflow_call:
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, fix/api-client, 'codex/**']
   push:
-    branches: [main, develop, 'codex/**']
+    branches: [main, develop, 'codex/**', fix/api-client]
 
 jobs:
   tests:

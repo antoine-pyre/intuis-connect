@@ -375,12 +375,18 @@ class FirefoxDriver:
 
     async def close(self):
         try:
-            await self.send("session.end", {})
+            # BiDi browser.close also stops the browser process. Ending only
+            # the session leaves Firefox running, whose snap wrapper may not
+            # permit a later SIGTERM from the test process.
+            await self.send("browser.close", {})
         except Exception:  # noqa: BLE001 - the browser may already be closing
             pass
         await self.ws.close()
-        self.process.terminate()
-        self.process.wait(10)
+        try:
+            await asyncio.to_thread(self.process.wait, timeout=10)
+        except subprocess.TimeoutExpired:
+            self.process.terminate()
+            await asyncio.to_thread(self.process.wait, timeout=10)
         shutil.rmtree(self.profile, ignore_errors=True)
 
 

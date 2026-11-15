@@ -352,5 +352,21 @@
         "entity": "Price entity"
       }
     }
+  },
+  "entity": {
+    "climate": {
+      "pilot_wire": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "comfort": "Comfort",
+              "eco": "Eco",
+              "frost_protect": "Frost protection",
+              "home": "Schedule"
+            }
+          }
+        }
+      }
+    }
   }
 }

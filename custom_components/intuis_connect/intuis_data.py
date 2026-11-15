@@ -71,6 +71,8 @@ class IntuisData:
         self._minutes_counter: dict[str, float] = {}
         self._intuis_home = intuis_home
         self._last_update_timestamp: datetime | None = None
+        self._last_home_config: IntuisHomeConfig | None = None
+        self._home_config_updated_at: datetime | None = None
         # Track the last "logical day" we processed (based on reset hour, not midnight)
         self._last_logical_day: str | None = None
         # sticky overrides: { room_id: { mode, temp, end, sticky, last_reapply } }
@@ -158,11 +160,11 @@ class IntuisData:
         overrides_changed = False
         rooms_to_clear = []
 
-        # First, clean up orphaned overrides (rooms that no longer exist in API)
+        # Only definitions establish removal: a partial status response does not.
         for room_id in list(self._overrides.keys()):
-            if room_id not in data_by_room:
+            if room_id not in data_by_room and room_id not in self._intuis_home.rooms:
                 _LOGGER.warning(
-                    "Removing orphaned override for room %s (room no longer in API response)",
+                    "Removing orphaned override for room %s (room no longer in home definition)",
                     room_id,
                 )
                 rooms_to_clear.append((room_id, self._overrides[room_id]))
@@ -243,7 +245,20 @@ class IntuisData:
         if overrides_changed:
             await self._override_manager.async_save()
 
-        config = IntuisHomeConfig.from_dict(await self._api.async_get_config())
+        # A gateway can disappear from getconfig while room/schedule data is
+        # still usable. Only malformed configuration data is recoverable here;
+        # auth, connection and rate-limit errors keep their normal handling.
+        raw_config = await self._api.async_get_config()
+        try:
+            config = IntuisHomeConfig.from_dict(raw_config)
+        except ValueError as err:
+            _LOGGER.warning("Home configuration unavailable; keeping last valid data: %s", err)
+            config = self._last_home_config
+            config_stale = True
+        else:
+            self._last_home_config = config
+            self._home_config_updated_at = now
+            config_stale = False
 
         # Fetch energy data (daily kWh per room)
         await self._fetch_energy_data(data_by_room, now)
@@ -263,6 +278,8 @@ class IntuisData:
             "id": self._intuis_home.id,
             "home_id": self._intuis_home.id,
             "home_config": config,
+            "home_config_stale": config_stale,
+            "home_config_updated_at": self._home_config_updated_at,
             "rooms": data_by_room,
             "modules": modules,
             "intuis_home": self._intuis_home,

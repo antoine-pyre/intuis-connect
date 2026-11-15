@@ -344,9 +344,12 @@ def climate_entity_factory(mock_hass, mock_coordinator, mock_api, mock_config_en
 async def ha_hass(tmp_path):
     """A real HA event loop, service registry, config entries and temporary storage."""
     from homeassistant.config_entries import ConfigEntries
+    from homeassistant.helpers import area_registry as ar
 
     hass = HomeAssistant(str(tmp_path))
     hass.config_entries = ConfigEntries(hass, {})
+    # Core loads areas before device registration can assign suggested areas.
+    await ar.async_load(hass)
     yield hass
     await hass.async_stop(force=True)
 

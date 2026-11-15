@@ -1,6 +1,8 @@
 """Tests for IntuisSchedule entities."""
 from __future__ import annotations
 
+import logging
+
 import pytest
 from typing import Any
 
@@ -48,6 +50,24 @@ class TestIntuisRoomTemperature:
         """from_dict returns None for empty dict."""
         result = IntuisRoomTemperature.from_dict({})
         assert result is None
+
+    def test_from_dict_pilot_wire_order_is_skipped_without_warning(self, caplog):
+        """A pilot-wire entry has therm_setpoint_fp and no temp, and logs no warning."""
+        data = {"room_id": "r1", "therm_setpoint_fp": "comfort"}
+        with caplog.at_level(logging.DEBUG):
+            result = IntuisRoomTemperature.from_dict(data)
+        assert result is None
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+    def test_from_dict_malformed_entry_still_warns(self, caplog):
+        """An entry with neither temp nor therm_setpoint_fp still logs a warning."""
+        with caplog.at_level(logging.DEBUG):
+            result = IntuisRoomTemperature.from_dict({"room_id": "r1"})
+        assert result is None
+        assert any(
+            r.levelno == logging.WARNING and "malformed room temperature" in r.getMessage()
+            for r in caplog.records
+        )
 
 
 # ---------------------------------------------------------------------------

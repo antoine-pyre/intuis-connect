@@ -64,3 +64,53 @@ and keep the root [MIT license](LICENSE). Keep the creator credit above.
 - [#17](https://github.com/antoine-pyre/intuis-connect/pull/17): `75ae980bd22c98b3fa42bb9f933c044d2c648c58`.
 - [#22](https://github.com/antoine-pyre/intuis-connect/pull/22): `3174384d9222bdca5310721940ece95fe6d1fce6`.
 - [#24](https://github.com/antoine-pyre/intuis-connect/pull/24): `fb39b93c1eaf2a498c7274210b566864a2497669`.
+
+## Diagnostics and device lifecycle adaptations — November 2026
+
+The support diagnostics platform adapts **adrienvsj**'s design from
+[`acc734719c`](https://github.com/adrienvsj/intuis-connect/commit/acc734719c7e0484c949f89fc6d9a1a910c67252),
+using the current import manager and anonymous room aliases. The parent home
+device is registered before platform setup, following the fix in
+[`a7d7ed4800`](https://github.com/adrienvsj/intuis-connect/commit/a7d7ed48009575a590d7d799e50b82af56f37861).
+See [diagnostics](docs/14-diagnostics.md) and the
+[local validation report](docs/issue-followup-validation-2026-11-11.md).
+
+## Pilot-wire and partial-data adaptations — November 2026
+
+Local changes adapt **apeyrat**'s pilot-wire proposal
+[#27](https://github.com/antoine-pyre/intuis-connect/issues/27), implemented at
+[`6eb642b735`](https://github.com/adrienvsj/intuis-connect/commit/6eb642b73539cee2c642b80e7bbb2dbbcd35695d),
+and **adrienvsj**'s FP detection correction
+[`04b79ef755`](https://github.com/adrienvsj/intuis-connect/commit/04b79ef755ae794240c6fa1507a1a5fce1e5b139)
+and partial-data protections
+[`598e635929`](https://github.com/adrienvsj/intuis-connect/commit/598e6359298493a9dd0c1da03dfb14619603d748).
+These ideas are adapted to the current shared intention manager rather than
+merging the fork's climate/override implementation wholesale. See
+[the pilot-wire behaviour and validation limits](docs/15-pilot-wire.md).
+
+## Pilot-wire preset labels and hardware feedback — November 2026
+
+[jneuveglise](https://github.com/jneuveglise) contributed the preset labels,
+icons and expected schedule-entry logging fix in
+[#32](https://github.com/antoine-pyre/intuis-connect/pull/32)
+(`84dc754fd2337120ed695ad9cfff2d011d05dc63`, merged unchanged), and reported
+[real-hardware FP4 testing](https://github.com/antoine-pyre/intuis-connect/issues/27#issuecomment-6829268162).
+
+## Issue follow-up — November 2026
+
+The hourly timer fix retains **adrienvsj**'s commit from
+[PR #37](https://github.com/antoine-pyre/intuis-connect/pull/37)
+(`af3ef5f129d7f329634c0ba9646d87acc3bc436e`). Unsupported energy-room handling
+retains the contribution from [PR #36](https://github.com/antoine-pyre/intuis-connect/pull/36)
+(`ad7b98016403ad70798502b4d2223fff6715b236`).
+
+Zigbee migration feedback and the original backup reader come from
+[PR #39](https://github.com/antoine-pyre/intuis-connect/pull/39)
+(`6e965ad3bf8e09556c076a0b9a5218f7bc1f6517`). The backup reader is adapted
+with validated decryption, extraction limited to the cached config, and tests;
+the guide now distinguishes the reported installation from general compatibility.
+
+The missing gateway-config fallback requested in
+[issue #38](https://github.com/antoine-pyre/intuis-connect/issues/38) follows
+**adrienvsj**'s partial-data design in `598e6359298493a9dd0c1da03dfb14619603d748`,
+with explicit freshness attributes and recovery tests.

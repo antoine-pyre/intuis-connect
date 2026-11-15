@@ -13,5 +13,6 @@ __pycache__/
 *.egg-info/
 test/
 intuis_decompiled/
+*.apk
 
 custom_components/configuration.yml

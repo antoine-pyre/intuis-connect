@@ -464,9 +464,15 @@ async def test_static_descriptions_match_schemas_and_translations(homes):
                     assert "text" in descriptions[service]["fields"][name]["selector"]
 
 
-async def setup_real_entry(homes, monkeypatch, entry=None):
+async def setup_real_entry(homes, monkeypatch, entry=None, *, forward=None):
     """Run the actual async_setup_entry for the first home with simulated cloud."""
     entry = entry or homes.first.entry
+    from homeassistant.helpers import device_registry as dr
+
+    if dr.DATA_REGISTRY not in homes.hass.data:
+        if hasattr(dr, "async_setup"):
+            dr.async_setup(homes.hass)
+        await dr.async_load(homes.hass)
     home = homes.first.home
     api = homes.first.api
     api.home_timezone = "UTC"
@@ -484,7 +490,7 @@ async def setup_real_entry(homes, monkeypatch, entry=None):
         "custom_components.intuis_connect.async_get_clientsession", lambda hass: None
     )
     monkeypatch.setattr(
-        homes.hass.config_entries, "async_forward_entry_setups", AsyncMock()
+        homes.hass.config_entries, "async_forward_entry_setups", forward or AsyncMock()
     )
     # Native HA bootstrap initializes the frame helper on recent releases.
     from homeassistant.helpers import frame
@@ -498,6 +504,47 @@ async def setup_real_entry(homes, monkeypatch, entry=None):
     finally:
         current_entry.reset(token)
     return entry
+
+
+async def test_setup_registers_home_before_an_already_enabled_number_platform(homes, monkeypatch):
+    """A number restored on restart must link before home sensors are set up."""
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
+    from custom_components.intuis_connect.number import async_setup_entry as setup_numbers
+
+    if hasattr(dr, "async_setup"):
+        dr.async_setup(homes.hass)
+    await dr.async_load(homes.hass)
+    if hasattr(er, "async_setup"):
+        er.async_setup(homes.hass)
+    await er.async_load(homes.hass)
+    devices = dr.async_get(homes.hass)
+    entities = er.async_get(homes.hass)
+    unique_id = 'intuis_first_schedule-first_1_room-first_zone_temp'
+    enabled = entities.async_get_or_create(
+        'number', DOMAIN, unique_id, config_entry=homes.first.entry, disabled_by=None,
+    )
+    assert enabled.disabled_by is None
+    assert len(devices.devices) == 0
+    linked = []
+
+    async def forward(entry, platforms):
+        # Deliberately run number first, with no sensor platform registered yet.
+        def add_numbers(numbers, **kwargs):
+            entity = next(number for number in numbers if number.unique_id == unique_id)
+            entity.hass = homes.hass
+            assert entities.async_get(enabled.entity_id).disabled_by is None
+            child = devices.async_get_or_create(config_entry_id=entry.entry_id,
+                                               **entity.device_info)
+            assert child.via_device_id is not None
+            parent = devices.async_get(child.via_device_id)
+            assert (DOMAIN, 'first_home') in parent.identifiers
+            linked.append(child.id)
+
+        await setup_numbers(homes.hass, entry, add_numbers)
+
+    entry = await setup_real_entry(homes, monkeypatch, forward=forward)
+    assert len(linked) == 1
+    await homes.hass.data[DOMAIN][entry.entry_id]['coordinator'].async_shutdown()
 
 
 async def test_setup_and_refresh_do_not_write_installed_component(homes, monkeypatch):
