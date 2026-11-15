@@ -76,6 +76,7 @@ jobs:
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
 
       - name: Build integration ZIP
         run: |
@@ -91,6 +92,7 @@ jobs:
           name: Intuis Connect ${{ steps.vars.outputs.tag }}
           draft: false
           prerelease: false
+          body_path: docs/release-notes-${{ steps.vars.outputs.version }}.md
           files: intuis_connect_${{ steps.vars.outputs.tag }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,6 +1,8 @@
-# Dépréciation prévue et migration vers Zigbee2MQTT
+# Intégration dépréciée et migration vers Zigbee2MQTT
 
-La dépréciation de cette intégration cloud Intuis Connect est prévue. Pour les
+Cette intégration cloud Intuis Connect est dépréciée depuis la version stable
+2.1.0 (15 novembre 2026). Le mainteneur ne dispose plus d’installation cloud
+compatible pour les essais ; la maintenance future n’est pas garantie. Pour les
 radiateurs compatibles, la voie de migration retenue est le pilotage local par
 Zigbee2MQTT et Home Assistant. Cette décision concerne la maintenance de cette
 intégration communautaire. Aucune date de fin de support n'est fixée dans cette
