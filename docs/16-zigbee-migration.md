@@ -94,10 +94,13 @@ Zigbee2MQTT. Le parcours documenté ici utilise Zigbee2MQTT ; ZHA n'a pas été 
    par le **menu avancé**, protégé par un code d'accès. Le firmware est lié à la
    variante matérielle : un radiateur ne se voit proposer que les versions
    compilées pour son matériel. Dans notre migration, trois radiateurs ont pu
-   passer en **3.0.8**, tandis qu'un quatrième, d'une variante différente, ne
-   proposait que des versions **2.0.x**, où il fonctionne également ; une version
-   logicielle antérieure n'est donc pas, en soi, une preuve d'incompatibilité.
-   Vérifier la version effectivement installée après coup. La récupération du
+   passer en **3.0.8**. Un quatrième, un sèche-serviettes d'une autre variante
+   matérielle, ne propose pas la branche 3.x : il reste en **2.0.5** et
+   fonctionne pleinement sous Zigbee2MQTT (pilotage, température, consigne,
+   énergie et présence). **Mettre à jour vers 3.0.8 n'est donc pas obligatoire
+   pour tous les appareils** : une version 2.0.x n'est pas, en soi, une preuve
+   d'incompatibilité ; viser la dernière version proposée pour le matériel du
+   radiateur, puis vérifier la version effectivement installée après coup. La récupération du
    code du menu avancé, depuis l'application installée sur son propre téléphone,
    est décrite dans [le firmware et le menu avancé](17-firmware-menu-avance.md).
 2. Ouvrir Zigbee2MQTT, prêt à activer **Permit join / Autoriser l'appairage**,
