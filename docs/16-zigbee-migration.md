@@ -88,17 +88,37 @@ Zigbee2MQTT. Le parcours documenté ici utilise Zigbee2MQTT ; ZHA n'a pas été 
 
 1. Vérifier la version sur le radiateur et effectuer la mise à jour si nécessaire,
    avant de quitter l'installation Intuis. Sur la famille nativ concernée,
-   Intuis Compagnon peut servir à installer le logiciel du radiateur. Suivre
-   les instructions correspondant au modèle et vérifier ensuite la version
-   effectivement installée ; 3.0.8 est la version utilisée dans notre migration.
-2. Ouvrir Zigbee2MQTT et activer temporairement **Permit join / Autoriser
-   l'appairage**.
-3. Sur le radiateur, quitter son ancien réseau et lancer la procédure de
-   connexion/appairage prévue pour son thermostat. Les menus de connectivité
-   et de réinitialisation varient avec le modèle et le logiciel : utiliser sa
-   notice. La séquence exacte de touches utilisée lors de notre migration
-   n'a pas été consignée ; aucune combinaison de boutons universelle n'est
-   affirmée ici.
+   **Intuis Compagnon** installe le logiciel du radiateur par Bluetooth. Le menu
+   de mise à jour « normal » ne propose que la dernière version **compatible avec
+   la révision matérielle** du radiateur ; le choix d'une version précise passe
+   par le **menu avancé**, protégé par un code d'accès. Le firmware est lié à la
+   variante matérielle : un radiateur ne se voit proposer que les versions
+   compilées pour son matériel. Dans notre migration, trois radiateurs ont pu
+   passer en **3.0.8**, tandis qu'un quatrième, d'une variante différente, ne
+   proposait que des versions **2.0.x**, où il fonctionne également ; une version
+   logicielle antérieure n'est donc pas, en soi, une preuve d'incompatibilité.
+   Vérifier la version effectivement installée après coup. La récupération du
+   code du menu avancé, depuis l'application installée sur son propre téléphone,
+   est décrite dans [le firmware et le menu avancé](17-firmware-menu-avance.md).
+2. Ouvrir Zigbee2MQTT, prêt à activer **Permit join / Autoriser l'appairage**,
+   mais le **laisser désactivé** pour l'instant.
+3. Sur le radiateur, lui faire quitter son ancien réseau, puis ouvrir ses
+   **Réglages** et lancer la **connexion à un réseau**. Le radiateur recherche,
+   ne trouve aucun réseau et demande d'en **sélectionner** un : choisir
+   **« Intuis 3.0 »**, et **seulement à ce moment** activer le Permit join dans
+   Zigbee2MQTT. Le radiateur rejoint alors le réseau en mode Intuis 3.0. Les
+   libellés exacts des menus varient avec le modèle et le logiciel : utiliser
+   sa notice.
+
+   Ce choix de réseau est déterminant. Avec un autre mode, l'interview
+   Zigbee2MQTT **réussit quand même**, mais le radiateur remonte ensuite
+   `local_temperature` à 0, reste en `idle`, n'incrémente pas l'énergie et garde
+   la présence bloquée à `true` — un symptôme décrit dans
+   [Koenkk/zigbee2mqtt#33183](https://github.com/Koenkk/zigbee2mqtt/issues/33183).
+   Si un radiateur a déjà été appairé autrement, le retirer de Zigbee2MQTT, lui
+   faire quitter son réseau, puis recommencer en sélectionnant « Intuis 3.0 ».
+   Cette procédure d'appairage a aussi été ajoutée à la fiche du modèle en amont
+   ([Koenkk/zigbee2mqtt.io#5733](https://github.com/Koenkk/zigbee2mqtt.io/pull/5733)).
 4. Attendre la découverte et la fin de l'**interview** Zigbee2MQTT. Vérifier que
    l'appareil est identifié comme **Intuis `intuisradiator`**, puis que sa
    configuration aboutit.
@@ -130,6 +150,28 @@ du clavier, l'unité de température, l'énergie et la présence. Leur présence
 l'interface ne garantit pas que chaque mesure ou automatisme est exploitable sur
 tous les firmwares. L'énergie, la présence et les fonctions de fenêtre ouverte
 doivent être vérifiées séparément sur l'installation.
+
+**Remontée spontanée et configuration Zigbee2MQTT.** Sur certains modules, la
+configuration automatique de Zigbee2MQTT échoue sur le compteur d'énergie : le
+convertisseur demande le reporting de l'attribut `status` (cluster `seMetering`),
+que le module refuse (`UNREPORTABLE_ATTRIBUTE`). Zigbee2MQTT enchaîne les étapes
+de configuration sans les isoler, si bien que tout ce qui suit cet échec — dont
+la présence — n'est jamais configuré, et le radiateur ne remonte plus rien de
+lui-même : ses valeurs ne changent qu'après un *refresh* manuel. Un
+**Reconfigure**, sur la page de l'appareil dans Zigbee2MQTT, rétablit la
+remontée : le bind et le reporting du thermostat, qui précèdent l'étape en échec,
+aboutissent, et les valeurs reviennent ensuite toutes les dizaines de secondes.
+Le correctif de fond, qui retire cette demande de reporting inutile, a été proposé
+en amont : [issue Koenkk/zigbee2mqtt#33709](https://github.com/Koenkk/zigbee2mqtt/issues/33709)
+et [PR Koenkk/zigbee-herdsman-converters#13831](https://github.com/Koenkk/zigbee-herdsman-converters/pull/13831).
+
+**Échelle de l'énergie.** Tant que Zigbee2MQTT n'a pas lu le diviseur du compteur,
+`energy_1` peut remonter des **Wh** présentés comme des kWh, soit une valeur de
+l'ordre de plusieurs centaines de milliers. Le Reconfigure ci-dessus lit ce
+diviseur et la valeur repasse en vrais kWh. Après ce changement d'échelle, un
+ré-appairage ou un Reconfigure provoque un saut de la valeur cumulée, que le
+tableau Énergie interprète comme une consommation : les statistiques concernées
+peuvent être corrigées avec l'action `recorder.adjust_sum_statistics`.
 
 Pour un appareil nommé `radiateur_salon`, la commande MQTT documentée utilise
 l'endpoint `1` :
