@@ -35,7 +35,7 @@ version 2.0.x peut être parfaitement fonctionnelle.
 
 ## 2. Où sont les codes
 
-Deux faits établis par l'analyse de l'application :
+Observations du contributeur sur la version de l'application analysée :
 
 1. Les codes ne sont **pas** écrits en dur dans l'application. Elle est écrite en
    Flutter ; aucun code PIN n'est une constante du binaire.
@@ -45,13 +45,9 @@ Deux faits établis par l'analyse de l'application :
 La procédure ci-dessous récupère cette copie locale — c'est-à-dire **ses propres
 données, sur son propre appareil**. Elle ne touche à aucun serveur.
 
-> **À propos de la « récupération depuis le serveur ».** L'application obtient ce
-> `config.json` auprès d'un serveur tiers, à l'aide d'identifiants d'un compte de
-> service inclus dans l'application. Cette voie n'est **pas** documentée ici : se
-> connecter au serveur d'un tiers avec des identifiants extraits d'une
-> application constitue un accès non autorisé à son système, quelle que soit
-> l'intention. La méthode locale ci-dessous donne exactement le même fichier et
-> les mêmes codes, sans ce problème.
+> Cette procédure porte uniquement sur une sauvegarde locale de son propre
+> appareil. Elle ne documente ni connexion au serveur tiers ni utilisation
+> d'identifiants de service extraits de l'application.
 
 ## 3. Partie A (facultative) — Confirmer où sont les codes
 
@@ -62,7 +58,7 @@ Prérequis (macOS, Homebrew) :
 
 ```bash
 brew install capstone ninja pkg-config
-pip3 install --user pycryptodome
+python3 -m pip install cryptography
 ```
 
 1. Récupérer l'APK installée depuis un téléphone Android en débogage USB :
@@ -98,8 +94,27 @@ pip3 install --user pycryptodome
 
 L'application n'est pas « debuggable » et le téléphone n'est pas rooté : on ne
 peut pas lire directement le fichier de l'app. On passe par une sauvegarde
-Android (`adb backup`), qui inclut les données de l'app tant que celle-ci
-n'interdit pas la sauvegarde (c'est le cas d'Intuis Compagnon).
+Android (`adb backup`), lorsque le téléphone et la version de l'application
+autorisent encore l'export de ces données. Cette méthode est un retour
+d'expérience, pas une garantie de compatibilité pour tous les téléphones.
+
+**Limite Android.** À partir d'Android 12, les données des applications ciblant
+l'API 31 ou plus sont exclues de `adb backup`, sauf application debuggable
+([documentation Android](https://developer.android.com/about/versions/12/behavior-changes-12#adb-backup-restrictions)).
+Une sauvegarde peut donc être créée sans le fichier recherché. Si le script
+signale son absence, cette procédure ne permet pas de récupérer les codes sur
+cette combinaison téléphone/application. Les versions exactes Android et
+Intuis Compagnon du retour initial n'ont pas été précisées dans la PR #39.
+
+Le script nécessite **Python 3.12+** et `cryptography` :
+
+```bash
+python3 -m pip install cryptography
+```
+
+Il accepte les en-têtes Android Backup versions 2 à 5, chiffrés en AES-256
+ou non chiffrés. Les tests utilisent des sauvegardes synthétiques ; ils ne
+valident pas la collecte sur un téléphone ni tous les anciens formats.
 
 1. Téléphone Android en débogage USB, branché. Sauvegarder les données de l'app,
    **en choisissant un mot de passe de chiffrement sur le téléphone** :
@@ -120,8 +135,10 @@ n'interdit pas la sauvegarde (c'est le cas d'Intuis Compagnon).
    python3 scripts/decrypt_intuis_backup.py intuis_backup.ab
    ```
 
-   Le script écrit `intuis_backup.tar` et extrait les fichiers. Le fichier
-   recherché est :
+   Le script vérifie le padding et le checksum de la clé Android, puis écrit
+   uniquement `intuis_backup_config.json`, sans afficher les codes. Il ne crée
+   pas de copie TAR ni d'extraction des autres données de l'application et
+   refuse d'écraser un fichier existant. Le chemin attendu dans la sauvegarde est :
 
    ```
    apps/com.muller.app_toolbox/r/app_flutter/config.json
@@ -130,8 +147,9 @@ n'interdit pas la sauvegarde (c'est le cas d'Intuis Compagnon).
 3. Lire les codes dans `config.json`, clé `accessCodes`. Chaque entrée a un champ
    `pin` et une liste `features` (`DFU++`, `DFU-BETA`, `CONFIG`). Le code à saisir
    dans « Menu avancé → Mise à jour » est celui dont `features` contient `DFU++`.
-   Les codes observés sont globaux (indépendants du modèle) et sans date
-   d'expiration, mais chacun doit lire les siens dans son propre fichier.
+   Le contributeur a observé des codes indépendants du modèle et sans date
+   d'expiration dans son fichier ; cela ne garantit pas les valeurs ni les
+   conditions d'accès des autres versions de l'application.
 
 ## 5. Rappels
 

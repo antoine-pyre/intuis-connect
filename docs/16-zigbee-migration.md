@@ -154,15 +154,17 @@ l'interface ne garantit pas que chaque mesure ou automatisme est exploitable sur
 tous les firmwares. L'énergie, la présence et les fonctions de fenêtre ouverte
 doivent être vérifiées séparément sur l'installation.
 
-**Remontée spontanée et configuration Zigbee2MQTT.** Sur certains modules, la
+**Remontée spontanée et configuration Zigbee2MQTT.** Le retour de migration
+de quatre radiateurs dans [la PR #39](https://github.com/antoine-pyre/intuis-connect/pull/39)
+décrit le comportement suivant sur certains modules. La
 configuration automatique de Zigbee2MQTT échoue sur le compteur d'énergie : le
 convertisseur demande le reporting de l'attribut `status` (cluster `seMetering`),
 que le module refuse (`UNREPORTABLE_ATTRIBUTE`). Zigbee2MQTT enchaîne les étapes
 de configuration sans les isoler, si bien que tout ce qui suit cet échec — dont
 la présence — n'est jamais configuré, et le radiateur ne remonte plus rien de
 lui-même : ses valeurs ne changent qu'après un *refresh* manuel. Un
-**Reconfigure**, sur la page de l'appareil dans Zigbee2MQTT, rétablit la
-remontée : le bind et le reporting du thermostat, qui précèdent l'étape en échec,
+**Reconfigure**, sur la page de l'appareil dans Zigbee2MQTT, a rétabli la
+remontée sur cette installation : le bind et le reporting du thermostat, qui précèdent l'étape en échec,
 aboutissent, et les valeurs reviennent ensuite toutes les dizaines de secondes.
 Le correctif de fond, qui retire cette demande de reporting inutile, a été proposé
 en amont : [issue Koenkk/zigbee2mqtt#33709](https://github.com/Koenkk/zigbee2mqtt/issues/33709)

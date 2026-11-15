@@ -1,92 +1,124 @@
 #!/usr/bin/env python3
-"""Decrypt an Android `adb backup` (.ab) archive with the user's own password.
+"""Read an Android backup and extract only Intuis Compagnon's cached config.
 
-The password is read interactively (hidden), never passed on the command line,
-so it stays out of the shell history and the terminal scrollback.
-
-Usage: python3 decrypt_intuis_backup.py <backup.ab>
-Output: backup.tar next to it, and the extracted config.json if present.
-
-See docs/17-firmware-menu-avance.md for the full procedure.
+Adapted from adrienvsj's PR #39. Requires Python 3.12+ and cryptography.
+The password is prompted, never taken from the command line or printed.
 """
+
+from __future__ import annotations
 
 import getpass
 import hashlib
+import hmac
+import io
 import sys
 import tarfile
 import zlib
 from pathlib import Path
 
-from Crypto.Cipher import AES
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+CONFIG_PATH = "apps/com.muller.app_toolbox/r/app_flutter/config.json"
+MAX_CONFIG_SIZE = 16 * 1024 * 1024
 
 
-def unpad(data: bytes) -> bytes:
-    return data[: -data[-1]]
+def decrypt_cbc(key: bytes, iv: bytes, ciphertext: bytes) -> bytes:
+    decryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).decryptor()
+    padded = decryptor.update(ciphertext) + decryptor.finalize()
+    unpadder = padding.PKCS7(128).unpadder()
+    return unpadder.update(padded) + unpadder.finalize()
+
+
+def key_checksum(key: bytes, salt: bytes, rounds: int) -> bytes:
+    # Android casts signed Java bytes to chars before PBKDF2's UTF-8 encoding.
+    # See AOSP PasswordUtils.makeKeyChecksum, not a raw-byte PBKDF2 password.
+    password = "".join(chr(b if b < 128 else b + 0xFF00) for b in key)
+    return hashlib.pbkdf2_hmac("sha1", password.encode("utf-8"), salt, rounds, 32)
+
+
+def read_backup(raw: bytes, password_prompt=getpass.getpass) -> bytes:
+    stream = io.BytesIO(raw)
+
+    def line() -> bytes:
+        value = stream.readline(4096)
+        if not value.endswith(b"\n"):
+            raise ValueError("Truncated or oversized backup header")
+        return value[:-1]
+
+    if line() != b"ANDROID BACKUP":
+        raise ValueError("Not an Android backup file")
+    if line() not in {b"2", b"3", b"4", b"5"}:
+        raise ValueError("Supported Android backup versions: 2 through 5")
+    compressed = line()
+    if compressed not in {b"0", b"1"}:
+        raise ValueError("Invalid compression flag")
+    encryption = line()
+    if encryption == b"none":
+        payload = stream.read()
+    elif encryption == b"AES-256":
+        user_salt = bytes.fromhex(line().decode("ascii"))
+        checksum_salt = bytes.fromhex(line().decode("ascii"))
+        rounds = int(line())
+        user_iv = bytes.fromhex(line().decode("ascii"))
+        master_blob = bytes.fromhex(line().decode("ascii"))
+        if not 1 <= rounds <= 1_000_000 or not user_salt or not checksum_salt:
+            raise ValueError("Invalid backup key parameters")
+        password = password_prompt("Backup password: ")
+        user_key = hashlib.pbkdf2_hmac("sha1", password.encode("utf-8"), user_salt, rounds, 32)
+        blob = io.BytesIO(decrypt_cbc(user_key, user_iv, master_blob))
+
+        def field(length: int) -> bytes:
+            size = blob.read(1)
+            if size != bytes([length]):
+                raise ValueError("Invalid master key blob")
+            value = blob.read(length)
+            if len(value) != length:
+                raise ValueError("Truncated master key blob")
+            return value
+
+        master_iv, master_key, checksum = field(16), field(32), field(32)
+        if blob.read() or not hmac.compare_digest(
+            checksum, key_checksum(master_key, checksum_salt, rounds)
+        ):
+            raise ValueError("Invalid master key checksum")
+        payload = decrypt_cbc(master_key, master_iv, stream.read())
+    else:
+        raise ValueError("Unsupported backup encryption")
+    return zlib.decompress(payload) if compressed == b"1" else payload
+
+
+def extract_config(archive: bytes, destination: Path) -> None:
+    # Never extract archive paths, links or unrelated application data.
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as tf:
+        matches = [member for member in tf if member.name == CONFIG_PATH]
+        if len(matches) != 1:
+            raise ValueError("Expected exactly one cached Intuis config.json; backup may exclude app data")
+        member = matches[0]
+        if not member.isfile() or not 0 < member.size <= MAX_CONFIG_SIZE:
+            raise ValueError("Cached config must be a regular file of at most 16 MiB")
+        source = tf.extractfile(member)
+        if source is None:
+            raise ValueError("Cannot read cached config")
+        with source:
+            content = source.read()
+    # Exclusive creation also refuses an existing symlink or accidental overwrite.
+    with destination.open("xb") as output:
+        output.write(content)
 
 
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: python3 decrypt_intuis_backup.py <backup.ab>", file=sys.stderr)
         return 2
-    raw = Path(sys.argv[1]).read_bytes()
-    # Header lines are newline-separated ASCII, then the binary payload.
-    parts = raw.split(b"\n", 9)
-    magic, version, compressed, encryption = parts[0], parts[1], parts[2], parts[3]
-    if magic != b"ANDROID BACKUP":
-        print("Not an Android backup file.", file=sys.stderr)
+    backup = Path(sys.argv[1])
+    destination = backup.with_name(backup.stem + "_config.json")
+    try:
+        extract_config(read_backup(backup.read_bytes()), destination)
+    except (OSError, ValueError, UnicodeError, zlib.error, tarfile.TarError):
+        print("Cannot extract config: invalid backup/password, missing app data, or output already exists.", file=sys.stderr)
         return 1
-    if encryption == b"none":
-        payload = raw.split(b"\n", 4)[4]
-        tar = zlib.decompress(payload) if compressed == b"1" else payload
-    elif encryption == b"AES-256":
-        user_salt = bytes.fromhex(parts[4].decode())
-        checksum_salt = bytes.fromhex(parts[5].decode())
-        rounds = int(parts[6])
-        user_iv = bytes.fromhex(parts[7].decode())
-        master_blob = bytes.fromhex(parts[8].decode())
-        payload = parts[9]
-
-        pw = getpass.getpass("Backup password: ")
-        # Derive the key that wraps the master key, from the password.
-        user_key = hashlib.pbkdf2_hmac("sha1", pw.encode(), user_salt, rounds, 32)
-        try:
-            blob = unpad(AES.new(user_key, AES.MODE_CBC, user_iv).decrypt(master_blob))
-            # blob = [len][master IV][len][master key][len][checksum]
-            i = 0
-            n = blob[i]; i += 1
-            master_iv = blob[i:i + n]; i += n
-            n = blob[i]; i += 1
-            master_key = blob[i:i + n]; i += n
-            # The checksum (the rest) is skipped: Android's checksum has a
-            # sign-extension quirk that makes it unreliable to recompute. The
-            # real proof of a correct password is that the payload below
-            # decrypts and decompresses cleanly.
-            data = unpad(AES.new(master_key, AES.MODE_CBC, master_iv).decrypt(payload))
-            tar = zlib.decompress(data) if compressed == b"1" else data
-        except (ValueError, zlib.error):
-            print("Wrong password (decryption failed).", file=sys.stderr)
-            return 1
-    else:
-        print(f"Unsupported encryption: {encryption!r}", file=sys.stderr)
-        return 1
-
-    out = Path(sys.argv[1]).with_suffix(".tar")
-    out.write_bytes(tar)
-    print(f"OK: {out} ({len(tar)} bytes)")
-
-    # List and extract any JSON file (the cached config lives there).
-    with tarfile.open(out) as tf:
-        names = tf.getnames()
-        jsons = [n for n in names if n.lower().endswith(".json")]
-        print(f"{len(names)} files in the archive, {len(jsons)} JSON:")
-        for n in jsons:
-            print("  ", n)
-        dest = out.parent / "backup_extracted"
-        try:
-            tf.extractall(dest, filter="data")  # Python 3.12+
-        except TypeError:
-            tf.extractall(dest)  # older Python has no `filter` argument
-        print(f"Extracted to: {dest}")
+    print(f"Extracted cached config to: {destination}")
     return 0
 
 
