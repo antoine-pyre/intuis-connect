@@ -58,6 +58,22 @@ class EnergyDataUnavailable(APIError):
     """The response contains no measured energy, as distinct from a valid zero."""
 
 
+class NoRoomMeasureDevice(APIError):
+    """The cloud has no measuring device for this room, so it has no energy to read.
+
+    getroommeasure answers 400 with error code 21 ("There is no relay thermostat
+    device in this room"), as seen on pilot-wire rooms. Callers skip the room:
+    it is neither a failure to retry nor a measured zero.
+    """
+
+
+# getroommeasure error code meaning the room has no measuring device.
+NO_MEASURE_DEVICE_CODE = 21
+_MEASURE_CLOUD_ERRORS: dict[int, type[APIError]] = {
+    NO_MEASURE_DEVICE_CODE: NoRoomMeasureDevice,
+}
+
+
 class RateLimitError(Exception):
     """Rate limit (429) error with circuit breaker open."""
 
@@ -270,7 +286,9 @@ class IntuisAPI:
 
     async def _async_request(
             self, method: str, path: str, retry: bool = True,
-            full_url: str | None = None, **kwargs: Any
+            full_url: str | None = None,
+            cloud_errors: dict[int, type[APIError]] | None = None,
+            **kwargs: Any
     ) -> aiohttp.ClientResponse:
         """Make a request with rate limiting, circuit breaker, and retry logic.
 
@@ -291,6 +309,8 @@ class IntuisAPI:
             path: API path (appended to base_url unless full_url is provided)
             retry: Whether to retry on 401 after token refresh
             full_url: Optional full URL to use instead of base_url + path
+            cloud_errors: Cloud error codes the caller expects on a 4xx answer,
+                raised as the given APIError subclass without an error log.
         """
         # Check circuit breaker first
         wait_time = self._circuit_breaker.check()
@@ -345,6 +365,7 @@ class IntuisAPI:
                         raise CannotConnect("Cannot refresh access token") from err
                     return await self._async_request(
                         method, path, retry=False, full_url=url,
+                        cloud_errors=cloud_errors,
                         headers=headers, timeout=timeout, **kwargs
                     )
 
@@ -401,6 +422,18 @@ class IntuisAPI:
                         continue
                     # No more server error retries
                     resp.raise_for_status()
+
+                # An expected cloud answer is not a failure of the request
+                if cloud_errors and 400 <= resp.status < 500:
+                    code = await self._cloud_error_code(resp)
+                    if code in cloud_errors:
+                        resp.release()
+                        _LOGGER.debug(
+                            "Cloud error %s for %s (HTTP %s)", code, path, resp.status
+                        )
+                        raise cloud_errors[code](
+                            f"Request failed for {path}: cloud error {code}"
+                        )
 
                 # Success - record it and return
                 resp.raise_for_status()
@@ -680,6 +713,17 @@ class IntuisAPI:
         if self._debug:
             _LOGGER.debug("Room %s state set to mode=%s, temp=%s", room_id, mode, temp)
 
+    @staticmethod
+    async def _cloud_error_code(resp: aiohttp.ClientResponse) -> int | None:
+        """Cloud error code of an error answer, None when the body has none."""
+        try:
+            data = await resp.json(content_type=None)
+        except (ValueError, aiohttp.ClientError):
+            return None
+        error = data.get("error") if isinstance(data, dict) else None
+        code = error.get("code") if isinstance(error, dict) else None
+        return code if type(code) is int else None
+
     async def async_get_energy_measures(
         self, rooms: list[dict[str, str]], date_begin: int, date_end: int,
         scale: str = "1day"
@@ -725,6 +769,10 @@ class IntuisAPI:
                 # A well-formed answer with no value (empty body or null tariff
                 # columns): the room has not consumed yet in this period.
                 result[room_id] = 0.0
+            except NoRoomMeasureDevice:
+                # Nothing to read for this room (e.g. pilot-wire): not a failure.
+                _LOGGER.debug("Room %s has no energy measuring device", room_id)
+                continue
             except (APIError, CannotConnect, RateLimitError, aiohttp.ClientError, asyncio.TimeoutError) as e:
                 _LOGGER.warning(
                     "Failed to get energy for room %s: %s", room_id, e
@@ -759,7 +807,8 @@ class IntuisAPI:
         }
 
         async with await self._async_request(
-            "post", ROOMMEASURE_PATH, data=form_data
+            "post", ROOMMEASURE_PATH, data=form_data,
+            cloud_errors=_MEASURE_CLOUD_ERRORS,
         ) as resp:
             try:
                 data = await resp.json()
@@ -836,7 +885,8 @@ class IntuisAPI:
             "date_end": str(date_end),
         }
         async with await self._async_request(
-            "post", ROOMMEASURE_PATH, data=form_data
+            "post", ROOMMEASURE_PATH, data=form_data,
+            cloud_errors=_MEASURE_CLOUD_ERRORS,
         ) as resp:
             try:
                 data = await resp.json()
@@ -864,7 +914,9 @@ class IntuisAPI:
             end = min(chunk + 42 * 86400, date_end)
             form = {"home_id": self.home_id, "room_id": room_id, "scale": "1hour",
                     "type": ENERGY_MEASURE_TYPES, "date_begin": str(chunk), "date_end": str(end)}
-            async with await self._async_request("post", ROOMMEASURE_PATH, data=form) as resp:
+            async with await self._async_request(
+                "post", ROOMMEASURE_PATH, data=form, cloud_errors=_MEASURE_CLOUD_ERRORS
+            ) as resp:
                 try:
                     data = await resp.json()
                 except (ValueError, aiohttp.ClientError) as err:

@@ -13,7 +13,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 
-from .intuis_api.api import APIError, CannotConnect, InvalidAuth, RateLimitError
+from .intuis_api.api import (
+    APIError,
+    CannotConnect,
+    InvalidAuth,
+    NoRoomMeasureDevice,
+    RateLimitError,
+)
 from .hourly_series import HOUR, energy_rooms
 from .recorder_import import (
     HistoryReplacementError,
@@ -364,6 +370,10 @@ async def async_import_energy_history(
                 manager.update_room_progress(
                     room_id, int(end.timestamp()), committed.final_sum
                 )
+            except NoRoomMeasureDevice:
+                # Nothing to import for this room (e.g. pilot-wire): not a failure.
+                report.update(status="no_measure_device")
+                _LOGGER.debug("%s has no energy measuring device, skipped", room_name)
             except RateLimitError as err:
                 report.update(status="rate_limited", failed_stage=stage,
                               error_type=type(err).__name__)

@@ -12,7 +12,8 @@ from aioresponses import CallbackResult
 
 from custom_components.intuis_connect.entity.intuis_home_entity import IntuisHomeEnergySensor
 from custom_components.intuis_connect.intuis_api.api import (
-    APIError, CannotConnect, EnergyDataUnavailable, IntuisAPI, InvalidAuth, RateLimitError,
+    APIError, CannotConnect, EnergyDataUnavailable, IntuisAPI, InvalidAuth,
+    NoRoomMeasureDevice, RateLimitError,
 )
 from custom_components.intuis_connect.intuis_data import IntuisData
 from custom_components.intuis_connect.sensor import IntuisEnergySensor
@@ -190,6 +191,56 @@ async def test_daily_api_error_is_propagated_to_import_caller(cloud_responses):
     async with aiohttp.ClientSession() as session:
         with pytest.raises(APIError):
             await client(session).async_get_room_energy_daily("room", 0, 86400)
+
+
+NO_RELAY = {"error": {"code": 21, "message": "There is no relay thermostat device in this room."}}
+
+
+@pytest.mark.parametrize("call", [
+    lambda api: api._async_get_room_energy("room", 0, 86400),
+    lambda api: api.async_get_room_energy_daily("room", 0, 86400),
+    lambda api: api.async_get_room_energy_hourly("room", 0, 3600),
+])
+async def test_room_without_measure_device_is_typed_and_not_logged_as_error(
+    cloud_responses, caplog, call
+):
+    # Pilot-wire rooms: getroommeasure answers 400 with cloud error code 21.
+    cloud_responses.post(BASE_URLS[0] + ROOMMEASURE_PATH, status=400, payload=NO_RELAY)
+    async with aiohttp.ClientSession() as session:
+        with pytest.raises(NoRoomMeasureDevice):
+            await call(client(session))
+    assert not [r for r in caplog.records if r.levelname in {"WARNING", "ERROR"}]
+
+
+@pytest.mark.parametrize("payload", [
+    {"error": {"code": 3, "message": "Other"}},
+    {"error": "not a dict"},
+    None,
+])
+async def test_other_client_errors_keep_their_error_log(cloud_responses, caplog, payload):
+    kwargs = {"payload": payload} if payload is not None else {"body": "Bad request"}
+    cloud_responses.post(BASE_URLS[0] + ROOMMEASURE_PATH, status=400, **kwargs)
+    async with aiohttp.ClientSession() as session:
+        with pytest.raises(APIError) as raised:
+            await client(session).async_get_room_energy_daily("room", 0, 86400)
+    assert not isinstance(raised.value, NoRoomMeasureDevice)
+    assert [r for r in caplog.records if r.levelname == "ERROR"]
+
+
+async def test_bulk_omits_room_without_measure_device_without_warning(
+    cloud_responses, caplog
+):
+    def endpoint(url, **kwargs):
+        if kwargs["data"]["room_id"] == "pilot":
+            return CallbackResult(status=400, payload=NO_RELAY)
+        return CallbackResult(payload={"body": [{"value": [[1500, None]]}]})
+    cloud_responses.post(BASE_URLS[0] + ROOMMEASURE_PATH, callback=endpoint, repeat=True)
+    async with aiohttp.ClientSession() as session:
+        result = await client(session).async_get_energy_measures(
+            [{"id": room, "bridge": "b"} for room in ("measured", "pilot")], 0, 86400
+        )
+    assert result == {"measured": 1500.0}
+    assert not [r for r in caplog.records if r.levelname in {"WARNING", "ERROR"}]
 
 
 def room(room_id="room"):
