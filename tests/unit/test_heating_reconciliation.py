@@ -361,3 +361,54 @@ async def test_partial_status_preserves_known_room_intention(heating):
     await publish(h)
     assert h.entity.available
     assert h.shared == before
+
+
+@pytest.mark.parametrize("payload", [{}, {"modules": []}, {"modules": {}}, {"modules": [None]}, None])
+async def test_missing_gateway_config_preserves_room_updates_and_recovers(heating, payload):
+    from custom_components.intuis_connect.entity.intuis_home_entity import IntuisHomeConfigEntity
+
+    h = heating
+    sensor = IntuisHomeConfigEntity(h.coordinator, "home", "gateway", "module_id", "mdi:hub")
+    original = h.coordinator.data["home_config"]
+    updated_at = h.coordinator.data["home_config_updated_at"]
+    h.api.async_get_config.return_value = payload
+    h.raw["therm_measured_temperature"] = 21.5
+    await h.coordinator.async_refresh()
+    assert h.coordinator.last_update_success
+    assert h.coordinator.data["home_config"] is original
+    assert h.coordinator.data["home_config_updated_at"] == updated_at
+    assert sensor.native_value == "gateway"
+    assert sensor.extra_state_attributes["stale"] is True
+    assert h.entity.native_current_temperature == 21.5
+    assert h.coordinator.data["schedules"] == h.data._intuis_home.schedules
+
+    h.api.async_get_config.return_value = {"modules": [{"id": "gateway-returned"}]}
+    await h.coordinator.async_refresh()
+    assert sensor.native_value == "gateway-returned"
+    assert sensor.extra_state_attributes["stale"] is False
+    assert h.coordinator.data["home_config_updated_at"] >= updated_at
+
+
+async def test_missing_gateway_config_on_first_refresh_only_disables_config_sensor(heating):
+    from custom_components.intuis_connect.entity.intuis_home_entity import IntuisHomeConfigEntity
+
+    h = heating
+    data = IntuisData(h.api, h.data._intuis_home)
+    h.api.async_get_config.return_value = {}
+    h.coordinator.update_method = data.async_update
+    await h.coordinator.async_refresh()
+    sensor = IntuisHomeConfigEntity(h.coordinator, "home", "gateway", "module_id", "mdi:hub")
+    assert h.coordinator.last_update_success and h.entity.available
+    assert h.coordinator.data["home_config"] is None
+    assert not sensor.available
+    assert sensor.extra_state_attributes == {"stale": True, "last_updated": None}
+    h.api.async_get_config.return_value = {"modules": [{"id": "gateway"}]}
+    await h.coordinator.async_refresh()
+    assert sensor.available and sensor.native_value == "gateway"
+
+
+@pytest.mark.parametrize("error", [APIError("failed"), CannotConnect("offline")])
+async def test_gateway_request_errors_are_not_hidden(heating, error):
+    heating.api.async_get_config.side_effect = error
+    with pytest.raises(type(error)):
+        await heating.data.async_update()

@@ -38,7 +38,9 @@ class IntuisHomeConfig:
     def from_dict(cls, data: dict[str, Any]) -> IntuisHomeConfig:
         """Create an Intuis home configuration from a dictionary."""
 
-        modules: dict[str, Any] | None = data.get("modules", None)
+        if not isinstance(data, dict):
+            raise ValueError("Configuration data should be an object")
+        modules = data.get("modules")
         if not modules:
             raise ValueError("No modules found in the configuration data")
 
@@ -49,6 +51,8 @@ class IntuisHomeConfig:
             raise ValueError("Expected exactly one module in the configuration data")
         
         module = modules[0]
+        if not isinstance(module, dict):
+            raise ValueError("Module data should be an object")
 
         home_config = cls(
             home_id=data.get("home_id"),
