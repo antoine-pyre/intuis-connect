@@ -75,6 +75,24 @@ décrit la bascule des radiateurs nativ / Intuis 3.0 compatibles vers Zigbee2MQT
 Cette compatibilité n'est pas établie pour tous les anciens modules ou les
 installations fil pilote. Exporter tous les plannings avant la première déconnexion.
 
+## Correctifs de suivi — novembre 2026
+
+- #38 : une configuration cloud sans modules ne bloque plus les pièces,
+  plannings ni la lecture d'énergie. La dernière configuration valide reste
+  disponible avec les attributs `stale` et `last_updated` sur ses capteurs.
+  Avant la première configuration valide, seuls ces capteurs sont indisponibles.
+  Les erreurs réseau, d'authentification et de limitation API restent propagées.
+- [#37, adrienvsj](https://github.com/antoine-pyre/intuis-connect/pull/37) : le timer
+  crée les tâches horaires dans la boucle HA, avec régression par un vrai timer.
+- [#36, adrienvsj](https://github.com/antoine-pyre/intuis-connect/pull/36) : les pièces
+  refusées par getroommeasure avec le code 21 sont ignorées par les imports,
+  sans mesure zéro inventée. Les totaux horaires couvrent les pièces mesurables ;
+  le comportement de l'agrégat quotidien reste inchangé.
+- [#39, adrienvsj](https://github.com/antoine-pyre/intuis-connect/pull/39) : retour
+  d'appairage Intuis 3.0, firmware compatible avec le matériel (dont un appareil
+  en 2.0.5) et configuration du reporting. Le script de lecture de sauvegarde
+  locale est durci et les limites Android sont documentées.
+
 ## Robustesse des données partielles
 
 Pièces sans définition ignorées sans crash, températures nulles conservées comme
@@ -92,7 +110,13 @@ statut incomplète ne supprime pas les intentions des pièces encore définies.
 
 ## Validation et crédits
 
-575 tests réussis sur HA 2024.6.4 / Python 3.12 et HA 2026.10.4 / Python 3.14,
+Validation du suivi du 15 novembre : **603 tests Python réussis sur chaque
+matrice** (601 dans la suite complète et les 2 tests de parité exécutés ensuite
+avec Node.js), suite JavaScript, Ruff et cohérence des dépendances vérifiés.
+Voir [le rapport de suivi](issue-followup-validation-2026-11-15.md).
+Aucun test sur compte cloud, téléphone ou radiateur réel dans ce suivi.
+
+Validation du lot précédent : 575 tests réussis sur HA 2024.6.4 / Python 3.12 et HA 2026.10.4 / Python 3.14,
 14 tests JavaScript, Ruff et cohérence des dépendances. Les régressions utilisent
 les vrais services, registries, Store et recorder SQLite, avec transport cloud
 simulé. Les hooks de conversion climate récents sont aussi exercés avec une base

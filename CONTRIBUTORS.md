@@ -95,3 +95,22 @@ icons and expected schedule-entry logging fix in
 [#32](https://github.com/antoine-pyre/intuis-connect/pull/32)
 (`84dc754fd2337120ed695ad9cfff2d011d05dc63`, merged unchanged), and reported
 [real-hardware FP4 testing](https://github.com/antoine-pyre/intuis-connect/issues/27#issuecomment-6829268162).
+
+## Issue follow-up — November 2026
+
+The hourly timer fix retains **adrienvsj**'s commit from
+[PR #37](https://github.com/antoine-pyre/intuis-connect/pull/37)
+(`af3ef5f129d7f329634c0ba9646d87acc3bc436e`). Unsupported energy-room handling
+retains the contribution from [PR #36](https://github.com/antoine-pyre/intuis-connect/pull/36)
+(`ad7b98016403ad70798502b4d2223fff6715b236`).
+
+Zigbee migration feedback and the original backup reader come from
+[PR #39](https://github.com/antoine-pyre/intuis-connect/pull/39)
+(`6e965ad3bf8e09556c076a0b9a5218f7bc1f6517`). The backup reader is adapted
+with validated decryption, extraction limited to the cached config, and tests;
+the guide now distinguishes the reported installation from general compatibility.
+
+The missing gateway-config fallback requested in
+[issue #38](https://github.com/antoine-pyre/intuis-connect/issues/38) follows
+**adrienvsj**'s partial-data design in `598e6359298493a9dd0c1da03dfb14619603d748`,
+with explicit freshness attributes and recovery tests.
