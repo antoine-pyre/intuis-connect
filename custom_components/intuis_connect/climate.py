@@ -116,9 +116,11 @@ class IntuisConnectClimate(
         """Initialize the climate entity."""
         CoordinatorEntity.__init__(self, coordinator)
         ClimateEntity.__init__(self)
-        IntuisEntity.__init__(
-            self, coordinator, room, home_id, f"{room.name} Climate", "climate"
-        )
+        # No name of its own: the thermostat is the room's primary entity, so
+        # with has_entity_name it takes the device's name exactly. Passing
+        # "<room> Climate" made Home Assistant compose it with the device,
+        # which is what produced "Chambre D'amis Chambre D'amis Climate".
+        IntuisEntity.__init__(self, coordinator, room, home_id, None, "climate")
         self._home_id = home_id
         self._api = api
         self._entry_id = entry_id

@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .cost_stats import async_last_cost, cost_signal
 
 from .entity.intuis_entity import IntuisEntity
+from .external_statistics import statistic_id
 from .entity.intuis_home_entity import provide_home_sensors
 from .entity.intuis_module import NMHIntuisModule
 from .entity.intuis_room import IntuisRoom
@@ -72,6 +73,7 @@ class IntuisCostSensor(SensorEntity):
     """
 
     _attr_should_poll = False
+    _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_suggested_display_precision = 2
     _attr_icon = "mdi:cash"
@@ -88,7 +90,10 @@ class IntuisCostSensor(SensorEntity):
         self._home_id = home_id
         self._room_id = room_id
         self._attr_native_unit_of_measurement = currency
-        self._attr_name = f"{label} Hourly Cost"
+        # The device already carries the room, so the name must not repeat it:
+        # with has_entity_name the two are composed, which is what produced
+        # "Chambre D'amis Chambre D'amis Hourly Cost".
+        self._attr_name = "Hourly Cost"
         if room_id is None:
             self._attr_unique_id = f"intuis_{home_id}_home_hourly_cost"
             self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, f"{home_id}_home")})
@@ -98,7 +103,16 @@ class IntuisCostSensor(SensorEntity):
                 home_id, room_id, label
             )
         self._attr_native_value = None
-        self._attr_extra_state_attributes = {"last_hour_end": None}
+        # Both series are external: no entity carries them and their ids are
+        # digests. Published here so they can be found without computing one.
+        self._statistic_ids = {
+            "statistic_id": statistic_id(home_id, room_id, "cost"),
+            "energy_statistic_id": statistic_id(home_id, room_id, "energy"),
+        }
+        self._attr_extra_state_attributes = {
+            "last_hour_end": None,
+            **self._statistic_ids,
+        }
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(
@@ -122,7 +136,10 @@ class IntuisCostSensor(SensorEntity):
             return
         if last is not None:
             self._attr_native_value = last[0]
-            self._attr_extra_state_attributes = {"last_hour_end": last[1].isoformat()}
+            self._attr_extra_state_attributes = {
+                "last_hour_end": last[1].isoformat(),
+                **self._statistic_ids,
+            }
         if self.hass is not None and self.entity_id:
             self.async_write_ha_state()
 
@@ -323,6 +340,14 @@ class IntuisEnergySensor(IntuisSensor):
             "energy_stale": room.energy_stale if room else True,
             "last_successful_update": room.energy_updated_at if room else None,
             "measurement_day": room.energy_day if room else None,
+            # The hourly series is external: it has no entity, and its id is a
+            # digest nothing else in Home Assistant spells out. Published here
+            # so a dashboard or the energy settings can be pointed at it.
+            "hourly_statistic_id": statistic_id(
+                self._home_id, room.id, "energy"
+            )
+            if room
+            else None,
         }
 
     @property

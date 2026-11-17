@@ -35,6 +35,8 @@ CONFIG_PATH = "/syncapi/v1/getconfigs"
 SETSTATE_PATH = "/syncapi/v1/setstate"
 HOMEMEASURE_PATH = "/api/gethomemeasure"
 ROOMMEASURE_PATH = "/api/getroommeasure"
+# Single measure type the home endpoint answers, as in TheFab21 Node-RED flow.
+HOME_MEASURE_TYPE = "sum_energy_elec$0"
 
 # Energy measure types - request all tariffs to capture all consumption
 # Extended with heating/hot_water types discovered from APK decompilation

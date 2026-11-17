@@ -17,6 +17,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 import math
 import threading
 from typing import Any
@@ -31,6 +32,8 @@ from homeassistant.components.recorder.tasks import RecorderTask
 from sqlalchemy import delete, select, update
 
 from .utils.const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 HOUR = 3600
 
@@ -81,12 +84,19 @@ def _replace_windows(
     metadata_id: int,
     windows: tuple[Window, ...],
     cancelled: threading.Event,
+    baseline: float | None = None,
 ) -> tuple[float, int, int]:
     """Replace each window in order; rows between windows keep their values.
 
     A gap is a period without confirmed data: its rows are neither deleted nor
     fabricated, they only follow the sum offset like every later row.
     Returns the final cumulative sum, cleared and adjusted row counts.
+
+    With a baseline, the first window starts from that absolute level instead
+    of the sum of the row before it. The daily rebase supplies a level settled
+    from the cloud's own consolidated day, so the series stops carrying an
+    error forward and a re-import of the same hours recomputes the same sums.
+    Later windows continue from the rows this call has just written.
     """
 
     def sum_before(boundary: float) -> float:
@@ -104,9 +114,13 @@ def _replace_windows(
 
     cumulative = 0.0
     cleared = adjusted = 0
+    anchor = baseline
     for start, end, samples in windows:
         start_ts, end_ts = start.timestamp(), end.timestamp()
-        baseline = sum_before(start_ts)
+        if anchor is not None:
+            baseline, anchor = float(anchor), None
+        else:
+            baseline = sum_before(start_ts)
         old_final = sum_before(end_ts)
         if not _finite(baseline) or not _finite(old_final):
             raise HistoryReplacementError(
@@ -211,6 +225,7 @@ def _replace_external_in_transaction(
     meta_data: dict[str, Any],
     windows: tuple[Window, ...],
     cancelled: threading.Event,
+    baseline: float | None = None,
 ) -> ExternalReplacementResult:
     """Replace one external series; metadata creation shares the rollback."""
     statistic_id = meta_data["statistic_id"]
@@ -233,8 +248,33 @@ def _replace_external_in_transaction(
             raise HistoryReplacementError(
                 "Existing external statistics metadata is incompatible; history was preserved"
             )
+        else:
+            # Identity stays fixed, description follows: a row created before a
+            # field existed, or under an older room name, would otherwise keep
+            # its first value for good. unit_class in particular has to read
+            # "energy" for the energy dashboard to list the series at all.
+            changed = [
+                key
+                for key in ("name", "unit_class", "mean_type", "has_mean")
+                if key in meta_data and getattr(meta, key, None) != meta_data[key]
+            ]
+            for key in changed:
+                setattr(meta, key, meta_data[key])
+            session.flush()
+            # The energy dashboard lists a statistic only when unit_class reads
+            # "energy", and nothing else reports what the row actually holds.
+            _LOGGER.debug(
+                "External metadata %s: unit_class=%r unit=%r has_sum=%s "
+                "source=%r (updated: %s)",
+                statistic_id,
+                meta.unit_class,
+                meta.unit_of_measurement,
+                meta.has_sum,
+                meta.source,
+                ", ".join(changed) or "nothing",
+            )
         final_sum, cleared, adjusted = _replace_windows(
-            session, (Statistics,), meta.id, windows, cancelled
+            session, (Statistics,), meta.id, windows, cancelled, baseline
         )
         samples = _all_samples(windows)
         result = ExternalReplacementResult(
@@ -409,6 +449,7 @@ async def async_replace_external_history(
     hass: Any,
     meta_data: dict[str, Any],
     windows: tuple[Window, ...],
+    baseline: float | None = None,
 ) -> ExternalReplacementResult:
     """Replace the confirmed hours of an external series in one transaction.
 
@@ -417,7 +458,16 @@ async def async_replace_external_history(
     Replaying the same samples rewrites identical rows and adjusts nothing.
     Energy series are in kWh and nonnegative; cost series are in a currency
     and may be negative (negative tariffs).
+
+    A baseline anchors the first window on an absolute level instead of the
+    row before it; see _replace_windows.
     """
+    if baseline is not None and (
+        isinstance(baseline, bool)
+        or not isinstance(baseline, (int, float))
+        or not math.isfinite(baseline)
+    ):
+        raise HistoryReplacementError("Baseline must be a finite number")
     instance = _running_instance(hass)
     sid = str(meta_data.get("statistic_id", ""))
     unit = meta_data.get("unit_of_measurement")
@@ -442,6 +492,6 @@ async def async_replace_external_history(
     return await _async_acknowledged(
         instance,
         lambda worker, cancelled: _replace_external_in_transaction(
-            worker, meta_data, windows, cancelled
+            worker, meta_data, windows, cancelled, baseline
         ),
     )
